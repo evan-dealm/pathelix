@@ -22,6 +22,12 @@ Thumbs.db
 
 /src/generated/prisma
 
+# ─── Test & coverage artifacts ─────────────────────────────────────────────────
+coverage/
+tsconfig.tsbuildinfo
+playwright-result.txt
+test-results/
+
 # Claude Code Intelligence
 .claude/daemon.log
 .claude/daemon.pid
