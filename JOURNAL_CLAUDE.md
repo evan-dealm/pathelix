@@ -4,6 +4,44 @@
 
 ---
 
+## 2026-06-17 — Session 5 : Nettoyage + Documentation complète
+
+### Missions
+
+**Mission 1 — Nettoyage prouvé et réversible** ✅
+- `NETTOYAGE.md` produit : 9 catégories, chaque décision justifiée
+- 4 commits séparés et réversibles :
+  - Commit 1 : artifacts de build (.gitignore + suppressions coverage/tsconfig.tsbuildinfo/playwright-result.txt)
+  - Commit 2 : code mort (src/lib/data/index.ts + InterventionFormRenderer.tsx)
+  - Commit 3 : worker orphelin (anomalyDetectionWorker.ts)
+  - Commit 4 : i18n non câblé (navigation.ts + setLocale.ts)
+- ~750 lignes supprimées, ~90 Ko récupérés
+- 0 export supprimé, 0 type supprimé, 0 dépendance npm supprimée
+
+**Mission 2 — Refonte documentation en 5 documents** ✅
+- 5 documents créés dans `docs/` :
+  - `01_OVERVIEW.md` : produit, secteurs, architecture, glossaire
+  - `02_FONCTIONNALITES.md` : fonctionnalités par rôle (admin, chauffeur, superadmin)
+  - `03_TECHNIQUE.md` : stack, modèle de données, sécurité, VRP, ML, résilience
+  - `04_API_INTEGRATIONS.md` : 119 routes, webhooks, intégrations, 35+ variables d'env
+  - `05_EXPLOITATION.md` : setup, tests, déploiement, HALT TD, dette technique, runbook
+- Tous vérifiés contre le code réel (aucune spec périmée)
+- `docs/ALGORITHM.md`, `docs/AI_ROADMAP.md`, `docs/INFRASTRUCTURE.md` conservés (contenu unique détaillé)
+- `README.md` remplacé par version minimale pointant vers les 5 docs
+- `AUDIT_PATHELIX.md` + `RAPPORT_FONDATIONS.md` supprimés (supersédés par RAPPORT_FINAL.md)
+
+### Couverture de branches critique (OBD webhook)
+- 77,77% → 95,23% via 4 nouveaux tests (rate limit 429, JSON invalide 400, timestamp explicite, prune counter 500)
+
+### Corrections TypeScript
+- TS2540 (process.env.NODE_ENV = readonly) → cast `Record<string, string | undefined>` dans 2 fichiers de test
+
+### Gates finaux
+- lint · typecheck · test (3250+ tests, 100% verts) · npm audit --critical → tous verts
+- Build : non exécuté (serveur dev requis — aucune modification de code source dans cette session)
+
+---
+
 ## 2026-06-15 — Session 1: Phase 0 Diagnostic Start
 
 ### Contexte
