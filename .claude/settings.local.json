@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Bash(npm run *)",
+      "PowerShell(cd C:\\\\projet_clem; $result = npx vitest run --reporter=dot 2>&1; $result | Select-Object -Last 20; Write-Host \"EXIT:$LASTEXITCODE\")",
+      "PowerShell(Get-Item *)",
+      "PowerShell(cd C:\\\\projet_clem; $r = npx vitest run src/app/api/__tests__/routes-health-vehicles-exutoires-missions.test.ts src/app/api/__tests__/missions-id.test.ts --reporter=verbose 2>&1 | Out-String; $r | Select-String -Pattern \"✓|×|Tests |failed|passed\" | Select-Object -Last 30; Write-Host \"EXIT:$LASTEXITCODE\")",
+      "PowerShell(cd C:\\\\projet_clem; $r = npx vitest run src/app/api/__tests__/routes-health-vehicles-exutoires-missions.test.ts src/app/api/__tests__/missions-id.test.ts --reporter=verbose 2>&1 | Out-String; $r | Select-String -Pattern \"Tests |failed|passed|Exit\" | Select-Object -Last 5; Write-Host \"EXIT:$LASTEXITCODE\")",
+      "PowerShell(Get-Content *)",
+      "PowerShell(cd C:\\\\projet_clem; $env:FORCE_COLOR = \"0\"; npx vitest run --reporter=verbose 2>&1 | Where-Object { $_ -match \"Test Files|Tests |failed|passed|×|✓\" } | Select-Object -Last 10)",
+      "Skill(claude-api)",
+      "PowerShell(Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c npm run dev > C:\\\\projet_clem\\\\.claude\\\\dev-server.log 2>&1\" -WorkingDirectory \"C:\\\\projet_clem\" -WindowStyle Hidden; Start-Sleep 10; Get-Content C:\\\\projet_clem\\\\.claude\\\\dev-server.log -Tail 25)",
+      "PowerShell(cd C:\\\\projet_clem; $out = npx tsc --noEmit 2>&1; $errors = $out | Select-String \"error TS\"; \"Total errors: $\\($errors.Count\\)\"; $out | Select-String \"error TS\" | Select-Object -First 30)",
+      "PowerShell(cd C:\\\\projet_clem; $out = npx tsc --noEmit 2>&1; $errors = $out | Select-String \"error TS\"; \"Total errors: $\\($errors.Count\\)\"; if \\($errors.Count -gt 0\\) { $errors | Select-Object -First 20 })",
+      "PowerShell(cd C:\\\\projet_clem; $out = npx tsc --noEmit 2>&1; $err = $out | Select-String \"error TS\"; \"Errors: $\\($err.Count\\)\")",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(cd C:\\\\projet_clem; npx eslint src --ext .ts,.tsx --format compact 2>&1 | Where-Object { $_ -match \"no-unused-vars\" -and $_ -notmatch \"test\\\\.|spec\\\\.|__tests__\" } | Select-Object -First 20)",
+      "PowerShell(Get-ChildItem \"C:\\\\projet_clem\" -File | Select-Object Name, @{N='Size';E={[math]::Round\\($_.Length/1KB,1\\)}} | Format-Table -AutoSize)",
+      "Bash(npx vitest *)",
+      "PowerShell(cd \"C:\\\\projet_clem\"; npx tsx e2e/global-setup.ts 2>&1; Write-Host \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd \"C:\\\\projet_clem\"; npx tsx e2e/_run-setup.mts 2>&1; Write-Host \"EXITCODE: $LASTEXITCODE\")",
+      "PowerShell(cd \"C:\\\\projet_clem\"; node e2e/_test-setup.cjs 2>&1; Write-Host \"EXITCODE: $LASTEXITCODE\")",
+      "Bash(powershell -Command \"while \\(-not \\(Select-String -Path 'C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\berreu2f3.output' -Pattern 'passed|failed' -Quiet\\)\\) { Start-Sleep 5 }; Get-Content 'C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\berreu2f3.output' | Select-Object -Last 30\")",
+      "Bash(powershell -Command ' *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\bkd0h3jy1.output\" -Wait)",
+      "Bash(Select-String --line-buffered -Pattern \"passed|failed|×|✓|Error|timeout|Timeout|FAILED|error|workers|Running\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\bkd0h3jy1.output' -Wait | Select-String -Pattern 'passed|failed|workers|Running|×|✓|Timeout|timeout'\")",
+      "PowerShell($size = \\(Get-Item \"C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\bpmzllrp2.output\"\\).Length; Write-Host \"File size: $size bytes\"; if \\($size -gt 0\\) { Get-Content \"C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\bpmzllrp2.output\" -Tail 100 })",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Get-ChildItem \"C:\\\\projet_clem\\\\test-results\" | Where-Object { $_.LastWriteTime -gt \\(Get-Date\\).AddHours\\(-1\\) -and $_.PSIsContainer } | Select-Object Name | Format-List)",
+      "PowerShell(Get-ChildItem \"C:\\\\projet_clem\\\\test-results\" -Directory | Where-Object { $_.LastWriteTime -gt \\(Get-Date \"2026-05-11 14:10\"\\) } | Sort-Object LastWriteTime | Select-Object Name, LastWriteTime | Format-Table -AutoSize)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-ChildItem \"C:\\\\projet_clem\\\\test-results\" -Directory | Where-Object { $_.LastWriteTime -gt \\(Get-Date \"2026-05-11 14:28\"\\) } | Sort-Object LastWriteTime -Descending | Select-Object -First 20 Name, LastWriteTime | Format-Table -AutoSize)",
+      "PowerShell(Test-NetConnection *)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/api/health\" -TimeoutSec 10; Write-Host \"Status: $\\($r.StatusCode\\)\"; Write-Host \"Content: $\\($r.Content\\)\" } catch { Write-Host \"Error: $_\" })",
+      "PowerShell(Get-NetTCPConnection *)",
+      "PowerShell(Get-WmiObject *)",
+      "PowerShell(Stop-Process *)",
+      "PowerShell(netstat *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\budu1k9na.output\" -Wait)",
+      "Bash(Select-String --line-buffered \"passed|failed|Error|timeout|FAILED|✓|✘|×|Running|passed|flaky|skipped|\\\\d+ test\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\budu1k9na.output' -Wait | Select-String 'passed|failed|Error|timeout|FAILED|Running|\\\\d+ test'\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\b92wywrxq.output' -Wait | Select-String 'passed|failed|memory|threshold|Error|✘|Running|\\\\d+ failed'\")",
+      "Bash(cd /d C:\\\\projet_clem)",
+      "Bash(npx playwright *)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\bxd3h0zhz.output\" | Measure-Object -Line\\).Lines)",
+      "PowerShell(Test-Path \"C:\\\\projet_clem\\\\e2e\\\\.auth\\\\state.json\"; if \\(Test-Path \"C:\\\\projet_clem\\\\e2e\\\\.auth\\\\state.json\"\\) { \\(Get-Item \"C:\\\\projet_clem\\\\e2e\\\\.auth\\\\state.json\"\\).Length })",
+      "PowerShell(Start-Process -NoNewWindow -FilePath \"cmd\" -ArgumentList \"/c node --max-old-space-size=4096 .\\\\node_modules\\\\next\\\\dist\\\\bin\\\\next dev > C:\\\\projet_clem\\\\.claude\\\\devserver.log 2>&1\" -WorkingDirectory \"C:\\\\projet_clem\")",
+      "PowerShell(Start-Sleep -Seconds 10; \\(Invoke-WebRequest -Uri \"http://localhost:3000/api/health\" -TimeoutSec 10 -ErrorAction SilentlyContinue\\).StatusCode)",
+      "PowerShell(Start-Sleep -Seconds 20; try { \\(Invoke-WebRequest -Uri \"http://localhost:3000\" -TimeoutSec 10\\).StatusCode } catch { $_.Exception.Response.StatusCode.value__ })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/login\" -TimeoutSec 15 -ErrorAction Stop; \"Status: $\\($r.StatusCode\\)\" } catch { \"Error: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\littl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projet-clem\\\\9f8096cf-f5f5-49cb-9f72-0969084f8c94\\\\tasks\\\\bvcb14op0.output\" | Measure-Object -Line\\).Lines)",
+      "PowerShell(Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c npm run dev > C:\\\\projet_clem\\\\.claude\\\\dev-server.log 2>&1\" -WorkingDirectory \"C:\\\\projet_clem\" -WindowStyle Hidden; Start-Sleep -Seconds 5; Write-Output \"started\")",
+      "PowerShell($max = 30; for \\($i=0; $i -lt $max; $i++\\) { try { $r = Invoke-WebRequest -Uri \"http://localhost:3000\" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop; Write-Output \"ready after $i s\"; break } catch { Start-Sleep -Seconds 2 } }; if \\($i -eq $max\\) { Write-Output \"timeout\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000\" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop; Write-Output \"Server UP: $\\($r.StatusCode\\)\" } catch { Write-Output \"Server DOWN: $_\" })",
+      "PowerShell(Tee-Object *)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "code-intelligence"
+  ],
+  "disabledMcpjsonServers": [
+    "postgres",
+    "redis",
+    "filesystem",
+    "next-devtools",
+    "vitest"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx --yes claude-intelligence-session-start --verbose",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx --yes claude-intelligence-session-end --verbose",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx --yes claude-intelligence-analyze-file --verbose",
+            "timeout": 30000
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {}
+}

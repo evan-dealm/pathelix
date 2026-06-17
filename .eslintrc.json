@@ -1,0 +1,30 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "react/no-unescaped-entities": "off",
+    "prefer-const": "warn",
+    "no-var": "warn",
+    "eqeqeq": ["warn", "always"],
+    "curly": ["warn", "multi-line"],
+    "no-throw-literal": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "no-console": "off",
+        "no-unused-vars": "off"
+      }
+    },
+    {
+      "files": ["src/generated/**/*"],
+      "rules": {
+        "no-unused-vars": "off",
+        "no-console": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["src/generated/**"]
+}

@@ -1,0 +1,185 @@
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import type * as ExutoiresModule from '../data/exutoires'
+
+const mockPrisma = vi.hoisted(() => ({
+  exutoire: {
+    findMany:  vi.fn(),
+    findFirst: vi.fn(),
+    create:    vi.fn(),
+    update:    vi.fn(),
+    delete:    vi.fn(),
+  },
+  siteProduct: { updateMany: vi.fn() },
+  mission:     { updateMany: vi.fn() },
+  $transaction: vi.fn(),
+}))
+
+vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/prismaMappers', () => ({
+  prismaRowToExutoire: vi.fn((row: Record<string, unknown>) => ({
+    id: row.id, name: row.name ?? 'Centre',
+    lat: row.lat ?? 45.9, lng: row.lng ?? 6.1,
+    openingHoursOpen: 420, openingHoursClose: 1080,
+    closedDays: [], acceptedWasteTypes: [],
+    serviceTimeMin: 20, archived: false,
+  })),
+}))
+vi.mock('@/app/api/exutoires/_store', () => ({
+  getExutoireStore: vi.fn(() => []),
+  findExutoire:     vi.fn(() => null),
+  addExutoire:      vi.fn(),
+  updateExutoire:   vi.fn(() => null),
+  deleteExutoire:   vi.fn(() => false),
+}))
+
+let getAllExutoires: typeof ExutoiresModule.getAllExutoires
+let getExutoire: typeof ExutoiresModule.getExutoire
+let createExutoire: typeof ExutoiresModule.createExutoire
+let updateExutoire: typeof ExutoiresModule.updateExutoire
+let deleteExutoire: (t: string, id: string) => Promise<boolean>
+
+beforeAll(async () => {
+  vi.stubEnv('USE_MOCK_DATA', 'false')
+  vi.resetModules()
+  const mod = await import('../data/exutoires')
+  getAllExutoires = mod.getAllExutoires
+  getExutoire    = mod.getExutoire
+  createExutoire = mod.createExutoire
+  updateExutoire = mod.updateExutoire
+  deleteExutoire = mod.deleteExutoire
+})
+
+afterAll(() => {
+  vi.unstubAllEnvs()
+  vi.resetModules()
+})
+
+describe('getAllExutoires (DB path)', () => {
+  it('queries prisma with tenantId', async () => {
+    mockPrisma.exutoire.findMany.mockResolvedValueOnce([])
+    await getAllExutoires('t-1')
+    expect(mockPrisma.exutoire.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: 't-1' }) }),
+    )
+  })
+
+  it('orders by name ascending', async () => {
+    mockPrisma.exutoire.findMany.mockResolvedValueOnce([])
+    await getAllExutoires('t-1')
+    expect(mockPrisma.exutoire.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { name: 'asc' } }),
+    )
+  })
+
+  it('maps rows through prismaRowToExutoire', async () => {
+    mockPrisma.exutoire.findMany.mockResolvedValueOnce([{ id: 'e-1', name: 'Centre' }])
+    const result = await getAllExutoires('t-1')
+    expect(result[0].id).toBe('e-1')
+  })
+
+  it('returns empty array when no exutoires', async () => {
+    mockPrisma.exutoire.findMany.mockResolvedValueOnce([])
+    expect(await getAllExutoires('t-1')).toHaveLength(0)
+  })
+})
+
+describe('getExutoire (DB path)', () => {
+  it('queries with id and tenantId', async () => {
+    mockPrisma.exutoire.findFirst.mockResolvedValueOnce(null)
+    await getExutoire('t-1', 'e-1')
+    expect(mockPrisma.exutoire.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: 'e-1', tenantId: 't-1' }) }),
+    )
+  })
+
+  it('returns null when not found', async () => {
+    mockPrisma.exutoire.findFirst.mockResolvedValueOnce(null)
+    expect(await getExutoire('t-1', 'missing')).toBeNull()
+  })
+
+  it('returns mapped exutoire when found', async () => {
+    mockPrisma.exutoire.findFirst.mockResolvedValueOnce({ id: 'e-1', name: 'Centre' })
+    const result = await getExutoire('t-1', 'e-1')
+    expect(result!.id).toBe('e-1')
+  })
+})
+
+describe('createExutoire (DB path)', () => {
+  it('includes tenantId in create call', async () => {
+    mockPrisma.exutoire.create.mockResolvedValueOnce({ id: 'e-new', name: 'Nouveau' })
+    await createExutoire('t-1', { name: 'Nouveau', address: 'Rue de test', lat: 45.9, lng: 6.1, openingHoursOpen: 480, openingHoursClose: 1080, closedDays: [], acceptedWasteTypes: [], serviceTimeMin: 20 })
+    expect(mockPrisma.exutoire.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ tenantId: 't-1' }) }),
+    )
+  })
+
+  it('returns mapped exutoire', async () => {
+    mockPrisma.exutoire.create.mockResolvedValueOnce({ id: 'e-new', name: 'Nouveau' })
+    const result = await createExutoire('t-1', { name: 'Nouveau', address: 'Rue de test', lat: 45.9, lng: 6.1, openingHoursOpen: 480, openingHoursClose: 1080, closedDays: [], acceptedWasteTypes: [], serviceTimeMin: 20 })
+    expect(result.id).toBe('e-new')
+  })
+})
+
+describe('updateExutoire (DB path)', () => {
+  it('returns null on P2025', async () => {
+    const err = Object.assign(new Error('Not found'), { code: 'P2025' })
+    mockPrisma.exutoire.update.mockRejectedValueOnce(err)
+    expect(await updateExutoire('t-1', 'missing', { name: 'X' })).toBeNull()
+  })
+
+  it('rethrows non-P2025 errors', async () => {
+    mockPrisma.exutoire.update.mockRejectedValueOnce(new Error('DB error'))
+    await expect(updateExutoire('t-1', 'e-1', {})).rejects.toThrow('DB error')
+  })
+
+  it('returns updated exutoire on success', async () => {
+    mockPrisma.exutoire.update.mockResolvedValueOnce({ id: 'e-1', name: 'Updated' })
+    const result = await updateExutoire('t-1', 'e-1', { name: 'Updated' })
+    expect(result!.id).toBe('e-1')
+  })
+})
+
+describe('deleteExutoire (DB path)', () => {
+  it('returns false when exutoire not found in transaction', async () => {
+    mockPrisma.$transaction.mockImplementationOnce(
+      async (fn) => fn({
+        exutoire:    { findFirst: vi.fn().mockResolvedValueOnce(null), delete: vi.fn() },
+        siteProduct: { updateMany: vi.fn() },
+        mission:     { updateMany: vi.fn() },
+      }),
+    )
+    expect(await deleteExutoire('t-1', 'missing')).toBe(false)
+  })
+
+  it('returns true, nullifies references, and deletes when found', async () => {
+    const txDelete   = vi.fn().mockResolvedValueOnce({})
+    const txSpUpdate = vi.fn().mockResolvedValueOnce({ count: 0 })
+    const txMsUpdate = vi.fn().mockResolvedValueOnce({ count: 0 })
+    mockPrisma.$transaction.mockImplementationOnce(
+      async (fn) => fn({
+        exutoire:    { findFirst: vi.fn().mockResolvedValueOnce({ id: 'e-1' }), delete: txDelete },
+        siteProduct: { updateMany: txSpUpdate },
+        mission:     { updateMany: txMsUpdate },
+      }),
+    )
+    expect(await deleteExutoire('t-1', 'e-1')).toBe(true)
+    expect(txDelete).toHaveBeenCalledWith({ where: { id: 'e-1' } })
+    expect(txSpUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { defaultExutoireId: null } }),
+    )
+    expect(txMsUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { linkedExutoireId: null } }),
+    )
+  })
+
+  it('returns false on P2025 transaction error', async () => {
+    const err = Object.assign(new Error('Not found'), { code: 'P2025' })
+    mockPrisma.$transaction.mockRejectedValueOnce(err)
+    expect(await deleteExutoire('t-1', 'e-1')).toBe(false)
+  })
+
+  it('rethrows non-P2025 transaction errors', async () => {
+    mockPrisma.$transaction.mockRejectedValueOnce(new Error('TX failed'))
+    await expect(deleteExutoire('t-1', 'e-1')).rejects.toThrow('TX failed')
+  })
+})

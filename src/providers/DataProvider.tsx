@@ -1,0 +1,159 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
+import Image from 'next/image'
+import { usePlanningStore } from '@/stores/planningStore'
+import { TradeProvider } from '@/providers/TradeProvider'
+import type { Driver, Mission } from '@/lib/types'
+import { cachedFetch } from '@/lib/clientCache'
+import type { SettingsApiResponse } from '@/lib/types'
+
+const PUBLIC_PATH_PREFIXES = ['/login', '/driver']
+
+async function fetchPage<T>(url: string): Promise<T[]> {
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) throw new Error(`Erreur ${res.status}`)
+  const json = await res.json().catch(() => ({}))
+  return Array.isArray(json) ? json : (json.data ?? [])
+}
+
+function todayStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function DataProvider({ children }: { children: React.ReactNode }) {
+  const setInitialData = usePlanningStore(s => s.setInitialData)
+  const mergePlansFromDB = usePlanningStore(s => s.mergePlansFromDB)
+  const pathname = usePathname()
+  const isPublic = PUBLIC_PATH_PREFIXES.some(p => pathname?.startsWith(p))
+
+  const [ready, setReady] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [step, setStep] = useState(0)
+  const [trade, setTrade] = useState<string | null>(null)
+  const startedRef = useRef(false)
+
+  useEffect(() => {
+    if (isPublic || startedRef.current) return
+    startedRef.current = true
+
+    const today = todayStr()
+
+    const cached = usePlanningStore.getState()
+    if (cached.drivers.length > 0) {
+      setReady(true)
+    }
+
+    ;(async () => {
+      try {
+
+        setStep(1)
+        const [drivers, missions, settingsRes, plansJson] = await Promise.all([
+          fetchPage<Driver>(`/api/drivers?limit=2000`),
+          fetchPage<Mission>(`/api/missions?date=${today}&limit=5000`),
+          cachedFetch<SettingsApiResponse>('/api/settings', 120_000).catch(() => null as SettingsApiResponse | null),
+          fetch(`/api/plans?date=${today}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        ])
+
+        if (settingsRes?.trade) setTrade(settingsRes.trade)
+
+        setStep(2)
+        setInitialData(drivers, missions)
+
+        if (plansJson) {
+          const plans = Array.isArray(plansJson) ? plansJson : (plansJson?.data ?? [])
+          if (plans.length > 0) mergePlansFromDB(plans)
+        }
+
+        setReady(true)
+
+        fetch(`/api/missions?date=${today}&page=2&limit=5000`, { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null)
+          .then(json => {
+            const data = json?.data ?? []
+            if (data.length > 0) usePlanningStore.getState().addMissionsBulk(data)
+          })
+          .catch(() => {})
+
+      } catch (err) {
+
+        if (!usePlanningStore.getState().drivers.length) {
+          setError(err instanceof Error ? err.message : 'Impossible de charger les données')
+        }
+      }
+    })()
+  }, [isPublic, setInitialData, mergePlansFromDB])
+
+  useEffect(() => {
+    if (isPublic || !ready) return
+    const interval = setInterval(async () => {
+      if (document.hidden) return
+      try {
+        const today = todayStr()
+        const [drivers, missions] = await Promise.all([
+          fetchPage<Driver>('/api/drivers?limit=2000'),
+          fetchPage<Mission>(`/api/missions?date=${today}&limit=5000`),
+        ])
+        setInitialData(drivers, missions)
+      } catch {  }
+    }, 120_000)
+    return () => clearInterval(interval)
+  }, [isPublic, ready, setInitialData])
+
+  if (isPublic) return <TradeProvider tradeId={trade}>{children}</TradeProvider>
+
+  if (error) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-50">
+        <div className="flex flex-col items-center gap-5">
+          <div className="w-[72px] h-[72px] rounded-[18px] overflow-hidden ring-1 ring-black/10 shadow-elevated">
+            <Image src="/logo%20seul.svg" alt="PATHÉLIX" width={72} height={72} className="w-full h-full object-cover" priority />
+          </div>
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="text-surface-900 text-base font-bold tracking-tight font-display">PATHÉLIX</span>
+            <span className="text-danger-500 text-[13px]">Erreur de connexion</span>
+          </div>
+          <p className="text-surface-400 text-[12px] text-center max-w-[260px] leading-relaxed">{error}</p>
+          <button type="button" onClick={() => window.location.reload()}
+            className="h-9 px-5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-[13px] font-semibold transition-colors shadow-soft">
+            Réessayer
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!ready) {
+    const progressClass = step === 0 ? 'w-[12%]' : step === 1 ? 'w-[60%]' : 'w-[90%]'
+    const stepLabel     = step === 0 ? 'Initialisation…' : step === 1 ? 'Chargement des données…' : "Préparation de l'espace de travail…"
+    return (
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-50">
+        <div className="flex flex-col items-center gap-7">
+
+          {}
+          <div className="w-[72px] h-[72px] rounded-[18px] overflow-hidden ring-1 ring-black/10 shadow-elevated">
+            <Image src="/logo%20seul.svg" alt="PATHÉLIX" width={72} height={72} className="w-full h-full object-cover" priority />
+          </div>
+
+          {}
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-surface-900 text-[18px] font-bold tracking-[-0.025em] leading-none font-display">
+              PATHÉLIX
+            </span>
+            <span className="text-surface-400 text-[13px]">{stepLabel}</span>
+          </div>
+
+          {}
+          <div className="w-44 h-[2px] bg-surface-200 rounded-full overflow-hidden">
+            <div className={`h-full bg-brand-500 rounded-full transition-[width] duration-700 ease-out ${progressClass}`} />
+          </div>
+
+        </div>
+      </div>
+    )
+  }
+
+  return <TradeProvider tradeId={trade}>{children}</TradeProvider>
+}

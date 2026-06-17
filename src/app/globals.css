@@ -1,0 +1,329 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base ──────────────────────────────────────────────────────────────────── */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  height: 100%;
+  overscroll-behavior: none;
+  background-color: #F7F7F4;
+}
+
+
+button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ─── Scrollbar (subtle, light) ─────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ─── Animations ────────────────────────────────────────────────────────────── */
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25%, 75% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+}
+.animate-shake { animation: shake 0.35s ease-in-out; }
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 0.25s ease-out; }
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in { animation: slide-in-right 0.2s ease-out; }
+
+/* [#18] Transition animations for missions and route changes */
+@keyframes mission-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(76, 125, 255, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(76, 125, 255, 0); }
+}
+.animate-mission-pulse { animation: mission-pulse 1.5s ease-in-out; }
+
+@keyframes mission-assign {
+  from { opacity: 0; transform: scale(0.85) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-mission-assign { animation: mission-assign 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+@keyframes route-highlight {
+  0%   { background-color: rgba(76, 125, 255, 0.15); }
+  100% { background-color: transparent; }
+}
+.animate-route-highlight { animation: route-highlight 1.2s ease-out; }
+
+@keyframes status-change {
+  from { transform: scale(1.15); }
+  to   { transform: scale(1); }
+}
+.animate-status-change { animation: status-change 0.2s ease-out; }
+
+@keyframes optimize-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.animate-optimize-spin { animation: optimize-spin 2s linear infinite; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slide-up 0.35s ease-out; }
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-count-up { animation: count-up 0.4s ease-out; }
+
+/* ─── Skeleton loading ─────────────────────────────────────────────────────── */
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--skeleton-from, #e5e7eb) 25%, var(--skeleton-via, #f3f4f6) 50%, var(--skeleton-from, #e5e7eb) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+.dark .skeleton {
+  --skeleton-from: #27272a;
+  --skeleton-via: #3f3f46;
+}
+
+/* ─── Sidebar ───────────────────────────────────────────────────────────────── */
+
+/* [v4] Fixed sidebar — does NOT push content, just overlays on hover.
+   No layout reflow at all — the main content area never moves. */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 64px;
+  transition: width 0.15s ease-out;
+  will-change: width;
+  contain: layout style;  /* CSS containment — isolates reflow */
+}
+.sidebar:hover,
+.sidebar.expanded {
+  width: 240px;
+}
+.sidebar .nav-label {
+  opacity: 0;
+  white-space: nowrap;
+  transition: opacity 0.12s ease;
+}
+.sidebar:hover .nav-label,
+.sidebar.expanded .nav-label {
+  opacity: 1;
+}
+
+/* Mobile: hide sidebar, show bottom nav */
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+  .mobile-bottom-nav {
+    display: flex;
+  }
+}
+@media (min-width: 769px) {
+  .mobile-bottom-nav {
+    display: none;
+  }
+}
+
+/* ─── Skip link ─────────────────────────────────────────────────────────────── */
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #4C7DFF;
+  color: white;
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 0.2s;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* ─── Topbar — always white in light, dark slate in dark ────────────────────── */
+.topbar-bg { background-color: #ffffff; }
+html.dark .topbar-bg { background-color: #1e293b; }
+
+/* ─── Dark mode — palette complète ──────────────────────────────────────────── */
+/* Palette : gray-900 → gray-50 inversé (Tailwind gray scale) */
+
+html.dark body { background-color: #0f172a; color: #e2e8f0; }
+
+/* Backgrounds — surface-50 plus clair que body pour contraste planning */
+html.dark .bg-white { background-color: #1e293b; }
+html.dark .bg-surface-50 { background-color: #172033; }
+html.dark .bg-surface-100 { background-color: #1e293b; }
+html.dark .bg-surface-200 { background-color: #334155; }
+
+/* Timeline ruler et planning — fond légèrement plus clair pour lisibilité */
+html.dark .bg-surface-50\/60 { background-color: rgba(23, 32, 51, 0.8); }
+html.dark .bg-white\/90 { background-color: rgba(30, 41, 59, 0.95); }
+
+/* Hover backgrounds */
+html.dark .hover\:bg-surface-50:hover { background-color: #1e293b !important; }
+html.dark .hover\:bg-surface-100:hover { background-color: #334155 !important; }
+
+/* Borders */
+html.dark .border-surface-200 { border-color: #334155; }
+html.dark .border-surface-100 { border-color: #1e293b; }
+html.dark .border-surface-300 { border-color: #475569; }
+html.dark .divide-surface-200\/60 > :not(:first-child) { border-color: rgb(51 65 85 / 0.6); }
+
+/* Text */
+html.dark .text-surface-900 { color: #f1f5f9; }
+html.dark .text-surface-800 { color: #e2e8f0; }
+html.dark .text-surface-700 { color: #cbd5e1; }
+html.dark .text-surface-600 { color: #94a3b8; }
+html.dark .text-surface-500 { color: #64748b; }
+html.dark .text-surface-400 { color: #64748b; }
+html.dark .text-surface-300 { color: #475569; }
+
+/* Inputs & forms */
+html.dark input, html.dark textarea, html.dark select {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+html.dark input::placeholder, html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+html.dark input[type="checkbox"] { background: #1e293b; border-color: #475569; }
+
+/* Tables */
+html.dark th { color: #94a3b8; }
+html.dark tr:hover { background-color: #1e293b; }
+
+/* Timeline ruler lines (planning hours) */
+html.dark .border-surface-200\/60 { border-color: rgba(51, 65, 85, 0.6); }
+html.dark .bg-surface-200\/60 { background-color: rgba(51, 65, 85, 0.6); }
+
+/* Cards & shadows */
+html.dark .shadow-sidebar { box-shadow: 2px 0 16px -2px rgb(0 0 0 / 0.5); }
+html.dark .shadow-card { box-shadow: 0 1px 4px 0 rgb(0 0 0 / 0.3); }
+html.dark .shadow-elevated { box-shadow: 0 4px 16px -2px rgb(0 0 0 / 0.4); }
+
+/* Scrollbar */
+html.dark ::-webkit-scrollbar-track { background: #0f172a; }
+html.dark ::-webkit-scrollbar-thumb { background: #334155; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Modals & overlays */
+html.dark .bg-surface-900\/30 { background-color: rgb(15 23 42 / 0.6); }
+
+/* Brand colors in dark mode — slightly lighter for contrast */
+html.dark .text-brand-500 { color: #6692FF; }
+html.dark .bg-brand-500 { background-color: #6692FF; }
+html.dark .hover\:bg-brand-600:hover { background-color: #4C7DFF; }
+
+/* Badges & pills */
+html.dark .bg-emerald-50 { background-color: rgb(16 185 129 / 0.15); }
+html.dark .bg-amber-50 { background-color: rgb(245 158 11 / 0.15); }
+html.dark .bg-red-50 { background-color: rgb(239 68 68 / 0.15); }
+html.dark .bg-blue-50 { background-color: rgb(59 130 246 / 0.15); }
+
+/* ─── Checkboxes ────────────────────────────────────────────────────────────── */
+
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+input[type="checkbox"]:hover {
+  border-color: #9ca3af;
+}
+input[type="checkbox"]:checked {
+  background: #4C7DFF;
+  border-color: #4C7DFF;
+}
+input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid #4C7DFF;
+  outline-offset: 2px;
+}
+
+/* ─── Focus visible ─────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid #4C7DFF;
+  outline-offset: 2px;
+}
+
+/* ─── Responsive helpers ────────────────────────────────────────────────────── */
+
+.table-responsive {
+  @apply overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0;
+}
+
+.mobile-card {
+  @apply bg-white rounded-xl p-4 space-y-2 border border-surface-200 shadow-soft;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Login page ────────────────────────────────────────────────────────────── */
+
+.login-glow {
+  background: radial-gradient(ellipse 60% 40% at 20% 0%, rgba(76, 125, 255, 0.07) 0%, transparent 70%);
+}
+
+/* ─── Reduced motion ────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .sidebar { transition: none; }
+}

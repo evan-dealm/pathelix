@@ -1,0 +1,93 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://pathelix:pathelix_local_secret@localhost:5432/pathelix_fleet"
+      ],
+      "env": {}
+    },
+    "redis": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@modelcontextprotocol/server-redis",
+        "redis://localhost:6379"
+      ],
+      "env": {}
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\projet_clem"
+      ],
+      "env": {}
+    },
+    "next-devtools": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "next-devtools-mcp@latest"
+      ],
+      "env": {}
+    },
+    "leaflet": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "node",
+        "C:\\leaflet-mcp-server\\build\\index.js"
+      ],
+      "env": {}
+    },
+    "code-intelligence": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@juanpprieto/claude-lsp"
+      ],
+      "env": {}
+    },
+    "sentry": {
+      "type": "http",
+      "url": "https://mcp.sentry.dev/mcp"
+    },
+    "memory": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {}
+    },
+    "vitest": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@madrus/vitest-mcp-server@latest"
+      ],
+      "env": {
+        "VITEST_PROJECT_DIR": "C:\\projet_clem"
+      }
+    }
+  }
+}

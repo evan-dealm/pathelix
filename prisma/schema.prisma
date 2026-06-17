@@ -1,0 +1,889 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id                     String                 @id @default(cuid())
+  name                   String
+  slug                   String                 @unique
+  plan                   TenantPlan             @default(FREE)
+  trade                  String?
+  // ─── Localisation & contact ─────────────────────────────────────────────
+  timezone               String                 @default("Europe/Paris")
+  locale                 String                 @default("fr-FR")
+  contactEmail           String                 @default("")
+  // ─── Limites du plan ────────────────────────────────────────────────────
+  maxDrivers             Int?                   // null = illimité
+  maxMissions            Int?                   // null = illimité
+  // ─── Activité ───────────────────────────────────────────────────────────
+  lastActiveAt           DateTime?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  suspendedAt            DateTime?
+  suspendedBy            String?
+  apiKeys                ApiKey[]
+  auditLogs              AuditLog[]
+  clients                Client[]
+  drivers                Driver[]
+  driverPositions        DriverPosition[]
+  driverUnavailabilities DriverUnavailability[]
+  exutoires              Exutoire[]
+  fuelRecords            FuelRecord[]
+  holidays               Holiday[]
+  integrations           Integration[]
+  interventionMetrics    InterventionMetric[]
+  maintenanceRecords     MaintenanceRecord[]
+  missionComments        MissionComment[]
+  mlProfiles             TenantMLProfile[]
+  missions               Mission[]
+  plans                  Plan[]
+  sites                  Site[]
+  siteProducts           SiteProduct[]
+  settings               TenantSettings?
+  history                TourHistory[]
+  users                  User[]
+  vehicles               Vehicle[]
+  weeklyPlans            WeeklyPlan[]
+  missionTemplates       MissionTemplate[]
+  deliveryProofs         DeliveryProof[]
+  pushSubscriptions      PushSubscription[]
+  aiJobs                 AiJob[]
+  trackdechetsAccount    TrackdechetsAccount?
+  bsds                   Bsd[]
+
+  @@index([slug])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  role         UserRole @default(DRIVER)
+  firstName    String   @default("")
+  lastName     String   @default("")
+  driverRef    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+}
+
+model Driver {
+  id               String    @id @default(cuid())
+  tenantId         String
+  firstName        String
+  lastName         String
+  sector           String
+  depotName        String
+  depotLat         Float
+  depotLng         Float
+  maxBinSizeM3     Float?
+  vehicleCapacity  Int?
+  archived         Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  notes            String    @default("")
+  phone            String    @default("")
+  skills           Json      @default("[]")
+  weeklyHoursMax   Float     @default(48)
+  // ─── Informations RH ────────────────────────────────────────────────────
+  email            String    @default("")
+  employeeNumber   String    @default("")
+  hiredAt          DateTime?
+  birthDate        DateTime?
+  licenseExpiry    DateTime?
+  licenseCategories Json     @default("[]")   // ['B','C','CE',…]
+  emergencyContact String    @default("")     // "Prénom Nom: 06 12 34 56 78"
+  // ─── [4.C] Capacité multi-dimensionnelle ────────────────────────────────
+  capacityDimensions Json     @default("{}")  // {poids?: number, volume?: number, nbBennes?: number}
+  // ─── Affichage ──────────────────────────────────────────────────────────
+  color            String    @default("")     // couleur hex pour la carte
+  startingExutoireId String?
+  startingExutoire   Exutoire? @relation("DriverStartingExutoire", fields: [startingExutoireId], references: [id], onDelete: SetNull)
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plans            Plan[]
+  vehicles         Vehicle[]
+
+  @@index([tenantId])
+  @@index([tenantId, archived])
+  @@index([tenantId, sector])
+}
+
+model Client {
+  id              String        @id @default(cuid())
+  tenantId        String
+  name            String
+  contact         String        @default("")
+  phone           String        @default("")
+  email           String        @default("")
+  vip             Boolean       @default(false)
+  requiresDeposit Boolean       @default(false)
+  ecoResponsable  Boolean       @default(false)
+  requiresBsd     Boolean       @default(false)
+  voucherRequired Boolean       @default(false)
+  notes           String        @default("")
+  archived        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  // ─── Informations commerciales ──────────────────────────────────────────
+  siret           String        @default("")
+  billingAddress  String        @default("")
+  externalRef     String        @default("")   // référence ERP / logiciel tiers
+  sector          String        @default("")   // zone géographique du client
+  contractStart   DateTime?
+  contractEnd     DateTime?
+  paymentTermsDays Int          @default(30)
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clientSites     ClientSite[]
+  missions        Mission[]
+  siteProducts    SiteProduct[]
+
+  @@index([tenantId])
+  @@index([tenantId, archived])
+  @@index([tenantId, name])
+}
+
+model Site {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  name               String
+  address            String        @default("")
+  latitude           Float         @default(0)
+  longitude          Float         @default(0)
+  accessNotes        String        @default("")
+  defaultManeuverMin Int           @default(15)
+  sector             String        @default("")
+  archived           Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  // ─── Localisation détaillée ─────────────────────────────────────────────
+  city               String        @default("")
+  zipCode            String        @default("")
+  country            String        @default("FR")
+  siteType           String        @default("")    // 'chantier'|'entrepot'|'usine'|'bureau'|'autre'
+  // ─── Horaires d'accès ───────────────────────────────────────────────────
+  openingHoursOpen   Int?                          // minutes depuis minuit
+  openingHoursClose  Int?
+  clientSites        ClientSite[]
+  missions           Mission[]
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  siteProducts       SiteProduct[]
+
+  @@index([tenantId])
+  @@index([tenantId, archived])
+  @@index([tenantId, name])
+}
+
+model ClientSite {
+  id       String @id @default(cuid())
+  clientId String
+  siteId   String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  site     Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, siteId])
+  @@index([clientId])
+  @@index([siteId])
+}
+
+model SiteProduct {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  siteId             String
+  clientId           String
+  wasteType          String
+  binSizeLabel       String    @default("")
+  binSizeM3          Float?
+  equipmentType      String    @default("")
+  defaultDurationMin Int       @default(30)
+  defaultExutoireId  String?
+  notes              String    @default("")
+  archived           Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  missions           Mission[]
+  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  defaultExutoire    Exutoire? @relation(fields: [defaultExutoireId], references: [id], onDelete: SetNull)
+  site               Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([siteId, clientId])
+  @@index([tenantId, archived])
+}
+
+model Mission {
+  id                   String          @id @default(cuid())
+  tenantId             String
+  type                 MissionType
+  date                 String
+  address              String
+  latitude             Float
+  longitude            Float
+  estimatedDurationMin Int
+  maneuverTimeMin      Int             @default(0)
+  clientName           String?
+  outletName           String?
+  wasteTypeLabel       String?
+  binSize              String?
+  binSizeM3            Float?
+  accessNotes          String?
+  priority             Int?
+  timeWindowOpenMin    Int?
+  timeWindowCloseMin   Int?
+  linkedExutoireId     String?
+  archived             Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  attachments          Json            @default("[]")
+  dependsOnId          String?
+  notes                String          @default("")
+  tags                 Json            @default("[]")
+  clientId             String?
+  equipmentType        String?
+  productId            String?
+  siteId               String?
+  voucherDelivered     Boolean         @default(false)
+  requiredSkills       Json            @default("[]")   // Compétences requises : ["permis_C","HAZMAT","grue"]
+  needsGeocode         Boolean         @default(false)  // true = coords invalides au moment de l'import
+  // ─── Résultats terrain (remplis par le chauffeur) ────────────────────────
+  actualDurationMin    Float?          // durée réelle passée sur site
+  actualDistanceKm     Float?          // distance réelle (GPS)
+  completedAt          DateTime?       // horodatage de fin d'intervention
+  cancelledAt          DateTime?
+  cancelReason         String?
+  driverComment        String          @default("")
+  signatureUrl         String?         // signature client (URL image)
+  externalRef          String?         // référence ERP / bon de travail
+  // ─── [2.B] Tracking public ──────────────────────────────────────────────
+  trackingToken        String?         @unique  // JWT pour la page publique /track/[token]
+  // ─── [2.E] Incidents ────────────────────────────────────────────────────
+  incidentAt           DateTime?       // signalement incident
+  incidentType         String?         // 'accident'|'panne'|'refus'|'acces'|'autre'
+  incidentNotes        String          @default("")
+  dependsOn            Mission?        @relation("MissionDependency", fields: [dependsOnId], references: [id], onDelete: SetNull)
+  dependents           Mission[]       @relation("MissionDependency")
+  client               Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  linkedExutoire       Exutoire?       @relation(fields: [linkedExutoireId], references: [id], onDelete: SetNull)
+  product              SiteProduct?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  site                 Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  comments             MissionComment[]
+  proof                DeliveryProof?
+  bsds                 Bsd[]
+
+  @@index([tenantId])
+  @@index([tenantId, date])
+  @@index([tenantId, archived])
+  @@index([tenantId, date, archived])
+  @@index([tenantId, priority])
+  @@index([linkedExutoireId])
+  @@index([clientId])
+  @@index([siteId])
+  @@index([tenantId, date, archived, priority])
+  @@index([dependsOnId])
+}
+
+model MissionComment {
+  id        String   @id @default(cuid())
+  tenantId  String
+  missionId String
+  userId    String
+  role      String   // 'admin' | 'dispatcher' | 'driver'
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  mission   Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, missionId])
+  @@index([userId])
+}
+
+model Exutoire {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  name               String
+  address            String
+  lat                Float
+  lng                Float
+  openingHoursOpen   Int
+  openingHoursClose  Int
+  closedDays         Json          @default("[]")
+  acceptedWasteTypes Json          @default("[]")
+  serviceTimeMin     Int
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  missions           Mission[]
+  siteProducts       SiteProduct[]
+  driversStartingHere Driver[] @relation("DriverStartingExutoire")
+
+  @@index([tenantId])
+}
+
+model Plan {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  driverId             String
+  date                 String
+  missions             Json
+  statuses             Json      @default("{}")
+  startTime            String    @default("07:00")
+  speedKmh             Float     @default(50)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  locked               Boolean   @default(false)
+  // ─── Métriques de tournée ────────────────────────────────────────────────
+  estimatedDistanceKm  Float?    // distance totale estimée (km)
+  estimatedDurationMin Int?      // durée totale estimée (minutes)
+  actualDistanceKm     Float?    // distance réelle (GPS)
+  actualDurationMin    Int?      // durée réelle mesurée
+  departedAt           DateTime? // horodatage de départ du dépôt
+  returnedAt           DateTime? // horodatage de retour au dépôt
+  optimizationScore    Float?    // score qualité optimisation (0–100)
+  driver               Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, driverId, date])
+  @@index([tenantId, date])
+  @@index([driverId])
+}
+
+model TourHistory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  date      String
+  label     String   @default("")
+  snapshot  String
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+}
+
+model Vehicle {
+  id               String              @id @default(cuid())
+  tenantId         String
+  licensePlate     String
+  type             String
+  brand            String              @default("")
+  model            String              @default("")
+  capacityM3       Float?
+  maxBins          Int?
+  mileageKm        Int                 @default(0)
+  nextInspection   String?
+  status           String              @default("active")
+  notes            String              @default("")
+  assignedDriverId String?
+  archived         Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  // ─── Gabarit physique (pour routage Valhalla multi-profil) ───────────────
+  gabaritProfile   String              @default("pl_26t")  // Clé du profil gabarit prédéfini
+  weightTon        Float               @default(26)    // Poids total autorisé en charge (tonnes)
+  heightM          Float               @default(4.0)   // Hauteur totale (mètres)
+  widthM           Float               @default(2.55)  // Largeur totale (mètres)
+  lengthM          Float               @default(12.0)  // Longueur totale (mètres)
+  axleCount        Int                 @default(3)     // Nombre d'essieux
+  hazmat           Boolean             @default(false) // Transport matières dangereuses
+  // ─── Informations techniques ─────────────────────────────────────────────
+  fuelType         String              @default("")    // 'diesel'|'essence'|'electrique'|'hybride'|'gpl'
+  year             Int?                               // année de fabrication
+  vin              String?                            // Vehicle Identification Number
+  color            String              @default("")
+  gpsDeviceId      String?                            // ID du traceur GPS
+  // ─── Assurance & entretien ──────────────────────────────────────────────
+  insuranceExpiry  String?                            // YYYY-MM-DD
+  insuranceRef     String              @default("")
+  lastServiceDate  String?                            // YYYY-MM-DD
+  lastServiceKm    Int?                               // kilométrage au dernier entretien
+  // ─── Péage / télépaiement ───────────────────────────────────────────────
+  tollClass        Int                 @default(3)     // Classe péage (2, 3, 4)
+  telepayBadge     String              @default("")    // Badge télépéage (tis_pl, axxes, eurotoll...)
+  telepayDiscount  Float               @default(0)     // Réduction badge (%)
+  assignedDriver   Driver?             @relation(fields: [assignedDriverId], references: [id], onDelete: SetNull)
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fuelRecords      FuelRecord[]
+  maintenanceRecords MaintenanceRecord[]
+
+  @@unique([tenantId, licensePlate])
+  @@index([tenantId])
+  @@index([tenantId, archived])
+}
+
+model MaintenanceRecord {
+  id          String   @id @default(cuid())
+  tenantId    String
+  vehicleId   String
+  type        String   // 'inspection'|'oil_change'|'repair'|'tire'|'other'
+  description String   @default("")
+  costEur     Float?
+  mileageKm   Int?
+  doneAt      String   // YYYY-MM-DD
+  doneBy      String   @default("")
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([vehicleId, doneAt])
+}
+
+model FuelRecord {
+  id            String   @id @default(cuid())
+  tenantId      String
+  vehicleId     String
+  driverId      String?
+  liters        Float
+  costEur       Float
+  pricePerLiter Float?
+  mileageKm     Int      @default(0)
+  stationName   String   @default("")
+  filledAt      String   // YYYY-MM-DD
+  fullTank      Boolean  @default(true)
+  notes         String   @default("")
+  createdAt     DateTime @default(now())
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([vehicleId, filledAt])
+  @@index([tenantId, filledAt])
+  @@index([driverId])
+}
+
+model DriverPosition {
+  id         String   @id @default(cuid())
+  tenantId   String
+  driverId   String
+  latitude   Float
+  longitude  Float
+  accuracy   Float?   // précision GPS en mètres
+  speedKmh   Float?   // vitesse instantanée
+  heading    Float?   // cap 0–360°
+  recordedAt DateTime
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, driverId])
+  @@index([tenantId, recordedAt])
+  @@index([driverId, recordedAt(sort: Desc)])
+  @@index([tenantId, driverId, recordedAt(sort: Desc)])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  changes    Json     @default("{}")
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entityType])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt(sort: Desc)])
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  tenantId  String
+  date      String
+  label     String
+  recurring Boolean  @default(false)
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date])
+  @@index([tenantId])
+}
+
+model TenantSettings {
+  id                    String   @id @default(cuid())
+  tenantId              String   @unique
+  defaultSpeedKmh       Float    @default(50)
+  defaultStartTime      String   @default("07:00")
+  maxWorkDayMin         Int      @default(600)
+  pauseAfterMin         Int      @default(270)
+  pauseDurationMin      Int      @default(45)
+  costPerKm             Float    @default(0.35)
+  fuelCostPerLiter      Float    @default(1.80)
+  consumptionLPer100    Float    @default(30)
+  primaryColor          String   @default("#0055A4")
+  logoUrl               String   @default("")
+  companyDisplayName    String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  // ─── Localisation ───────────────────────────────────────────────────────
+  timezone              String   @default("Europe/Paris")
+  locale                String   @default("fr-FR")
+  // ─── Notifications ──────────────────────────────────────────────────────
+  notificationsEnabled  Boolean  @default(true)
+  smsEnabled            Boolean  @default(false)
+  emailEnabled          Boolean  @default(true)
+  // ─── Facturation ────────────────────────────────────────────────────────
+  invoicePrefix         String   @default("FAC")
+  vatNumber             String   @default("")
+  billingEmail          String   @default("")
+  supportEmail          String   @default("")
+  // ─── Quotas ─────────────────────────────────────────────────────────────
+  maxOptimizationsPerDay Int     @default(10)
+  // ─── [6.A] Feature flags par plan ────────────────────────────────────────
+  features               Json    @default("{}")  // {gantt?: bool, recurring?: bool, incidents?: bool, webPush?: bool, pdf?: bool}
+  // ─── [2.F] Formulaires d'intervention personnalisables ──────────────────
+  interventionFormFields Json    @default("[]")  // Array<{key, label, type, required, options?}>
+  // ─── Routage ─────────────────────────────────────────────────────────────
+  /// Facteur correctif appliqué aux durées Valhalla/OSRM (free-flow → réel).
+  /// Compensates pour le fait que Valhalla retourne des durées idéales sans
+  /// congestion ni arrêts aux intersections. Calibré automatiquement via ML.
+  /// Valeur initiale 1.28 ≈ 47km/h réel / 60km/h Valhalla.
+  valhallaFactor        Float    @default(1.60)
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model DriverUnavailability {
+  id        String   @id @default(cuid())
+  tenantId  String
+  driverId  String
+  startDate String
+  endDate   String
+  reason    String
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, driverId])
+  @@index([tenantId, startDate, endDate])
+}
+
+model UserPermission {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  /// * Permission key : 'optimize', 'manage_drivers', 'manage_exutoires', 'manage_missions',
+  ///       'manage_vehicles', 'manage_users', 'view_reports', 'view_costs', 'manage_settings',
+  ///       'api_access', 'manage_integrations'
+  permission String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, permission])
+  @@index([tenantId, userId])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  scopes     Json      @default("[]")
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revoked    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([prefix])
+}
+
+model WeeklyPlan {
+  id        String   @id @default(cuid())
+  tenantId  String
+  weekStart String
+  status    String   @default("draft")
+  settings  Json     @default("{}")
+  result    Json?
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, weekStart])
+  @@index([tenantId])
+}
+
+model Integration {
+  id         String    @id @default(cuid())
+  tenantId   String
+  type       String
+  name       String
+  config     Json      @default("{}")
+  enabled    Boolean   @default(true)
+  lastSyncAt DateTime?
+  lastError  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, type])
+  @@index([tenantId])
+}
+
+// ─── ML Phase 1 : collecte des métriques d'intervention ─────────────────────
+
+model InterventionMetric {
+  id                   String      @id @default(cuid())
+  tenantId             String
+  driverId             String
+  missionId            String
+  missionType          String
+  date                 String
+  siteId               String?
+  clientId             String?
+  estimatedDurationMin Int
+  estimatedManeuverMin Int         @default(0)
+  estimatedTravelMin   Int?
+  actualDurationMin    Float
+  actualManeuverMin    Float       @default(0)
+  actualTravelMin      Float?
+  actualTotalOnSiteMin Float       @default(0)
+  distanceKm           Float?
+  latitude             Float?
+  longitude            Float?
+  enRouteAt            DateTime?
+  arrivedAt            DateTime?
+  startedAt            DateTime?
+  doneAt               DateTime
+  isReliable           Boolean     @default(true)
+  rejectReason         String?
+  confidenceScore      Float       @default(1.0)
+  createdAt            DateTime    @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@index([tenantId, driverId])
+  @@index([tenantId, isReliable])
+  @@index([tenantId, driverId, isReliable])
+  @@index([tenantId, siteId, isReliable])
+  @@index([tenantId, missionType, isReliable])
+}
+
+// ─── ML Phase 2 : profils de coefficients pré-calculés ──────────────────────
+
+model TenantMLProfile {
+  id                String   @id @default(cuid())
+  tenantId          String
+  scope             String   // global | type | driver | site
+  scopeId           String   // '' pour global, driverId/siteId/type sinon
+  missionType       String   // '_ALL_' pour toutes missions
+  durationCoeff     Float    @default(1.0)
+  maneuverCoeff     Float    @default(1.0)
+  travelCoeff       Float    @default(1.0)
+  sampleCount       Int      @default(0)
+  medianDurationMin Float?
+  medianManeuverMin Float?
+  medianTravelMin   Float?
+  lastComputedAt    DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, scope, scopeId, missionType])
+  @@index([tenantId])
+}
+
+// ─── Templates de missions récurrentes ───────────────────────────────────────
+
+model MissionTemplate {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  label                String
+  enabled              Boolean   @default(true)
+  type                 String                        // MissionType string
+  recurrence           Json                          // RecurrenceRule serialized
+  address              String
+  latitude             Float
+  longitude            Float
+  clientName           String    @default("")
+  estimatedDurationMin Int       @default(30)
+  maneuverTimeMin      Int       @default(10)
+  wasteTypeLabel       String    @default("")
+  binSize              String    @default("")
+  binSizeM3            Float?
+  accessNotes          String    @default("")
+  priority             Int?
+  timeWindow           Json?                         // TimeWindow serialized
+  linkedExutoireId     String?
+  startDate            String
+  endDate              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, enabled])
+}
+
+// ─── [2.A] Preuve de livraison ────────────────────────────────────────────────
+
+model DeliveryProof {
+  id           String   @id @default(cuid())
+  tenantId     String
+  missionId    String   @unique
+  driverId     String
+  photoUrl     String?
+  signatureUrl String?
+  notes        String   @default("")
+  capturedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mission      Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([driverId])
+}
+
+// ─── [2.C] Web Push subscriptions ────────────────────────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  driverId  String?
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([driverId])
+}
+
+// ─── AI Engine jobs ──────────────────────────────────────────────────────────
+
+model AiJob {
+  id          String    @id @default(cuid())
+  tenantId    String
+  type        String    // "ocr"
+  status      String    @default("pending") // pending | processing | done | failed | expired
+  inputData   Json      @default("{}")
+  outputData  Json?
+  errorMsg    String?
+  missionId   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  expiresAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status, createdAt])
+  @@index([missionId])
+}
+
+// ─── Métiers personnalisés (créés par le SuperAdmin) ─────────────────────────
+
+model CustomTrade {
+  id                  String   @id @default(cuid())
+  tradeKey            String   @unique       // ex: "transport_medical"
+  tradeName           String                 // ex: "Transport Médical"
+  tradeDescription    String   @default("")
+  tradeIcon           String   @default("📋")
+  vocabulary          Json                   // TradeVocabulary serialized
+  enabledMissionTypes Json                   // MissionType[] serialized
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+enum TenantPlan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum UserRole {
+  ADMIN
+  DISPATCHER
+  DRIVER
+  SUPERADMIN
+}
+
+enum MissionType {
+  POSER
+  RETIRER
+  ECHANGER
+  VIDER
+  PAUSE
+  CHARGER_IMMEDIAT
+  DEPLACER
+  TASSER
+  EXPEDIER
+  ALLER_RETOUR
+}
+
+// ─── Trackdéchets ─────────────────────────────────────────────────────────────
+
+enum BsdStatus {
+  DRAFT
+  SEALED
+  SENT
+  RECEIVED
+  PROCESSED
+  REFUSED
+  AWAITING_GROUP
+  NO_TRACEABILITY
+  CANCELED
+  SIGNED_BY_PRODUCER
+  SIGNED_BY_TRANSPORTER
+  TEMP_STORED
+  TEMP_STORER_ACCEPTED
+  GROUPED
+  RESEALED
+  RESENT
+  INITIAL
+}
+
+model TrackdechetsAccount {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  encryptedToken String
+  iv             String
+  keyVersion     Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Bsd {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tdId       String    @unique
+  type       String    @default("BSDD")
+  status     BsdStatus @default(DRAFT)
+  missionId  String?
+  readableId String    @default("")
+  payload    Json
+  errorMsg   String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mission Mission? @relation(fields: [missionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tdId])
+  @@index([missionId])
+}

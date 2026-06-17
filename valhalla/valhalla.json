@@ -1,0 +1,60 @@
+{
+  "mjolnir": {
+    "tile_dir": "/data/valhalla_tiles",
+    "traffic_extract": "/data/traffic/traffic.tar",
+    "concurrency": 8
+  },
+  "httpd": {
+    "service": {
+      "listen": "tcp://*:8002",
+      "loopback": "ipc:///tmp/valhalla.lock",
+      "interrupt": "ipc:///tmp/valhalla.interrupt"
+    }
+  },
+  "loki": {
+    "actions": ["locate", "route", "sources_to_targets", "optimized_route", "isochrone", "trace_route", "trace_attributes", "transit_available", "status"],
+    "service_defaults": {
+      "minimum_reachability": 50,
+      "radius": 0
+    }
+  },
+  "thor": {
+    "extended_search": true,
+    "logging": { "type": "", "color": true }
+  },
+  "meili": {
+    "default": {
+      "beta": 3,
+      "breakage_distance": 2000,
+      "geometry": true,
+      "gps_accuracy": 10,
+      "interpolation_distance": 10,
+      "search_radius": 50,
+      "sigma_z": 4.07,
+      "turn_penalty_factor": 0
+    },
+    "auto": { "turn_penalty_factor": 200 },
+    "truck": { "turn_penalty_factor": 200 }
+  },
+  "service_limits": {
+    "auto": { "max_distance": 5000000, "max_locations": 20 },
+    "truck": { "max_distance": 5000000, "max_locations": 150 },
+    "sources_to_targets": {
+      "max_locations": 500,
+      "max_matrix_distance": 400000,
+      "max_matrix_locations": 2500
+    },
+    "trace": {
+      "max_distance": 200000,
+      "max_gps_accuracy": 100,
+      "max_search_radius": 100,
+      "max_shape": 10000
+    },
+    "isochrone": {
+      "max_contours": 4,
+      "max_time_contour": 120,
+      "max_distance": 25000,
+      "max_locations": 1
+    }
+  }
+}

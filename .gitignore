@@ -1,0 +1,28 @@
+.env
+.env.*.local
+.env.production
+
+# ─── Playwright auth state ────────────────────────────────────────────────────
+e2e/.auth/
+
+# ─── Next.js ──────────────────────────────────────────────────────────────────
+.next/
+out/
+
+# ─── Node ─────────────────────────────────────────────────────────────────────
+node_modules/
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+/src/generated/prisma
+
+# Claude Code Intelligence
+.claude/daemon.log
+.claude/daemon.pid
+.claude/daemon-session.json

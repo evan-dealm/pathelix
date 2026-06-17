@@ -1,0 +1,89 @@
+{
+  "title": "Pathélix — Overview",
+  "uid": "pathelix-overview",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "VRP Optimisations (total)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "pathelix_vrp_missions_total", "legendFormat": "Missions VRP" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Durée VRP (p95)",
+      "gridPos": { "x": 6, "y": 0, "w": 9, "h": 4 },
+      "targets": [{ "expr": "histogram_quantile(0.95, rate(pathelix_vrp_duration_ms_bucket[5m]))", "legendFormat": "p95 ms" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Requêtes API (req/s)",
+      "gridPos": { "x": 15, "y": 0, "w": 9, "h": 4 },
+      "targets": [{ "expr": "rate(pathelix_api_requests_total[1m])", "legendFormat": "{{route}}" }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Latence API p95 (ms)",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 5 },
+      "targets": [{ "expr": "histogram_quantile(0.95, rate(pathelix_api_latency_ms_bucket[5m]))", "legendFormat": "p95" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Erreurs API (err/min)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 5 },
+      "targets": [{ "expr": "rate(pathelix_api_errors_total[1m])", "legendFormat": "{{route}}" }]
+    },
+    {
+      "id": 6,
+      "type": "gauge",
+      "title": "Connexions SSE actives",
+      "gridPos": { "x": 0, "y": 9, "w": 6, "h": 4 },
+      "targets": [{ "expr": "pathelix_sse_connections", "legendFormat": "SSE" }],
+      "fieldConfig": { "defaults": { "max": 500 } }
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "Profondeur queue BullMQ",
+      "gridPos": { "x": 6, "y": 9, "w": 6, "h": 4 },
+      "targets": [{ "expr": "pathelix_queue_depth", "legendFormat": "Queue" }],
+      "fieldConfig": { "defaults": { "max": 100, "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 20, "color": "yellow" }, { "value": 50, "color": "red" }] } } }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Cache hits vs misses",
+      "gridPos": { "x": 12, "y": 9, "w": 6, "h": 4 },
+      "targets": [
+        { "expr": "rate(pathelix_cache_hits_total[5m])", "legendFormat": "hits/s" },
+        { "expr": "rate(pathelix_cache_misses_total[5m])", "legendFormat": "misses/s" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Tenants actifs",
+      "gridPos": { "x": 18, "y": 9, "w": 6, "h": 4 },
+      "targets": [{ "expr": "pathelix_active_tenants", "legendFormat": "Tenants" }]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Durée jobs queue (p50/p95)",
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 5 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(pathelix_queue_job_duration_ms_bucket[5m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(pathelix_queue_job_duration_ms_bucket[5m]))", "legendFormat": "p95" }
+      ]
+    }
+  ]
+}
