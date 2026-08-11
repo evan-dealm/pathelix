@@ -80,7 +80,10 @@ async function _doFlush(): Promise<number> {
         await set(action.id, { ...action, retryCount: action.retryCount + 1 })
       }
     } catch {
-      await set(action.id, { ...action, retryCount: action.retryCount + 1 })
+      // Erreur réseau générique (pas de réponse serveur) : ne compte pas comme une
+      // tentative — sinon un chauffeur en zone blanche prolongée perd silencieusement
+      // son action après MAX_RETRIES ouvertures d'app sans jamais avoir été rejeté par
+      // le serveur. Cohérent avec sw.js (event 'sync' en arrière-plan).
       break
     }
   }

@@ -151,6 +151,18 @@ describe('flushSyncQueue', () => {
     const count = await flushSyncQueue()
     expect(count).toBe(0)
   })
+
+  it('does NOT increment retryCount on network error — regression: driver in a dead zone must not lose queued actions after 5 foreground opens with no signal (unlike a real server rejection)', async () => {
+    const action = { id: 'sync-q:1', url: '/a', body: {}, timestamp: 1, retryCount: 4 }
+    mockIdb.keys.mockResolvedValue(['sync-q:1'])
+    mockIdb.get.mockResolvedValue(action)
+    mockFetch.mockRejectedValue(new Error('Offline'))
+
+    const count = await flushSyncQueue()
+    expect(count).toBe(0)
+    expect(mockIdb.set).not.toHaveBeenCalled()
+    expect(mockIdb.del).not.toHaveBeenCalled()
+  })
 })
 
 describe('flushSyncQueue — advanced scenarios', () => {
@@ -180,7 +192,7 @@ describe('flushSyncQueue — advanced scenarios', () => {
     expect(mockIdb.del).toHaveBeenCalledWith('sync-q:1')
   })
 
-  it('partial sync: first succeeds, second errors — stops and increments retryCount', async () => {
+  it('partial sync: first succeeds, second errors (network) — stops, does not touch second action', async () => {
     const a1 = { id: 'sync-q:1', url: '/a', body: {}, timestamp: 1, retryCount: 0 }
     const a2 = { id: 'sync-q:2', url: '/b', body: {}, timestamp: 2, retryCount: 0 }
     mockIdb.keys.mockResolvedValue(['sync-q:1', 'sync-q:2'])
@@ -195,7 +207,8 @@ describe('flushSyncQueue — advanced scenarios', () => {
     expect(count).toBe(1)
     expect(mockIdb.del).toHaveBeenCalledWith('sync-q:1')
     expect(mockIdb.del).not.toHaveBeenCalledWith('sync-q:2')
-    expect(mockIdb.set).toHaveBeenCalledWith('sync-q:2', expect.objectContaining({ retryCount: 1 }))
+    // Network error (no server response) must not count as a retry — see B7 regression test above
+    expect(mockIdb.set).not.toHaveBeenCalledWith('sync-q:2', expect.anything())
   })
 
   it('increments retryCount on 5xx response', async () => {
