@@ -6,7 +6,7 @@
 //   Assets /_next/ → Cache-first (versionnés, immutables)
 //   API            → Jamais caché (données toujours fraîches quand online)
 
-const CACHE_NAME = 'ef-shell-v1'
+const CACHE_NAME = 'pathelix-shell-v1'
 const SHELL_URLS = ['/', '/driver']
 
 // Install: pre-cache app shell
@@ -77,6 +77,10 @@ async function flushQueue() {
   for (const key of queueKeys.sort()) {
     const action = await getItem(db, key)
     if (!action) continue
+    if ((action.retryCount || 0) >= 5) {
+      await deleteItem(db, key)
+      continue
+    }
     try {
       const res = await fetch(action.url, {
         method: 'POST',
@@ -86,8 +90,13 @@ async function flushQueue() {
       })
       if (res.ok || res.status === 422) {
         await deleteItem(db, key)
+      } else if (res.status >= 500) {
+        await putItem(db, key, { ...action, retryCount: (action.retryCount || 0) + 1 })
+        break
+      } else {
+        // 4xx: rejet serveur — compter la tentative pour ne pas rejouer indéfiniment
+        await putItem(db, key, { ...action, retryCount: (action.retryCount || 0) + 1 })
       }
-      if (res.status >= 500) break
     } catch {
       break // Still offline
     }
@@ -118,6 +127,15 @@ function getItem(db, key) {
     const tx = db.transaction('keyval', 'readonly')
     const req = tx.objectStore('keyval').get(key)
     req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+function putItem(db, key, value) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('keyval', 'readwrite')
+    const req = tx.objectStore('keyval').put(value, key)
+    req.onsuccess = () => resolve()
     req.onerror = () => reject(req.error)
   })
 }

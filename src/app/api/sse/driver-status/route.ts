@@ -8,8 +8,8 @@ import { REDIS_AVAILABLE } from '@/lib/redisClient'
 const log = createLogger('/api/sse/driver-status')
 
 const MAX_CONNECTIONS_PER_TENANT = parseInt(
-  process.env.SSE_MAX_CONNECTIONS_PER_TENANT ?? '50', 10,
-) || 50
+  process.env.SSE_MAX_CONNECTIONS_PER_TENANT ?? '200', 10,
+) || 200
 
 const _connectionsByTenant = new Map<string, number>()
 

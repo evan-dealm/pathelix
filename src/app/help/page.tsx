@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useTrade } from '@/providers/TradeProvider'
 import type { TradeVocabulary } from '@/lib/trades'
+import { OnboardingGuide, resetOnboarding } from '@/components/ui/OnboardingGuide'
 
 function buildSections(v: TradeVocabulary) {
   return [
@@ -75,6 +76,7 @@ export default function HelpPage() {
   const sections = buildSections(vocab)
   const [activeSection, setActiveSection] = useState(sections[0].id)
   const [openQuestions, setOpenQuestions] = useState<Set<string>>(new Set())
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   function toggleQ(key: string) {
     setOpenQuestions(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
@@ -82,10 +84,23 @@ export default function HelpPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+      {showOnboarding && (
+        <OnboardingGuide forceShow onClose={() => setShowOnboarding(false)} />
+      )}
       <div className="relative z-[1] max-w-5xl mx-auto px-6 py-12">
-        <div className="mb-10">
-          <h1 className="text-3xl font-bold">Centre d&apos;aide</h1>
-          <p className="text-zinc-500 mt-2">Documentation et FAQ pour PATHÉLIX</p>
+        <div className="mb-10 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Centre d&apos;aide</h1>
+            <p className="text-zinc-500 mt-2">Documentation et FAQ pour PATHÉLIX</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { resetOnboarding(); setShowOnboarding(true) }}
+            className="shrink-0 px-4 py-2 rounded-lg border border-blue-200 text-blue-600 text-sm font-medium hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            aria-label="Rejouer le guide de démarrage"
+          >
+            Guide de démarrage
+          </button>
         </div>
 
         <div className="flex gap-8">

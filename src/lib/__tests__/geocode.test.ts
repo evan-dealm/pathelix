@@ -124,6 +124,23 @@ describe('geocodeBatchBAN', () => {
     const results = await geocodeBatchBAN(['addr1'])
     expect(results).toEqual([null])
   })
+
+  it('returns null when BAN returns 0,0 coordinates (anti-null-island protection)', async () => {
+    // BAN occasionally returns 0,0 for unresolvable addresses — must never propagate
+    const csv = 'adresse,latitude,longitude,result_label\n"adresse inconnue",0,0,'
+    mockFetch.mockResolvedValue(banCsvResponse(csv))
+
+    const results = await geocodeBatchBAN(['adresse inconnue'])
+    expect(results[0]).toBeNull()
+  })
+
+  it('returns null when BAN returns lat=0 with valid lng', async () => {
+    const csv = 'adresse,latitude,longitude,result_label\n"addr",0,4.83,Some Label'
+    mockFetch.mockResolvedValue(banCsvResponse(csv))
+
+    const results = await geocodeBatchBAN(['addr'])
+    expect(results[0]).toBeNull()
+  })
 })
 
 describe('geocodeBatch', () => {

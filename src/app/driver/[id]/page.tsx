@@ -10,8 +10,9 @@ import {
 import { getMissionTypeIcon, getMissionTypeLabel } from '@/lib/trades'
 import {
   enqueueAction, getSyncQueueSize, flushSyncQueue,
-  cacheDayPlan, getCachedDayPlan,
+  cacheDayPlan, getCachedDayPlan, getQueuedActions,
 } from '@/lib/syncQueue'
+import { compressImage } from '@/lib/imageUtils'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
 import { today } from '@/lib/dateUtils'
 import { ScanTicketButton } from '@/components/driver/ScanTicketButton'
@@ -188,10 +189,37 @@ export default function DriverPage() {
   useEffect(() => {
     if (!driverId) return
     let cancelled = false
-    fetch(`/api/driver-photos?driverId=${encodeURIComponent(driverId)}&date=${encodeURIComponent(tourDate)}`)
-      .then(r => r.ok ? r.json() : {})
-      .then(p => { if (!cancelled) setPhotos(p as Record<string, string>) })
-      .catch(() => {})
+
+    const serverLoad = fetch(`/api/driver-photos?driverId=${encodeURIComponent(driverId)}&date=${encodeURIComponent(tourDate)}`)
+      .then(r => r.ok ? r.json() as Promise<Record<string, string>> : Promise.resolve({} as Record<string, string>))
+      .catch(() => ({} as Record<string, string>))
+
+    // Restore photos/signatures taken offline but not yet synced
+    const pendingLoad = getQueuedActions().then(actions => {
+      const acc: Record<string, string> = {}
+      for (const a of actions) {
+        if (a.url === '/api/driver-photos' && a.body.driverId === driverId && a.body.date === tourDate) {
+          const mid = a.body.missionId as string
+          const url = a.body.dataUrl as string
+          if (mid && url) acc[mid] = url
+        }
+      }
+      return acc
+    }).catch(() => ({} as Record<string, string>))
+
+    Promise.all([serverLoad, pendingLoad]).then(([server, pending]) => {
+      // Server URLs overwrite pending (photo already synced → use persisted URL)
+      if (!cancelled) {
+        setPhotos({ ...pending, ...server })
+        // Restore signatures into state (key ends with _sig)
+        const sigs: Record<string, string> = {}
+        for (const [k, v] of Object.entries(pending)) {
+          if (k.endsWith('_sig')) sigs[k.replace('_sig', '')] = v
+        }
+        if (Object.keys(sigs).length > 0) setSignatures(s => ({ ...sigs, ...s }))
+      }
+    })
+
     return () => { cancelled = true }
   }, [driverId, tourDate])
 
@@ -240,20 +268,19 @@ export default function DriverPage() {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string
-      if (!dataUrl) return
+    reader.onload = async ev => {
+      const rawUrl = ev.target?.result as string
+      if (!rawUrl) return
+      // Compress to max 1280px JPEG (reduces IDB storage + upload size)
+      const dataUrl = await compressImage(rawUrl, 1280, 0.75)
       setPhotos(prev => ({ ...prev, [missionId]: dataUrl }))
-      fetch('/api/driver-photos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ driverId, date: tourDate, missionId, dataUrl }),
-      }).then(r => r.ok ? r.json() : null)
-        .then(d => { if (d?.url) setPhotos(prev => ({ ...prev, [missionId]: d.url })) })
-        .catch(() => {})
+      // Queue for reliable offline delivery — replayed automatically on reconnect
+      void enqueueAction('/api/driver-photos', { driverId, date: tourDate, missionId, dataUrl })
+      void updatePendingCount()
+      if (navigator.onLine) setTimeout(() => void syncNow(), 500)
     }
     reader.readAsDataURL(file)
-  }, [driverId, tourDate])
+  }, [driverId, tourDate, updatePendingCount, syncNow])
 
   const driver    = apiData?.driver ?? null
   const startTime = apiData?.startTime ?? '07:00'
@@ -319,7 +346,7 @@ export default function DriverPage() {
     : null
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-white select-none">
+    <main id="main-content" className="min-h-screen bg-zinc-950 text-white select-none">
 
       {}
       <div className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2 backdrop-blur-sm border-b transition-colors duration-300 ${
@@ -520,7 +547,14 @@ export default function DriverPage() {
                       sigDrawing.current[currentMission.id] = false
                       const canvas = sigCanvasRefs.current[currentMission.id]
                       if (!canvas) return
-                      setSignatures(s => ({ ...s, [currentMission.id]: canvas.toDataURL('image/png') }))
+                      const sigUrl = canvas.toDataURL('image/png')
+                      setSignatures(s => ({ ...s, [currentMission.id]: sigUrl }))
+                      // Persist signature offline — same queue as photos, missionId_sig suffix
+                      void enqueueAction('/api/driver-photos', {
+                        driverId, date: tourDate, missionId: `${currentMission.id}_sig`, dataUrl: sigUrl,
+                      })
+                      void updatePendingCount()
+                      if (navigator.onLine) setTimeout(() => void syncNow(), 500)
                     }}
                   />
                 </div>

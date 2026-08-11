@@ -22,6 +22,12 @@ vi.mock('@/lib/trackdechets/bsdService', () => ({
   mapTdStatus: vi.fn((s: string) => s),
 }))
 
+const rlAllowed = vi.hoisted(() => ({ value: true }))
+vi.mock('@/lib/rateLimit', () => ({
+  createRateLimiter: () => ({ check: vi.fn(async () => rlAllowed.value) }),
+  getClientIp: vi.fn(() => '127.0.0.1'),
+}))
+
 const WEBHOOK_SECRET = 'test-webhook-secret-abc'
 
 function makeSignature(body: string, secret = WEBHOOK_SECRET): string {
@@ -76,6 +82,13 @@ describe('POST /api/webhooks/trackdechets — with secret', () => {
     const req = makeReq(validPayload, null)
     const res = await POST(req)
     expect(res.status).toBe(401)
+  })
+
+  it('returns 429 when rate limit exceeded — regression: webhook must be rate limited', async () => {
+    rlAllowed.value = false
+    const res = await POST(makeReq(validPayload))
+    expect(res.status).toBe(429)
+    rlAllowed.value = true
   })
 
   it('returns 401 on wrong signature', async () => {

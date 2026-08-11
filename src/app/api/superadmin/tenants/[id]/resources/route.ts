@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const log = createLogger('/api/superadmin/tenants/[id]/resources')
 
@@ -40,7 +41,7 @@ function getModel(entity: EntityType): PrismaDelegate {
 
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
 
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
   const { id: tenantId } = await params
@@ -71,7 +72,17 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       delete cleanData.updatedAt
       cleanData.tenantId = tenantId
       result = await model.create({ data: cleanData })
-      log.info('SuperAdmin resource created', { tenantId, entity, resourceId: (result as { id: string }).id })
+      const resourceId = (result as { id: string }).id
+      log.info('SuperAdmin resource created', { tenantId, entity, resourceId })
+      logSuperadminAction({
+        superadminId,
+        targetTenantId: tenantId,
+        isImpersonation: false,
+        method: 'POST',
+        path: `/api/superadmin/tenants/${tenantId}/resources`,
+        action: 'resource_created',
+        details: { entity, resourceId },
+      })
     }
 
     else if (action === 'update') {
@@ -88,6 +99,15 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       delete cleanData.updatedAt
       result = await model.update({ where: { id }, data: cleanData })
       log.info('SuperAdmin resource updated', { tenantId, entity, resourceId: id })
+      logSuperadminAction({
+        superadminId,
+        targetTenantId: tenantId,
+        isImpersonation: false,
+        method: 'POST',
+        path: `/api/superadmin/tenants/${tenantId}/resources`,
+        action: 'resource_updated',
+        details: { entity, resourceId: id, changedKeys: Object.keys(cleanData) },
+      })
     }
 
     else if (action === 'delete') {
@@ -99,6 +119,15 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       }
       result = await model.delete({ where: { id } })
       log.info('SuperAdmin resource deleted', { tenantId, entity, resourceId: id })
+      logSuperadminAction({
+        superadminId,
+        targetTenantId: tenantId,
+        isImpersonation: false,
+        method: 'POST',
+        path: `/api/superadmin/tenants/${tenantId}/resources`,
+        action: 'resource_deleted',
+        details: { entity, resourceId: id },
+      })
     }
 
     return NextResponse.json({ ok: true, result })

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const log = createLogger('/api/superadmin/tenants/[id]')
 
@@ -106,7 +107,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 }
 
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
   const { id } = await params
 
@@ -131,6 +132,16 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     }
 
     await prisma.tenant.delete({ where: { id } })
+
+    logSuperadminAction({
+      superadminId,
+      targetTenantId: id,
+      isImpersonation: false,
+      method: 'DELETE',
+      path: `/api/superadmin/tenants/${id}`,
+      action: 'tenant_deleted',
+      details: { tenantName: tenant.name, tenantSlug: tenant.slug, resourceCount: totalResources },
+    })
 
     log.info('Tenant deleted', { tenantId: id, name: tenant.name })
     return NextResponse.json({ ok: true, deleted: tenant.name })

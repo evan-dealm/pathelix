@@ -231,7 +231,7 @@ Point d'entrée : `/superadmin`. Accès exclusif `role=superadmin`. 5 onglets.
 | `/login` | Formulaire de connexion |
 | `/onboarding` | Assistant de création de compte tenant |
 | `/help` | Documentation utilisateur + FAQ |
-| `/status` | Page de statut publique (SLA 99,9%) |
+| `/status` | Page de statut publique (SLA cible 99,5% en single-server) |
 | `/api-docs` | Documentation API Swagger UI (authentifié) |
 | `/tracking` | ETA dynamique pour les clients finaux (lien partagé) |
 
@@ -262,9 +262,12 @@ Point d'entrée : `/superadmin`. Accès exclusif `role=superadmin`. 5 onglets.
 
 ### Multi-langue
 
-- Internationalisation via next-intl 4
-- Langue par défaut : français
-- Infrastructure de traduction en place (`src/i18n/`)
+> **Non disponible au lancement France** — infrastructure non câblée.
+
+- Infrastructure next-intl 4 installée : `fr.json`, `en.json`, `NextIntlClientProvider` configuré
+- `useTranslations()` non utilisé nulle part (0 occurrence) — l'application est 100% hardcodée en français
+- Aucune interface de sélection de langue exposée à l'utilisateur
+- Câblage prévu pour une version ultérieure (hors scope v1)
 
 ### Import / Export
 

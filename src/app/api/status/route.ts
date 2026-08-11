@@ -86,8 +86,8 @@ export async function GET(): Promise<NextResponse> {
     services,
     timestamp: new Date().toISOString(),
     sla: {
-      target: '99.9%',
-      description: 'PATHÉLIX garantit 99.9% de disponibilite sur les services critiques (Database, Application).',
+      target: '99.5%',
+      description: 'PATHÉLIX cible 99.5% de disponibilite sur les services critiques (Database, Application) en configuration single-server.',
     },
   }, {
     headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },

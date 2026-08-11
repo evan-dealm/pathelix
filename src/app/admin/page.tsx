@@ -62,6 +62,7 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { useToast } from '@/components/ui/Toast'
 import { useTrade } from '@/providers/TradeProvider'
+import { OnboardingGuide } from '@/components/ui/OnboardingGuide'
 
 export default function AdminPage() {
   const { vocab } = useTrade()
@@ -159,7 +160,7 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(res => {
-        if (res.ok) toastSuccess('Chauffeur mis \u00e0 jour')
+        if (res.ok) toastSuccess(`${vocab.driver} mis \u00e0 jour`)
         else res.json().then(e => toastError(e?.error ?? 'Erreur serveur')).catch(() => toastError('Erreur serveur'))
       }).catch(() => { logErr('api'); toastError('Erreur serveur') })
     } else {
@@ -172,22 +173,22 @@ export default function AdminPage() {
         if (res.ok) {
           const created = await res.json()
           addDriver(data, created.id)
-          toastSuccess('Chauffeur créé')
+          toastSuccess(`${vocab.driver} créé`)
         } else {
           const errData = await res.json().catch(() => ({}))
           toastError(typeof errData?.error === 'string' ? errData.error : 'Données invalides — vérifiez le formulaire')
         }
       } catch {
-        toastError('Erreur réseau — chauffeur non sauvegardé')
+        toastError(`Erreur réseau — ${vocab.driver.toLowerCase()} non sauvegardé`)
       }
     }
   }
 
   async function handleDeleteDriver(id: string) {
-    if (!confirm('Supprimer ce chauffeur ? Cette action est irréversible.')) return
+    if (!confirm(`Supprimer ce ${vocab.driver.toLowerCase()} ? Cette action est irréversible.`)) return
     removeDriver(id)
     fetch(`/api/drivers/${id}`, { method: 'DELETE' })
-      .then(() => toastSuccess('Chauffeur supprimé'))
+      .then(() => toastSuccess(`${vocab.driver} supprimé`))
       .catch(() => { logErr('api'); toastError('Erreur serveur') })
   }
 
@@ -355,7 +356,7 @@ export default function AdminPage() {
       result.push({
         id: 'no-tour',
         level: 'warning',
-        message: `${driversNoTour.length} chauffeur${driversNoTour.length > 1 ? 's' : ''} sans tournée planifiée aujourd'hui`,
+        message: `${driversNoTour.length} ${driversNoTour.length > 1 ? vocab.drivers.toLowerCase() : vocab.driver.toLowerCase()} sans tournée planifiée aujourd'hui`,
       })
     }
 
@@ -385,7 +386,7 @@ export default function AdminPage() {
     }
 
     return result
-  }, [missions, plans, drivers, driverMap, isUnavailable, calcResults])
+  }, [missions, plans, drivers, driverMap, isUnavailable, calcResults, vocab.driver, vocab.drivers])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -509,6 +510,8 @@ export default function AdminPage() {
   ], [vocab, missionCount])
 
   return (
+    <>
+    <OnboardingGuide mode="admin" />
     <main
       id="main-content"
       className="h-screen flex bg-surface-50 text-surface-900 overflow-hidden"
@@ -559,7 +562,7 @@ export default function AdminPage() {
         {}
         <div className="flex-shrink-0 border-t border-surface-100 p-2 space-y-1">
           <div className="nav-label flex items-center gap-2 px-2 py-1.5 text-[11px] text-surface-400">
-            <span className="font-semibold text-surface-500">{( Array.isArray(drivers) ? drivers : [] ).length}</span> chauffeurs
+            <span className="font-semibold text-surface-500">{( Array.isArray(drivers) ? drivers : [] ).length}</span> {vocab.drivers.toLowerCase()}
             <span className="text-surface-300">·</span>
             <span className="font-semibold text-surface-500">{( Array.isArray(missions) ? missions : [] ).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length}</span> missions
           </div>
@@ -590,7 +593,7 @@ export default function AdminPage() {
               {activeTab === 'dashboard' ? 'Vue d\'ensemble' :
                activeTab === 'missions' ? `${(Array.isArray(missions) ? missions : []).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length} missions` :
                activeTab === 'tours' ? planDate :
-               activeTab === 'drivers' ? `${(Array.isArray(drivers) ? drivers : []).filter(d => !d.archived).length} chauffeurs` :
+               activeTab === 'drivers' ? `${(Array.isArray(drivers) ? drivers : []).filter(d => !d.archived).length} ${vocab.drivers.toLowerCase()}` :
                activeTab === 'catalogue' ? 'Clients, Sites, Produits' :
                activeTab === 'settings' ? 'Configuration' :
                ''}
@@ -718,7 +721,7 @@ export default function AdminPage() {
           {[
             { label: 'Missions assignees',   value: dashboardStats.assignedForDate,         color: dashboardStats.assignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
             { label: 'Missions en pool',      value: dashboardStats.poolToday,              color: dashboardStats.poolToday > 0 ? 'text-brand-500' : 'text-surface-300' },
-            { label: 'Chauffeurs avec plan',  value: `${dashboardStats.driversWithPlanForDate}/${dashboardStats.totalDrivers}`, color: dashboardStats.driversWithPlanForDate > 0 ? 'text-surface-900' : 'text-surface-300' },
+            { label: `${vocab.drivers} avec plan`,  value: `${dashboardStats.driversWithPlanForDate}/${dashboardStats.totalDrivers}`, color: dashboardStats.driversWithPlanForDate > 0 ? 'text-surface-900' : 'text-surface-300' },
             { label: 'P1 assignees',          value: dashboardStats.p1AssignedForDate,      color: dashboardStats.p1AssignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
           ].map(k => (
             <div key={k.label} className="flex items-center gap-2 bg-surface-50 border border-surface-200 rounded-lg px-3 py-1.5 flex-shrink-0">
@@ -726,6 +729,15 @@ export default function AdminPage() {
               <span className="text-[8px] md:text-[9px] text-surface-400 uppercase tracking-wider whitespace-nowrap font-medium">{k.label}</span>
             </div>
           ))}
+          <button
+            type="button"
+            onClick={() => setActiveTab('tours')}
+            aria-label="Aller à l'onglet Tournées pour optimiser"
+            className="ml-auto flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors shadow-sm"
+          >
+            <span>Optimiser les tournées</span>
+            <span aria-hidden="true">→</span>
+          </button>
         </div>
 
         <TopPanel
@@ -851,12 +863,12 @@ export default function AdminPage() {
           onClose={() => setMissionModal({ kind: 'none' })} />
       )}
       {driverModal?.kind === 'new' && (
-        <DriverForm title="Nouveau chauffeur" initial={BLANK_DRIVER}
+        <DriverForm title={`Nouveau ${vocab.driver.toLowerCase()}`} initial={BLANK_DRIVER}
           onSave={(data) => { handleSaveDriver(data).catch(()=>{}); setDriverModal(null) }}
           onClose={() => setDriverModal(null)} />
       )}
       {driverModal?.kind === 'edit' && (
-        <DriverForm title="Modifier le chauffeur" initial={driverModal.driver}
+        <DriverForm title={`Modifier le ${vocab.driver.toLowerCase()}`} initial={driverModal.driver}
           onSave={(data) => { handleSaveDriver(data, driverModal.driver.id).catch(()=>{}); setDriverModal(null) }}
           onClose={() => setDriverModal(null)} />
       )}
@@ -926,12 +938,12 @@ export default function AdminPage() {
           (plans[`${d.id}|${todayStr}`] || []).filter(m => !m.isSynthetic).length === 0
         )
         checks.push(driversEmpty.length > 0
-          ? { level: 'warning', message: `${driversEmpty.length} chauffeur${driversEmpty.length > 1 ? 's' : ''} disponible${driversEmpty.length > 1 ? 's' : ''} sans tournée` }
-          : { level: 'ok', message: 'Tous les chauffeurs disponibles ont une tournée' })
+          ? { level: 'warning', message: `${driversEmpty.length} ${driversEmpty.length > 1 ? vocab.drivers.toLowerCase() : vocab.driver.toLowerCase()} disponible${driversEmpty.length > 1 ? 's' : ''} sans tournée` }
+          : { level: 'ok', message: `Tous les ${vocab.drivers.toLowerCase()} disponibles ont une tournée` })
 
         const legalErrors = Object.entries(calcResults).filter(([, r]) => r?.warnings.some(w => w.severity === 'error'))
         checks.push(legalErrors.length > 0
-          ? { level: 'error', message: `${legalErrors.length} chauffeur${legalErrors.length > 1 ? 's' : ''} avec violation${legalErrors.length > 1 ? 's' : ''} légale${legalErrors.length > 1 ? 's' : ''}` }
+          ? { level: 'error', message: `${legalErrors.length} ${legalErrors.length > 1 ? vocab.drivers.toLowerCase() : vocab.driver.toLowerCase()} avec violation${legalErrors.length > 1 ? 's' : ''} légale${legalErrors.length > 1 ? 's' : ''}` }
           : { level: 'ok', message: 'Aucune violation légale CE 561/2006' })
 
         const noGps = (Array.isArray(missions) ? missions : []).filter(m =>
@@ -1003,5 +1015,6 @@ export default function AdminPage() {
         ))}
       </nav>
     </main>
+    </>
   )
 }

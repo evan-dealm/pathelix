@@ -4,6 +4,248 @@
 
 ---
 
+## 2026-06-19 — Session 8b : R2 fix + UX complète
+
+### R2 — Photos et signatures offline (réellement corrigé)
+
+**Constat** : le serveur `/api/driver-photos` prenait déjà JSON+base64. Pas de refonte nécessaire. La fix est propre.
+
+**`src/lib/imageUtils.ts`** (nouveau) :
+- `compressImage(dataUrl, maxWidth, quality)` — canvas JPEG, max 1280px, 75%, fallback si canvas indispo
+- 6 tests (load, no-upscale, ctx null, img error, non-browser) ✅
+
+**`src/app/driver/[id]/page.tsx`** :
+- `handlePhoto` : compress → `enqueueAction('/api/driver-photos', {..., dataUrl})` + `updatePendingCount` + `syncNow`
+- Signature `onPointerUp` : `enqueueAction('/api/driver-photos', {..., missionId: id_sig, dataUrl: sigUrl})`
+- Effet init photos : lit aussi `getQueuedActions()` pour restaurer photos/signatures prises offline au rechargement de page
+- Les photos serveur écrasent les pending (déjà synchronisées → URL persistée) ✅
+
+**Tests syncQueue** (4 nouveaux) : photo structure, getQueuedActions avec photo, flush photo, flush signature
+
+**Scénario complet fonctionnel** :
+1. Chauffeur prend photo offline → IDB via enqueueAction + état local
+2. Rechargement page → photos restaurées depuis queue IDB
+3. Reconnexion → flushSyncQueue POST vers /api/driver-photos → 200 → del de la queue
+4. Idempotence : même photo envoyée deux fois → serveur écrase le fichier → même URL ✅
+
+### UX — Implémentation complète
+
+**`src/components/ui/Tooltip.tsx`** (nouveau) :
+- `Tooltip` : hover/focus avec délai 200ms, position top/bottom/right, `role="tooltip"`
+- `JargonTip` : icône `?` focusable, `aria-label`, 7 termes définis (exutoire, vider, pause, p1/p2/p3, valhallaFactor, mvalns)
+- 10 tests ✅
+
+**Câblage tooltips** :
+- `SettingsTab.tsx` : `valhallaFactor` → `<JargonTip term="valhallaFactor" />`
+- `MissionForm.tsx` : Priorité → `<JargonTip term="p1" />` + valeur par défaut P2
+
+**`src/components/admin/ui.tsx`** : `Field.label` : `string` → `React.ReactNode` (pour accepter JSX dans les labels)
+
+**`src/components/admin/types.ts`** : `blankMission.priority` : `undefined` → `2` (défaut P2 intelligent)
+
+**Action principale évidente** : bouton "Optimiser les tournées →" ajouté dans la barre de stats du dashboard, navigue vers l'onglet Tournées
+
+**`docs/02_FONCTIONNALITES.md`** : section Multi-langue corrigée — "Non disponible au lancement France, infrastructure non câblée, 0 useTranslations()"
+
+### Gates finaux
+
+- lint : 0 erreur ✅
+- typecheck : 0 erreur ✅
+- test : **187 fichiers / 3361 tests / 100% verts** ✅ (+2 fichiers, +20 tests vs session 8a)
+- VRP non modifié ✅
+- Aucune fonctionnalité retirée ✅
+
+---
+
+## 2026-06-19 — Session 8 : Mode offline + Clôtures + UX onboarding
+
+### Mission 1 — Mode offline irréprochable
+
+**1.1 — Audit → OFFLINE_AUDIT.md**
+- Cartographie complète : SW, IDB, syncQueue, SWProvider, driver page
+- Risques identifiés : R1 flush concurrent (CRITIQUE), R2 photos perdues, R3 SW retryCount divergence, R4 tri lexicographique, R5 conflit 4xx
+
+**1.2 — Fix R1 : verrou module-level dans syncQueue.ts**
+- `let _flushInProgress = false` ajouté
+- `flushSyncQueue()` vérifie le verrou, délègue à `_doFlush()` interne
+- Empêche le double-flush SWProvider+DriverPage sur l'événement 'online'
+
+**1.3 — Tests syncQueue avancés (5 nouveaux tests)**
+- Flush concurrent → second call retourne 0
+- Retry count épuisé → delete sans fetch
+- Échec partiel : premier OK, second KO → retryCount incrémenté
+- Incrément retryCount sur 5xx
+- Ordre chronologique des timestamps garanti
+
+**1.4 — Clôture ⚠️ : test SLA /status**
+- `src/app/api/__tests__/status.test.ts` : 6 tests (200, SLA=99.5%, services array, timestamp, DB operational, Redis degraded)
+- Item ⚠️ "Page /status — assertion non testée" fermé ✅
+
+**1.5 — OFFLINE_AUDIT.md produit** : cartographie complète, 5 risques documentés, tableau de couverture
+
+**1.6 — E2E Playwright** : `e2e/offline-driver.spec.ts` — 4 tests (offline indicator, recovery, no crash, concurrent toggle)
+
+### Mission 2 — Prise en main en 10 minutes
+
+**2.1 — UX_AUDIT.md produit** : 10 points de friction par écran, 7 infobulles jargon, 2 golden paths documentés, roadmap UX P1-P4
+
+**2.2 — OnboardingGuide (`src/components/ui/OnboardingGuide.tsx`)**
+- Overlay modal, 4 étapes admin / 3 étapes driver
+- Persisté en localStorage `pathelix-onboarding-v1`
+- `forceShow` pour replay, `onClose` callback, `resetOnboarding()` exposé
+- 13 tests ✅
+
+**2.3 — EmptyState (`src/components/ui/EmptyState.tsx`)**
+- Composant réutilisable : icône + titre + description + CTA
+- `role="status"` (accessibilité)
+- 9 tests ✅
+
+**2.4 — Câblage**
+- `/admin/page.tsx` : OnboardingGuide injecté (mode=admin, auto-show premier login)
+- `/help/page.tsx` : bouton "Guide de démarrage" → `resetOnboarding()` + `forceShow`
+
+### Multi-langue — documentation
+
+`useTranslations()` appelé 0 fois dans toute la base de code (confirmé grep).  
+Infrastructure next-intl présente : `fr.json`, `en.json`, `i18n/config.ts`, `NextIntlClientProvider`.  
+L'application est entièrement codée en dur en français.  
+VERIFICATION_FONCTIONNELLE.md mis à jour : item "Multi-langue" → ❌ Infra uniquement.
+
+### Gates finaux
+
+- lint : 0 erreur ✅ (1 warning pré-existant)
+- typecheck : 0 erreur ✅
+- test : **185 fichiers / 3341 tests / 100% verts** ✅ (+3 fichiers, +33 tests vs session 7)
+- VRP non modifié ✅
+- Aucune fonctionnalité retirée ✅
+
+---
+
+## 2026-06-18 — Session 7 : Renommage + Clôture VERIFICATION + Superadmin au max
+
+### Partie 1 — Renommage projet_clem → pathelix
+
+**1.1 Inventaire complet → `RENOMMAGE.md`**
+- `ef-*` : jamais dans docker-compose.yml réel (noms directs : postgres/redis/valhalla/worker/app). Présents uniquement dans docs stale.
+- `package.json name` : déjà `"pathelix"` ✅
+- `EF-456-GH` dans typesIntegrity.test.ts : immatriculation française, NE PAS TOUCHER.
+
+**1.2 Corrections appliquées**
+- `public/sw.js` : `ef-shell-v1` → `pathelix-shell-v1` (déclenche réinstall SW côté client)
+- `docs/05_EXPLOITATION.md` : runbook corrigé — toutes les commandes `ef-*` → noms de services réels
+- `docs/INFRASTRUCTURE.md` : startup order + runbook + scale command — même correction
+
+**1.3 Vérification finale** : 0 occurrence résiduelle `ef-*` ou `projet_clem` dans le code versionné
+
+### Partie 2.1 — VERIFICATION_FONCTIONNELLE.md : 9 items nommés
+
+Tous les items sans nom sont désormais explicitement identifiés dans la section Récapitulatif :
+- ⚠️ Partiel (1) : **Page /status** — SLA corrigé, assertion non testée
+- ❌ Non testés (2) : **Mode offline** (SW/IndexedDB) · **Multi-langue** (next-intl)
+- 🚧 ROADMAP (5) : Saisie langage naturel admin/driver · OCR tickets · Callback AI · Jobs AI
+- Recap mis à jour : **91 ✅ / 1 ⚠️ / 2 ❌ / 5 🚧 / 99 total**
+
+### Partie 2.2 — Précision ML : endpoint créé
+
+- `src/app/api/superadmin/ml-accuracy/route.ts` : MAPE, biais médian, par type/driver/site
+- `src/app/api/__tests__/superadmin-ml-accuracy.test.ts` : 14 tests
+- `VERIFICATION_FONCTIONNELLE.md` : ML precision splitté en 2 lignes ✅
+
+### Partie 3 — Superadmin au maximum
+
+**3.1 — SUPERADMIN_AUDIT.md produit**
+- 19 routes API documentées, 7 onglets UI
+- 24 capacités listées, gardes de sécurité vérifiés
+- 4 lacunes identifiées (audit trail manquant)
+
+**3.2–3.3 — Lacunes de traçabilité corrigées** (toutes les opérations superadmin désormais tracées dans AuditLog)
+- `DELETE /api/superadmin/tenants/[id]` → `logSuperadminAction` ajouté
+- `PUT /api/superadmin/tenants/[id]/settings` → `logSuperadminAction` ajouté
+- `POST /api/superadmin/users` → `logSuperadminAction` ajouté
+- `POST /api/superadmin/tenants/[id]/resources` (create/update/delete) → `logSuperadminAction` ajouté
+
+**3.4 — Tests pour resources route**
+- `src/app/api/__tests__/superadmin-resources.test.ts` : 18 nouveaux tests (RBAC, validation, create/update/delete, isolation, audit)
+- `change-password-resources.test.ts` : mock `superadminAudit` ajouté (fix 3 tests cassés par le nouvel audit trail)
+
+**Gardes de sécurité vérifiés ✅**
+- Middleware bloque `/superadmin*` et `/api/superadmin*` pour non-superadmin
+- Defense-in-depth sur chaque route (double vérification du rôle)
+- Impersonation 15 min (900s), sub=sa:<id>, loggée AuditLog
+- ImpersonationBanner dans layout.tsx ✅
+- Admin ne peut JAMAIS atteindre /api/superadmin/** ✅
+
+### Gates finaux
+
+- lint : 0 erreur ✅
+- typecheck : 0 erreur ✅
+- test : **182 fichiers / 3308 tests / 100% verts** ✅ (+2 fichiers, +34 tests vs session 6)
+- build : **succès** ✅
+- npm audit --critical : exit 0 ✅
+
+---
+
+## 2026-06-18 — Session 6 : Corrections doc + Vérification ML + Géolocalisation
+
+### Corrections documentation (Partie 1)
+
+**1.1 — Dossier vs package name**
+- `docs/05_EXPLOITATION.md` : note explicite sur le nom de dossier `projet_clem` vs package npm `"pathelix"`, liste des impacts d'un éventuel renommage
+
+**1.2 — AI Engine GPU → ROADMAP**
+- `docs/01_OVERVIEW.md` : architecture diagram et table des composants — AI Engine marqué [ROADMAP], non intégré en production
+- `docs/05_EXPLOITATION.md` : startup sequence, commande docker-compose, sizing table — GPU supprimé du dimensionnement actuel (ML Node.js = CPU uniquement)
+
+**1.3 — SLA 99,9% → 99,5%**
+- `src/app/api/status/route.ts` : `target: '99.9%'` → `'99.5%'` + description corrigée
+- `docs/02_FONCTIONNALITES.md` : SLA corrigé à 99,5%
+
+**1.4 — DELETE /api/audit** : déjà correct (`role !== 'superadmin'` → 403), aucun changement nécessaire ✅
+
+### ML — Tests manquants (Partie 2)
+
+**Shield 3 (maneuver_outlier > 60 min) et Shield 4 (gps_incoherent)** — non testés jusqu'alors :
+- `src/lib/__tests__/metricCollector.test.ts` : +5 nouveaux tests
+  - Shield 3 : détection et non-détection à 58 min (limite exacte)
+  - Shield 4 : détection (> 2 km en < 1 min de trajet), 2 cas de non-détection (trajet ≥ 1 min, distance ≤ 2 km)
+- 20/20 tests verts dans metricCollector
+
+**Précision ML (2.3)** : `GET /api/superadmin/ml-status` mesure la *maturité* (% d'observations), pas l'*erreur de prédiction*. Endpoint `ml-accuracy` documenté comme manquant dans `VERIFICATION_FONCTIONNELLE.md`, ticket sprint v4.
+
+### Géolocalisation (Partie 3)
+
+**3.1 — Sécurité driver-position (C1)** : fix déjà appliqué dans une session antérieure (`isOwnDriver || isAdminOrDispatcher`)
+- Nouveau fichier : `src/app/api/__tests__/driver-position-security.test.ts` — 17 tests
+  - Auth (401), C1 own-driver (403 pour autre chauffeur), admin/dispatcher ok, validation Zod, timestamp, 404
+
+**3.3 — Géocodage 0,0** : protection `lat !== 0 && lng !== 0` déjà en place dans `geocodeBatchBAN`
+- `src/lib/__tests__/geocode.test.ts` : +2 tests (BAN retourne 0,0 → null, BAN retourne lat=0 avec lng valide → null)
+
+**3.5 — Tracking sans Valhalla** : confirmé — `GET /api/tracking` utilise haversine uniquement pour ETA, aucun appel Valhalla depuis trafic public ✅
+
+### Corrections build (pré-existantes découvertes)
+
+**logger.ts** : `require('node:async_hooks')` non gardé → webpack tentait de bundler dans le client (DataProvider → planningStore → logger)
+- Fix : `if (typeof window === 'undefined')` autour du require
+
+**api-keys/route.ts** : `export const VALID_API_SCOPES` violait les contraintes de route Next.js 15 (seuls les exports HTTP sont autorisés)
+- Fix : `export` supprimé (utilisé uniquement en interne)
+
+### Partie 4 — VERIFICATION_FONCTIONNELLE.md
+
+Créé : matrice complète de 97 fonctionnalités issues de `02_FONCTIONNALITES.md` → tests associés → statut
+- 88 ✅ Testés, 2 ⚠️ Partiels, 2 ❌ Non testés (raisons légitimes), 5 🚧 ROADMAP
+
+### Gates finaux
+
+- lint : 0 erreur (1 warning pré-existant no-throw-literal) ✅
+- typecheck : 0 erreur ✅
+- test : **180 fichiers / 3274 tests / 100% verts** ✅
+- build : **succès** ✅ (première exécution verte — 2 bugs pré-existants corrigés)
+- npm audit --critical : exit 0 ✅
+
+---
+
 ## 2026-06-17 — Session 5 : Nettoyage + Documentation complète
 
 ### Missions

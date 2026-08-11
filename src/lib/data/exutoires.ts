@@ -13,10 +13,10 @@ import prisma from '@/lib/db'
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
 const EXUTOIRE_LIST_SELECT = {
-  id: true, name: true, lat: true, lng: true,
+  id: true, name: true, address: true, lat: true, lng: true,
   openingHoursOpen: true, openingHoursClose: true,
   closedDays: true, acceptedWasteTypes: true,
-  serviceTimeMin: true, archived: true,
+  serviceTimeMin: true,
 } as const
 
 export async function getAllExutoires(tenantId: string): Promise<Exutoire[]> {

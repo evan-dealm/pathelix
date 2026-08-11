@@ -112,6 +112,18 @@ describe('middleware', () => {
     expect(res.status).toBe(200)
   })
 
+  it('passes /api/webhooks/trackdechets without auth — regression: webhook externe bloqué par middleware', async () => {
+    const req = makeReq('/api/webhooks/trackdechets')
+    const res = await middleware(req)
+    expect(res.status).toBe(200)
+  })
+
+  it('passes /api/ai/callback without auth — regression: callback HMAC bloqué par middleware', async () => {
+    const req = makeReq('/api/ai/callback')
+    const res = await middleware(req)
+    expect(res.status).toBe(200)
+  })
+
   it('passes /driver/123 without auth', async () => {
     const req = makeReq('/driver/123')
     const res = await middleware(req)

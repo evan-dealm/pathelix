@@ -6,6 +6,7 @@ import { IntegrationsPanel } from '../IntegrationsPanel'
 import { TRADES, TRADE_IDS, type TradeId } from '@/lib/trades'
 import { useTrade } from '@/providers/TradeProvider'
 import { useToast } from '@/components/ui/Toast'
+import { JargonTip } from '@/components/ui/Tooltip'
 import { cachedFetch, invalidateClientCache } from '@/lib/clientCache'
 import type { SettingsApiResponse } from '@/lib/types'
 
@@ -602,7 +603,10 @@ export function SettingsTab() {
                   className={inp} />
               </div>
               <div>
-                <label className={lbl}>Facteur Valhalla/OSRM</label>
+                <label className={lbl}>
+                  Facteur Valhalla/OSRM
+                  <JargonTip term="valhallaFactor" position="right" />
+                </label>
                 <input type="number" value={optim.valhallaFactor} min={0.5} max={3.0} step="0.05"
                   title="Correction des durées Valhalla (free-flow → réel). 1.60 = +60% de temps sur les durées estimées."
                   onChange={e => setOptim(p => ({ ...p, valhallaFactor: parseFloat(e.target.value) || 1.60 }))}

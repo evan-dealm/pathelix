@@ -104,7 +104,7 @@ model Driver {
   licenseCategories Json     @default("[]")   // ['B','C','CE',…]
   emergencyContact String    @default("")     // "Prénom Nom: 06 12 34 56 78"
   // ─── [4.C] Capacité multi-dimensionnelle ────────────────────────────────
-  capacityDimensions Json     @default("{}")  // {poids?: number, volume?: number, nbBennes?: number}
+  capacityDimensions Json     @default("{}")  // {volume?: number, nbBennes?: number} — poids supprimé (non lu par VRP, voir BACKLOG.md D1)
   // ─── Affichage ──────────────────────────────────────────────────────────
   color            String    @default("")     // couleur hex pour la carte
   startingExutoireId String?

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const log = createLogger('/api/superadmin/tenants/[id]/settings')
 
@@ -24,7 +25,7 @@ const SettingsSchema = z.object({
 
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
 
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
   const { id: tenantId } = await params
@@ -45,6 +46,16 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       where: { tenantId },
       update: parsed.data,
       create: { tenantId, ...parsed.data },
+    })
+
+    logSuperadminAction({
+      superadminId,
+      targetTenantId: tenantId,
+      isImpersonation: false,
+      method: 'PUT',
+      path: `/api/superadmin/tenants/${tenantId}/settings`,
+      action: 'settings_updated',
+      details: { changedKeys: Object.keys(parsed.data) },
     })
 
     log.info('Settings updated by superadmin', { tenantId, keys: Object.keys(parsed.data) })

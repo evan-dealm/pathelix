@@ -223,6 +223,26 @@ describe('POST /api/optimize', () => {
     }
   })
 
+  it('rejects timeBudgetMs above 300000 (422) — regression: budget non borné', async () => {
+    const res = await POST(makeRequest({
+      date:    '2026-03-18',
+      options: { timeBudgetMs: 3_600_000 },
+    }))
+    expect(res.status).toBe(422)
+  })
+
+  it('caps direct-mode time budget at 15s — regression: fallback synchrone monopolisait le process web', async () => {
+    await POST(makeRequest({
+      date:    '2026-03-18',
+      options: { timeBudgetMs: 120_000 },
+    }))
+
+    expect(runVRP).toHaveBeenCalled()
+    const call = vi.mocked(runVRP).mock.calls.at(-1)
+    const opts = call?.[4] as { timeBudgetMs?: number } | undefined
+    expect(opts?.timeBudgetMs).toBeLessThanOrEqual(15_000)
+  })
+
   it('returns 403 when user lacks optimize permission (driver role)', async () => {
     vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-1', role: 'driver', requestId: 'req-1', trade: null })
     vi.mocked(hasPermission).mockResolvedValue(false)

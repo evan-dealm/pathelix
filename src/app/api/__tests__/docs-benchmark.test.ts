@@ -11,11 +11,12 @@ vi.mock('@/lib/data/context', () => ({
 const mockTenantFindMany  = vi.hoisted(() => vi.fn())
 const mockMetricFindMany  = vi.hoisted(() => vi.fn())
 const mockMissionFindMany = vi.hoisted(() => vi.fn())
+const mockMissionCount    = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/db', () => ({
   default: {
     tenant:              { findMany: mockTenantFindMany  },
     interventionMetric:  { findMany: mockMetricFindMany  },
-    mission:             { findMany: mockMissionFindMany },
+    mission:             { findMany: mockMissionFindMany, count: mockMissionCount },
   },
 }))
 
@@ -83,8 +84,7 @@ describe('GET /api/benchmark', () => {
         { tenantId: 't1', estimatedDurationMin: 30, actualDurationMin: 35, distanceKm: 10 },
       ])
       .mockResolvedValueOnce([]) // currentStats — fewer than 5
-    mockMissionFindMany.mockResolvedValueOnce([])  // group missions
-    mockMissionFindMany.mockResolvedValueOnce([])  // currentStats missions
+    mockMissionCount.mockResolvedValue(0)
 
     const res = await benchmarkGET(makeReq())
     expect(res.status).toBe(200)
@@ -100,11 +100,6 @@ describe('GET /api/benchmark', () => {
       actualDurationMin:    33,
       distanceKm:           15,
     }))
-    const missions = [
-      { tenantId: 't2', completedAt: new Date(), cancelledAt: null },
-      { tenantId: 't2', completedAt: null, cancelledAt: null },
-    ]
-
     mockTenantFindMany.mockResolvedValueOnce([
       { id: 't1', trade: 'TRANSPORT' },
       { id: 't2', trade: 'TRANSPORT' },
@@ -112,9 +107,9 @@ describe('GET /api/benchmark', () => {
     mockMetricFindMany
       .mockResolvedValueOnce(metrics12)   // group metrics (12 → passes)
       .mockResolvedValueOnce([])           // currentStats (my tenant 't1', no metrics)
-    mockMissionFindMany
-      .mockResolvedValueOnce(missions)    // group missions
-      .mockResolvedValueOnce([])           // currentStats missions
+    mockMissionCount
+      .mockResolvedValueOnce(2)           // group: total
+      .mockResolvedValueOnce(1)           // group: done
 
     const res = await benchmarkGET(makeReq())
     expect(res.status).toBe(200)
@@ -143,9 +138,11 @@ describe('GET /api/benchmark', () => {
     mockMetricFindMany
       .mockResolvedValueOnce(metrics12)  // group metrics
       .mockResolvedValueOnce(myMetrics5) // currentStats
-    mockMissionFindMany
-      .mockResolvedValueOnce([{ completedAt: new Date() }, { completedAt: null }])  // group
-      .mockResolvedValueOnce([{ completedAt: new Date() }])                          // currentStats
+    mockMissionCount
+      .mockResolvedValueOnce(2)  // group: total
+      .mockResolvedValueOnce(1)  // group: done
+      .mockResolvedValueOnce(1)  // currentStats: total
+      .mockResolvedValueOnce(1)  // currentStats: done
 
     const res = await benchmarkGET(makeReq())
     expect(res.status).toBe(200)
@@ -166,7 +163,7 @@ describe('GET /api/benchmark', () => {
     // Use a real tenant to reach the main response path (not the early-exit)
     mockTenantFindMany.mockResolvedValueOnce([{ id: 't1', trade: 'BTP' }])
     mockMetricFindMany.mockResolvedValue([]) // < 10 → skipped, but still reaches final return
-    mockMissionFindMany.mockResolvedValue([])
+    mockMissionCount.mockResolvedValue(0)
     const res = await benchmarkGET(makeReq())
     expect(res.status).toBe(200)
     const cc = res.headers.get('cache-control')

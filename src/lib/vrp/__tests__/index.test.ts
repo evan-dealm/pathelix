@@ -117,6 +117,14 @@ describe('runVRP — basic', () => {
     const result = await runVRP([mission('m-1'), mission('m-2')], [driver()], [], DATE, FAST)
     expect(result.stats.totalMissions).toBe(2)
   })
+
+  it('terminates when all missions share the exact same coordinates (all distances zero)', async () => {
+    const missions = Array.from({ length: 8 }, (_, i) =>
+      mission(`m-${i}`, { latitude: 45.9, longitude: 6.1 }))
+    const result = await runVRP(missions, [driver('d-1', { depotLat: 45.9, depotLng: 6.1 })], [], DATE, FAST)
+    expect(result.stats.totalMissions).toBe(8)
+    expect(result.stats.assignedMissions + result.unassignedMissions.length).toBe(8)
+  })
 })
 
 // ─── startingExutoireId ───────────────────────────────────────────────────────

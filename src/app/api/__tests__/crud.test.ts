@@ -370,6 +370,25 @@ describe('POST /api/missions', () => {
     expect(json.id).toBe('mission-new')
   })
 
+  it('returns 422 (not 500) when FK reference is invalid (P2003) — regression: clientId inexistant', async () => {
+    const err = Object.assign(new Error('FK violation'), { code: 'P2003' })
+    vi.mocked(createMission).mockRejectedValue(err)
+
+    const req = makeRequest('http://localhost:3000/api/missions', {
+      method: 'POST',
+      body: {
+        type: 'POSER', date: '2026-03-20', address: '10 rue de Lyon',
+        latitude: 45.764, longitude: 4.836,
+        estimatedDurationMin: 30, maneuverTimeMin: 5,
+        clientId: 'client-supprime',
+      },
+    })
+    const res = await missionsPost(req)
+    expect(res.status).toBe(422)
+    const json = await res.json()
+    expect(json.error).toContain('Référence invalide')
+  })
+
   it('archive-all requires admin role', async () => {
     vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'driver', requestId: 'r', trade: null })
     const req = makeRequest('http://localhost:3000/api/missions?action=archive-all', {

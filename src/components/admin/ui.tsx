@@ -26,10 +26,10 @@ export function Btn({ onClick, variant = 'primary', size = 'md', children, disab
   )
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-surface-500 dark:text-surface-400 text-[11px] font-medium uppercase tracking-wider mb-1.5">{label}</label>
+      <label className="flex items-center gap-1 text-surface-500 dark:text-surface-400 text-[11px] font-medium uppercase tracking-wider mb-1.5">{label}</label>
       {children}
     </div>
   )

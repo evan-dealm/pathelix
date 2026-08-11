@@ -4,8 +4,10 @@ import { createLogger }              from '@/lib/logger'
 import { handleApiError }            from '@/lib/apiError'
 import { verifyHmacSignature }       from '@/lib/trackdechets/crypto'
 import { mapTdStatus }               from '@/lib/trackdechets/bsdService'
+import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 
 const log = createLogger('/api/webhooks/trackdechets')
+const _tdRl = createRateLimiter(200, 60_000)
 
 const WebhookPayloadSchema = z.object({
   type: z.string(),
@@ -19,6 +21,11 @@ const WebhookPayloadSchema = z.object({
 const WEBHOOK_SECRET = process.env.TRACKDECHETS_WEBHOOK_SECRET ?? ''
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const ip = getClientIp(req.headers)
+  if (!(await _tdRl.check(`td-webhook:${ip}`))) {
+    return NextResponse.json({ error: 'Trop de requêtes' }, { status: 429 })
+  }
+
   if (!WEBHOOK_SECRET) {
     log.error('TRACKDECHETS_WEBHOOK_SECRET not configured')
     return NextResponse.json(

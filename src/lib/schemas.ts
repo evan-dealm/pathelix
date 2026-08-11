@@ -108,9 +108,11 @@ export const OptimizeRequestSchema = z.object({
   existingPlans: z.record(z.string(), z.array(z.string())).optional(),
 
   options: z.object({
-    timeBudgetMs:    z.number().int().positive().optional(),
+    // Borné à 5 min : un budget arbitraire monopoliserait le worker (ou pire,
+    // le process web en mode fallback synchrone)
+    timeBudgetMs:    z.number().int().positive().max(300_000).optional(),
     seed:            z.number().int().optional(),
-    lnsIterations:   z.number().int().positive().optional(),
+    lnsIterations:   z.number().int().positive().max(100_000).optional(),
     lnsDestroyRatio: z.number().min(0).max(1).optional(),
     verboseLog:      z.boolean().optional(),
     usePareto:       z.boolean().optional(),

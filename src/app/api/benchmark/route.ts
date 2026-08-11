@@ -51,10 +51,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       if (metrics.length < 10) continue
 
-      const missions = await prisma.mission.findMany({
-        where: { tenantId: { in: ids } },
-        select: { tenantId: true, completedAt: true, cancelledAt: true },
-      })
+      const [missionTotal, missionDone] = await Promise.all([
+        prisma.mission.count({ where: { tenantId: { in: ids } } }),
+        prisma.mission.count({ where: { tenantId: { in: ids }, completedAt: { not: null } } }),
+      ])
 
       const tenantsInTrade = new Set(metrics.map(m => m.tenantId))
 
@@ -66,7 +66,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       const durations = metrics.map(m => m.actualDurationMin).sort((a, b) => a - b)
       const distances = metrics.map(m => m.distanceKm ?? 0)
-      const missionArr = missions
 
       const avgDurationRatio = ratios.length > 0
         ? ratios.reduce((s, r) => s + r, 0) / ratios.length
@@ -74,9 +73,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       const avgDistanceKm = distances.reduce((s, d) => s + d, 0) / distances.length
 
-      const done      = missionArr.filter(m => m.completedAt !== null).length
-      const avgCompletionRate = missionArr.length > 0
-        ? Math.round((done / missionArr.length) * 100)
+      const avgCompletionRate = missionTotal > 0
+        ? Math.round((missionDone / missionTotal) * 100)
         : 0
 
       const p50 = durations[Math.floor(durations.length * 0.5)] ?? 0
@@ -102,10 +100,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         where: { tenantId, isReliable: true },
         select: { estimatedDurationMin: true, actualDurationMin: true, distanceKm: true },
       })
-      const myMissions = await prisma.mission.findMany({
-        where: { tenantId },
-        select: { completedAt: true },
-      })
+      const [myMissionTotal, myMissionDone] = await Promise.all([
+        prisma.mission.count({ where: { tenantId } }),
+        prisma.mission.count({ where: { tenantId, completedAt: { not: null } } }),
+      ])
 
       if (myMetrics.length >= 5) {
         const myRatios = myMetrics
@@ -114,14 +112,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           .filter(r => r > 0.1 && r < 5)
 
         const myDurs = myMetrics.map(m => m.actualDurationMin).sort((a, b) => a - b)
-        const myDone = myMissions.filter(m => m.completedAt !== null).length
 
         currentStats = {
           avgDurationRatio:  myRatios.length > 0
             ? Math.round((myRatios.reduce((s, r) => s + r, 0) / myRatios.length) * 100) / 100
             : 1,
           avgDistanceKm:     Math.round((myMetrics.reduce((s, m) => s + (m.distanceKm ?? 0), 0) / myMetrics.length) * 10) / 10,
-          avgCompletionRate: myMissions.length > 0 ? Math.round((myDone / myMissions.length) * 100) : 0,
+          avgCompletionRate: myMissionTotal > 0 ? Math.round((myMissionDone / myMissionTotal) * 100) : 0,
           medianDurationMin: Math.round(myDurs[Math.floor(myDurs.length * 0.5)] ?? 0),
           p75DurationMin:    Math.round(myDurs[Math.floor(myDurs.length * 0.75)] ?? 0),
         }

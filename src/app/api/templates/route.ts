@@ -10,7 +10,7 @@ const log = createLogger('/api/templates')
 
 const MISSION_TYPES = ['POSER', 'RETIRER', 'ECHANGER', 'VIDER', 'PAUSE', 'CHARGER_IMMEDIAT', 'DEPLACER', 'TASSER', 'EXPEDIER', 'ALLER_RETOUR'] as const
 
-const TemplateSchema = z.object({
+export const TemplateSchema = z.object({
   label:                z.string().min(1).max(200),
   type:                 z.enum(MISSION_TYPES),
   recurrence:           z.record(z.string(), z.unknown()),

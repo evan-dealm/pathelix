@@ -200,7 +200,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         tenantId, date, drivers: drivers.length, missions: missions.length,
       })
 
-      const result = await runVRP(missions, drivers, allExutoires, date, vrpOptions)
+      // Mode synchrone = calcul dans le process web : budget plafonné à 15 s pour
+      // que le fallback ne puisse jamais monopoliser le serveur (cause d'un
+      // blocage CPU observé pendant l'audit)
+      const syncOptions = {
+        ...vrpOptions,
+        timeBudgetMs: Math.min(vrpOptions.timeBudgetMs ?? 15_000, 15_000),
+      }
+      const result = await runVRP(missions, drivers, allExutoires, date, syncOptions)
 
       void maybeSendOptimizationPush(prisma, tenantId, date, result.stats.assignedMissions, missions.length)
 

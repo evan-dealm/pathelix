@@ -71,9 +71,13 @@ import { GET as statusGET }                        from '@/app/api/status/route'
 import { GET as driverStatusGET }                  from '@/app/api/driver-status/route'
 import { _statusStore }                            from '@/lib/statusStore'
 import { getTenantId }                             from '@/lib/data/context'
+import { verifySession }                           from '@/lib/session'
 
 function makeGet(url: string, headers?: Record<string, string>): NextRequest {
   return new NextRequest(url, { headers })
+}
+function makeGetAuth(url: string): NextRequest {
+  return new NextRequest(url, { headers: { Cookie: 'session=test-token' } })
 }
 function makePost(url: string, body: unknown): NextRequest {
   return new NextRequest(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -276,10 +280,13 @@ describe('GET /api/status', () => {
 
 // ── GET /api/driver-status ────────────────────────────────────────────────────
 
+const MOCK_SESSION = { sub: 'user-1', role: 'admin' as const, tenantId: 'tenant-1', iat: 0, exp: 9999999999 }
+
 describe('GET /api/driver-status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(_statusStore as Map<string, unknown>).clear()
+    vi.mocked(verifySession).mockResolvedValue(MOCK_SESSION)
   })
 
   it('returns 400 when date param missing', async () => {
@@ -288,7 +295,7 @@ describe('GET /api/driver-status', () => {
   })
 
   it('returns empty status map when no statuses set (200)', async () => {
-    const res  = await driverStatusGET(makeGet('http://localhost/api/driver-status?date=2026-05-15', { 'x-tenant-id': 'tenant-1' }))
+    const res  = await driverStatusGET(makeGetAuth('http://localhost/api/driver-status?date=2026-05-15'))
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(typeof json).toBe('object')
@@ -299,7 +306,7 @@ describe('GET /api/driver-status', () => {
     const driverKey = encodeURIComponent('driver-1')
     _statusStore.set(`${tenantKey}|${driverKey}|2026-05-15`, { 'mission-1': 'done' })
 
-    const res  = await driverStatusGET(makeGet('http://localhost/api/driver-status?date=2026-05-15&driverId=driver-1', { 'x-tenant-id': 'tenant-1' }))
+    const res  = await driverStatusGET(makeGetAuth('http://localhost/api/driver-status?date=2026-05-15&driverId=driver-1'))
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json['driver-1']).toBeDefined()
@@ -307,7 +314,7 @@ describe('GET /api/driver-status', () => {
   })
 
   it('returns full status map (200) when no driverId param', async () => {
-    const res  = await driverStatusGET(makeGet('http://localhost/api/driver-status?date=2026-05-15'))
+    const res  = await driverStatusGET(makeGetAuth('http://localhost/api/driver-status?date=2026-05-15'))
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(typeof json).toBe('object')

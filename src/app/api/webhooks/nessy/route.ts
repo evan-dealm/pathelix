@@ -10,12 +10,19 @@ import {
 import type { NessyWebhookBody } from '@/services/nessy'
 import { createLogger } from '@/lib/logger'
 import { redisCache } from '@/lib/redisCache'
+import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 
 const DEDUP_TTL_MS = 10 * 60 * 1000
 
 const log = createLogger('/api/webhooks/nessy')
+const _nessyRl = createRateLimiter(200, 60_000)
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+
+  const ip = getClientIp(req.headers)
+  if (!(await _nessyRl.check(`nessy:${ip}`))) {
+    return NextResponse.json({ error: 'Trop de requêtes' }, { status: 429 })
+  }
 
   if (process.env.NODE_ENV === 'production' && IS_DEV_SECRET) {
     return NextResponse.json(

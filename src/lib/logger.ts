@@ -1,12 +1,14 @@
 type RequestStore = { requestId: string }
 
 let _als: { run<T>(_store: RequestStore, _fn: () => T): T; getStore(): RequestStore | undefined } | null = null
-try {
-  // eslint-disable-next-line no-undef
-  const { AsyncLocalStorage } = require('node:async_hooks') as typeof import('async_hooks')
-  _als = new AsyncLocalStorage<RequestStore>()
-} catch {
+if (typeof window === 'undefined') {
+  try {
+    // eslint-disable-next-line no-undef
+    const { AsyncLocalStorage } = require('node:async_hooks') as typeof import('async_hooks')
+    _als = new AsyncLocalStorage<RequestStore>()
+  } catch {
 
+  }
 }
 
 export function withRequestId<T>(requestId: string, fn: () => T): T {

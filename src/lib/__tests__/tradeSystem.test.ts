@@ -92,10 +92,12 @@ describe('Trades — Vocabulaire', () => {
     expect(v.exutoire).toBe('Garde-meuble')
   })
 
-  it('btp_location utilise "Chantier" comme client', () => {
+  it('btp_location utilise "Client" et "Base"', () => {
     const v = TRADES.btp_location.vocabulary
-    expect(v.client).toBe('Chantier')
+    expect(v.client).toBe('Client')
     expect(v.depot).toBe('Base')
+    expect(v.mission).toBe('Livraison')
+    expect(v.binSize).toBe('Référence produit')
   })
 
   it('les labels de mission diffèrent entre métiers', () => {

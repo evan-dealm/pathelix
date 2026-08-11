@@ -2,6 +2,7 @@ import { NextRequest, NextResponse }  from 'next/server'
 import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { redisCache }                from '@/lib/redisCache'
+import { TemplateSchema }            from '../route'
 import prisma                        from '@/lib/db'
 
 const log = createLogger('/api/templates/[id]')
@@ -19,15 +20,21 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   try { body = await req.json() }
   catch { return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 }) }
 
+  const parsed = TemplateSchema.partial().safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
+  }
+
   const data: Record<string, unknown> = {}
   const allowed = [
     'label', 'type', 'recurrence', 'address', 'latitude', 'longitude',
     'startDate', 'endDate', 'enabled', 'clientName', 'estimatedDurationMin',
     'maneuverTimeMin', 'wasteTypeLabel', 'binSize', 'binSizeM3',
     'accessNotes', 'priority', 'timeWindow', 'linkedExutoireId',
-  ]
+  ] as const
+  const validated = parsed.data as Record<string, unknown>
   for (const key of allowed) {
-    if (key in body) data[key] = body[key] ?? null
+    if (key in body) data[key] = validated[key] ?? null
   }
 
   try {

@@ -131,7 +131,6 @@ export interface Driver {
   vehicleCapacity?: number
 
   capacityDimensions?: {
-    poids?:    number
     volume?:   number
     nbBennes?: number
   }

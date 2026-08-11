@@ -99,4 +99,10 @@ export default withSentryConfig(withNextIntl(nextConfig), {
     autoInstrumentServerFunctions: false,
     treeshake: { removeDebugLogging: true },
   },
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+    excludeReplayIframe:    true,
+    excludeReplayShadowDom: true,
+    excludeReplayWorker:    true,
+  },
 })

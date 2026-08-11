@@ -4,9 +4,11 @@ import { z }                         from 'zod'
 import { createLogger }              from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
+import { createRateLimiter }         from '@/lib/rateLimit'
 import prisma                        from '@/lib/db'
 
 const log = createLogger('/api/users/[id]/reset-password')
+const _resetRl = createRateLimiter(10, 60_000)
 type Params = { params: Promise<{ id: string }> }
 
 const ResetPasswordSchema = z.object({
@@ -19,6 +21,10 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
   if (role !== 'admin') {
     return NextResponse.json({ error: 'Réservé aux administrateurs' }, { status: 403 })
+  }
+
+  if (!(await _resetRl.check(`reset-pw:${tenantId}`))) {
+    return NextResponse.json({ error: 'Trop de requêtes' }, { status: 429 })
   }
 
   let body: unknown

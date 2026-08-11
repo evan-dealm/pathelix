@@ -215,6 +215,33 @@ describe('PUT /api/templates/[id]', () => {
     expect(res.status).toBe(400)
   })
 
+  it('rejects out-of-range latitude (400) — regression: PUT must validate values via Zod', async () => {
+    const res = await PUT(makePut('/api/templates/t-1', { latitude: 999 }), makeParams('t-1'))
+    expect(res.status).toBe(400)
+    expect(mockPrisma.missionTemplate.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid mission type (400)', async () => {
+    const res = await PUT(makePut('/api/templates/t-1', { type: 'HACK' }), makeParams('t-1'))
+    expect(res.status).toBe(400)
+    expect(mockPrisma.missionTemplate.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed timeWindow (closeMin <= openMin) (400)', async () => {
+    const res = await PUT(makePut('/api/templates/t-1', { timeWindow: { openMin: 600, closeMin: 500 } }), makeParams('t-1'))
+    expect(res.status).toBe(400)
+    expect(mockPrisma.missionTemplate.update).not.toHaveBeenCalled()
+  })
+
+  it('does not inject defaults for absent fields on partial update', async () => {
+    mockPrisma.missionTemplate.update.mockResolvedValue({ id: 't-1', label: 'x' })
+
+    await PUT(makePut('/api/templates/t-1', { label: 'x' }), makeParams('t-1'))
+
+    const callData = mockPrisma.missionTemplate.update.mock.calls[0][0].data
+    expect(Object.keys(callData)).toEqual(['label'])
+  })
+
   it('dispatcher role can also update', async () => {
     vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
     mockPrisma.missionTemplate.update.mockResolvedValue({ id: 't-1', label: 'x' })

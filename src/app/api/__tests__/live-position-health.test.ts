@@ -205,9 +205,9 @@ describe('POST /api/driver-position', () => {
 
   it('records position for valid driver', async () => {
     const { verifySession } = await import('@/lib/session')
-    vi.mocked(verifySession).mockResolvedValue({ sub: 'd1', role: 'driver', tenantId: 'tenant-1', driverRef: 'd1' })
-    const { getDriver } = await import('@/lib/data/drivers')
-    vi.mocked(getDriver).mockResolvedValue({ id: 'd1', firstName: 'G', lastName: 'M', sector: 'S1', depotName: 'D', depotLat: 45.76, depotLng: 6.05 })
+    vi.mocked(verifySession).mockResolvedValue({ sub: 'd1', role: 'driver', tenantId: 'tenant-rec', driverRef: 'd1' })
+    // POST now uses getTenantDriverIds → findMany cache instead of getDriver
+    mockPrisma.driver.findMany.mockResolvedValue([{ id: 'd1' }])
 
     const { recordOBDReading } = await import('@/lib/obdStore')
 
@@ -232,9 +232,8 @@ describe('POST /api/driver-position', () => {
 
   it('[SEC-C1] driver cannot post position for another driver in same tenant', async () => {
     const { verifySession } = await import('@/lib/session')
-    vi.mocked(verifySession).mockResolvedValue({ sub: 'driver-a', role: 'driver', tenantId: 'tenant-1', driverRef: 'driver-a' })
-    const { getDriver } = await import('@/lib/data/drivers')
-    vi.mocked(getDriver).mockResolvedValue({ id: 'driver-b', firstName: 'Bob', lastName: 'B', sector: 'S1', depotName: 'D', depotLat: 45.76, depotLng: 6.05 })
+    vi.mocked(verifySession).mockResolvedValue({ sub: 'driver-a', role: 'driver', tenantId: 'tenant-sec1', driverRef: 'driver-a' })
+    mockPrisma.driver.findMany.mockResolvedValue([{ id: 'driver-b' }])
 
     const { POST } = await import('@/app/api/driver-position/route')
     const req = makeRequest('http://localhost:3000/api/driver-position', {
@@ -248,9 +247,8 @@ describe('POST /api/driver-position', () => {
 
   it('[SEC-C1] admin can post position for any driver in same tenant', async () => {
     const { verifySession } = await import('@/lib/session')
-    vi.mocked(verifySession).mockResolvedValue({ sub: 'admin-user', role: 'admin', tenantId: 'tenant-1' })
-    const { getDriver } = await import('@/lib/data/drivers')
-    vi.mocked(getDriver).mockResolvedValue({ id: 'driver-b', firstName: 'Bob', lastName: 'B', sector: 'S1', depotName: 'D', depotLat: 45.76, depotLng: 6.05 })
+    vi.mocked(verifySession).mockResolvedValue({ sub: 'admin-user', role: 'admin', tenantId: 'tenant-sec2' })
+    mockPrisma.driver.findMany.mockResolvedValue([{ id: 'driver-b' }])
 
     const { POST } = await import('@/app/api/driver-position/route')
     const req = makeRequest('http://localhost:3000/api/driver-position', {

@@ -47,6 +47,10 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
+vi.mock('@/lib/superadminAudit', () => ({
+  logSuperadminAction: vi.fn(),
+}))
+
 import { POST as changePwd }  from '@/app/api/auth/change-password/route'
 import { POST as resources }  from '@/app/api/superadmin/tenants/[id]/resources/route'
 import { getRequestContext }  from '@/lib/data/context'

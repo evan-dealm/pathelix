@@ -85,6 +85,12 @@ describe('getRequestContext', () => {
     expect(getRequestContext(req).tenantId).toBe('my-tenant-1')
   })
 
+  it('accepts tenant-id with underscore (format seed "t_xxx") — regression: rejetait les IDs préfixés', () => {
+    const req = makeReq({ 'x-tenant-id': 't_5c3mevlp2b1k4fdyrdz3' })
+    expect(() => getRequestContext(req)).not.toThrow()
+    expect(getRequestContext(req).tenantId).toBe('t_5c3mevlp2b1k4fdyrdz3')
+  })
+
   it('generates requestId when x-request-id is absent', () => {
     const req = new NextRequest('http://localhost/api/test', {
       headers: { 'x-tenant-id': 'tenant-abc1' },

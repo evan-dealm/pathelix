@@ -4,6 +4,8 @@ const QUEUE_PREFIX = 'sync-q:'
 
 const MAX_RETRIES = 5
 
+let _flushInProgress = false
+
 export interface QueuedAction {
   id: string
   url: string
@@ -41,6 +43,16 @@ export async function getQueuedActions(): Promise<QueuedAction[]> {
 }
 
 export async function flushSyncQueue(): Promise<number> {
+  if (_flushInProgress) return 0
+  _flushInProgress = true
+  try {
+    return await _doFlush()
+  } finally {
+    _flushInProgress = false
+  }
+}
+
+async function _doFlush(): Promise<number> {
   const actions = await getQueuedActions()
   let synced = 0
 
@@ -61,6 +73,11 @@ export async function flushSyncQueue(): Promise<number> {
       } else if (res.status >= 500) {
         await set(action.id, { ...action, retryCount: action.retryCount + 1 })
         break
+      } else {
+        // 4xx (hors 422): rejet côté serveur — compte la tentative pour éviter
+        // qu'une action refusée (400, 401 session expirée…) reste en file indéfiniment,
+        // sans bloquer les actions suivantes
+        await set(action.id, { ...action, retryCount: action.retryCount + 1 })
       }
     } catch {
       await set(action.id, { ...action, retryCount: action.retryCount + 1 })

@@ -81,6 +81,20 @@ describe('getAllExutoires (DB path)', () => {
     mockPrisma.exutoire.findMany.mockResolvedValueOnce([])
     expect(await getAllExutoires('t-1')).toHaveLength(0)
   })
+
+  it('select contient tous les champs exigés par prismaRowToExutoire — regression: address omis → 500', async () => {
+    mockPrisma.exutoire.findMany.mockResolvedValueOnce([])
+    await getAllExutoires('t-1')
+    const call = mockPrisma.exutoire.findMany.mock.calls.at(-1)![0] as { select: Record<string, boolean> }
+    const requiredByMapper = [
+      'id', 'name', 'address', 'lat', 'lng',
+      'openingHoursOpen', 'openingHoursClose',
+      'closedDays', 'acceptedWasteTypes', 'serviceTimeMin',
+    ]
+    for (const field of requiredByMapper) {
+      expect(call.select, `champ manquant dans EXUTOIRE_LIST_SELECT: ${field}`).toHaveProperty(field, true)
+    }
+  })
 })
 
 describe('getExutoire (DB path)', () => {

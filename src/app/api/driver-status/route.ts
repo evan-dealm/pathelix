@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { getStatusFromStore, setStatusInStore, getAllStatusesForDate, pruneOldStatusEntries } from '@/lib/statusStore'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
-import { getRequestContext } from '@/lib/data/context'
 import prisma from '@/lib/db'
 
 let _pruneCounter = 0
@@ -57,7 +56,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Paramètre date requis' }, { status: 400 })
   }
 
-  const { tenantId } = getRequestContext(req)
+  const token   = req.cookies.get(SESSION_COOKIE)?.value ?? null
+  const session = token ? await verifySession(token) : null
+  if (!session) {
+    return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
+  }
+  const tenantId = session.tenantId
 
   try {
 

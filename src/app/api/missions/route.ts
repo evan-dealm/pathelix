@@ -118,6 +118,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/missions', method: 'POST', status: '201' })
     return NextResponse.json(mission, { status: 201 })
   } catch (err) {
+    // P2003 : clientId / driverId / linkedExutoireId référence un enregistrement inexistant
+    // (ex. supprimé entre le chargement du formulaire et la soumission) — erreur client, pas serveur
+    if (err instanceof Error && (err as { code?: string }).code === 'P2003') {
+      return NextResponse.json({ error: 'Référence invalide : client, chauffeur ou exutoire inexistant' }, { status: 422 })
+    }
     log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
     metrics.increment(METRIC.API_ERRORS, { route: '/api/missions', type: 'server_error' })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

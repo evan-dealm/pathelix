@@ -7,7 +7,7 @@ import { createLogger } from '@/lib/logger'
 
 const log = createLogger('/api/api-keys')
 
-export const VALID_API_SCOPES = [
+const VALID_API_SCOPES = [
   'missions:read', 'missions:write',
   'drivers:read',  'drivers:write',
   'vehicles:read', 'vehicles:write',

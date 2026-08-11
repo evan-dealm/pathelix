@@ -54,7 +54,7 @@ export default function DriverIndexPage() {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6">
+      <main id="main-content" className="max-w-lg mx-auto px-4 py-6">
         {loading && (
           <div className="text-center py-16 text-gray-500">
             <div className="text-3xl mb-2 animate-spin">⏳</div>

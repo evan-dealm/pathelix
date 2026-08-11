@@ -97,10 +97,11 @@ Internet (HTTPS)
 │                   Bridge Docker (< 1ms)                    │
 │        ┌───────────────┬─────────────┐                     │
 │        ▼               ▼             ▼                     │
-│  ┌──────────┐  ┌────────────┐  ┌───────────┐             │
-│  │ Valhalla │  │ Worker VRP │  │ AI Engine │             │
-│  │(Routage) │  │(Optimis.)  │  │(OCR, GPU) │             │
-│  └──────────┘  └────────────┘  └───────────┘             │
+│  ┌──────────┐  ┌────────────┐  ┌─────────────────────┐   │
+│  │ Valhalla │  │ Worker VRP │  │ AI Engine [ROADMAP] │   │
+│  │(Routage) │  │(Optimis.)  │  │ (OCR, GPU — non     │   │
+│  └──────────┘  └────────────┘  │  intégré en prod)   │   │
+│                                 └─────────────────────┘   │
 │                                                            │
 │  Seuls ports 80/443 exposés sur Internet                   │
 └────────────────────────────────────────────────────────────┘
@@ -116,7 +117,7 @@ Internet (HTTPS)
 | **Valhalla** | Routage poids-lourds principal (profil dynamique) | Auto-hébergé, OSM France |
 | **OSRM** | Repli routage PL statique | Algorithme MLD, Rhône-Alpes |
 | **Worker VRP** | Optimisation asynchrone (BullMQ consumer) | Node.js, Worker Threads |
-| **AI Engine** | OCR tickets de pesée (Donut model, GPU) | Python FastAPI, optionnel |
+| **AI Engine** _(ROADMAP)_ | OCR tickets de pesée (Donut model, GPU) — **non intégré en production** | Python FastAPI — voir `docs/AI_ROADMAP.md` |
 
 ### Flux de données typique (optimisation)
 

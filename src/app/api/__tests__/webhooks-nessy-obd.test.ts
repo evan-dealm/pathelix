@@ -18,8 +18,9 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
+const rlAllowed = vi.hoisted(() => ({ value: true }))
 vi.mock('@/lib/rateLimit', () => ({
-  createRateLimiter: () => ({ check: vi.fn(async () => true) }),
+  createRateLimiter: () => ({ check: vi.fn(async () => rlAllowed.value) }),
   getClientIp: vi.fn(() => '127.0.0.1'),
 }))
 
@@ -64,7 +65,13 @@ function makeNessyPost(body: unknown, signature = 'valid-sig', tenantId = 'tenan
 // ── POST /api/webhooks/nessy ──────────────────────────────────────────────────
 
 describe('POST /api/webhooks/nessy', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => { vi.clearAllMocks(); rlAllowed.value = true })
+
+  it('returns 429 when rate limit exceeded — regression: webhook must be rate limited', async () => {
+    rlAllowed.value = false
+    const res = await nessyPOST(makeNessyPost({ missions: [] }))
+    expect(res.status).toBe(429)
+  })
 
   it('processes valid webhook payload (200)', async () => {
     vi.mocked(verifyNessySignature).mockResolvedValue(true)
@@ -213,6 +220,7 @@ describe('POST /api/webhooks/nessy', () => {
 
   it('handles non-Error thrown from nessyPayloadToMission (String(err) in catch)', async () => {
     vi.mocked(verifyNessySignature).mockResolvedValue(true)
+    // eslint-disable-next-line no-throw-literal -- teste volontairement le chemin String(err) avec un throw non-Error
     vi.mocked(nessyPayloadToMission).mockImplementationOnce(() => { throw 'not-an-error-object' })
     mockPrisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-1' })
     const now = new Date(Date.now() - 30_000).toISOString()

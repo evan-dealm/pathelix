@@ -4,8 +4,15 @@ import { formatDuration } from '@/lib/algorithm'
 import { displayShort } from './hooks'
 import { Sparkline } from '@/components/ui/Sparkline'
 import { useMemo, useEffect, useState } from 'react'
-import { KpiDrilldown, type KpiDrilldownMetric } from './KpiDrilldown'
+import dynamic from 'next/dynamic'
+import type { KpiDrilldownMetric } from './KpiDrilldown'
 import { cachedFetch } from '@/lib/clientCache'
+
+// recharts (~120 kB gzip) ne se charge qu'au clic sur un KPI
+const KpiDrilldown = dynamic(
+  () => import('./KpiDrilldown').then(m => m.KpiDrilldown),
+  { ssr: false },
+)
 
 interface KpiHistoryEntry {
   date:          string

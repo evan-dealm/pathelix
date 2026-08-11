@@ -200,6 +200,94 @@ describe('collectInterventionMetric — reliability rejection', () => {
   })
 })
 
+describe('collectInterventionMetric — reliability rejection (shields 3 & 4)', () => {
+  it('detects maneuver_outlier when arrived→started > 60 min', async () => {
+    const now = Date.now()
+    // arrived 90 min ago, started 20 min ago → maneuver = 70 min > 60 → rejected
+    const input = normalInput({
+      en_routeAt: new Date(now - 100 * 60_000).toISOString(),
+      arrivedAt:  new Date(now -  90 * 60_000).toISOString(),
+      startedAt:  new Date(now -  20 * 60_000).toISOString(),
+      doneAt:     new Date(now).toISOString(),
+    })
+    await collectInterventionMetric(input)
+    const { data } = mockPrisma.interventionMetric.create.mock.calls[0][0]
+    expect(data.isReliable).toBe(false)
+    expect(data.rejectReason).toMatch(/maneuver_outlier/)
+  })
+
+  it('does NOT reject maneuver_outlier when arrived→started ≤ 60 min', async () => {
+    const now = Date.now()
+    // arrived 70 min ago, started 12 min ago → maneuver = 58 min ≤ 60 → not rejected
+    const input = normalInput({
+      en_routeAt: new Date(now - 80 * 60_000).toISOString(),
+      arrivedAt:  new Date(now - 70 * 60_000).toISOString(),
+      startedAt:  new Date(now - 12 * 60_000).toISOString(),
+      doneAt:     new Date(now).toISOString(),
+    })
+    await collectInterventionMetric(input)
+    const { data } = mockPrisma.interventionMetric.create.mock.calls[0][0]
+    expect(data.isReliable).toBe(true)
+  })
+
+  it('detects gps_incoherent when travel < 1 min but GPS distance > 2 km', async () => {
+    const now = Date.now()
+    // en_route→arrived = 30 s (0.5 min < 1) but GPS says > 2km apart
+    // baseMission lat=45.75,lng=4.83 — put driver 3 km away
+    const input = {
+      ...normalInput({
+        en_routeAt: new Date(now - 100 * 60_000).toISOString(),
+        arrivedAt:  new Date(now -  99 * 60_000 - 30_000).toISOString(), // 30s travel
+        startedAt:  new Date(now -  50 * 60_000).toISOString(),
+        doneAt:     new Date(now -  20 * 60_000).toISOString(),
+      }),
+    }
+    // Inject GPS coords far from mission site (baseMission.lat=45.75, lng=4.83)
+    ;(input.statuses[MISSION] as Record<string, unknown>).lat = 45.78   // ~3.3 km north
+    ;(input.statuses[MISSION] as Record<string, unknown>).lng = 4.83
+    await collectInterventionMetric(input)
+    const { data } = mockPrisma.interventionMetric.create.mock.calls[0][0]
+    expect(data.isReliable).toBe(false)
+    expect(data.rejectReason).toMatch(/gps_incoherent/)
+  })
+
+  it('does NOT reject gps_incoherent when travel ≥ 1 min even if GPS far', async () => {
+    const now = Date.now()
+    // 2 min travel → GPS check skipped
+    const input = {
+      ...normalInput({
+        en_routeAt: new Date(now - 100 * 60_000).toISOString(),
+        arrivedAt:  new Date(now -  98 * 60_000).toISOString(), // 2 min travel
+        startedAt:  new Date(now -  50 * 60_000).toISOString(),
+        doneAt:     new Date(now -  20 * 60_000).toISOString(),
+      }),
+    }
+    ;(input.statuses[MISSION] as Record<string, unknown>).lat = 45.78
+    ;(input.statuses[MISSION] as Record<string, unknown>).lng = 4.83
+    await collectInterventionMetric(input)
+    const { data } = mockPrisma.interventionMetric.create.mock.calls[0][0]
+    expect(data.isReliable).toBe(true)
+  })
+
+  it('does NOT reject gps_incoherent when travel < 1 min but distance ≤ 2 km', async () => {
+    const now = Date.now()
+    const input = {
+      ...normalInput({
+        en_routeAt: new Date(now - 100 * 60_000).toISOString(),
+        arrivedAt:  new Date(now -  99 * 60_000 - 30_000).toISOString(), // 30s travel
+        startedAt:  new Date(now -  50 * 60_000).toISOString(),
+        doneAt:     new Date(now -  20 * 60_000).toISOString(),
+      }),
+    }
+    // 0.5 km away → under 2km threshold
+    ;(input.statuses[MISSION] as Record<string, unknown>).lat = 45.754  // ~0.44 km from 45.75
+    ;(input.statuses[MISSION] as Record<string, unknown>).lng = 4.83
+    await collectInterventionMetric(input)
+    const { data } = mockPrisma.interventionMetric.create.mock.calls[0][0]
+    expect(data.isReliable).toBe(true)
+  })
+})
+
 describe('collectInterventionMetric — error handling', () => {
   it('does not throw when interventionMetric.create fails', async () => {
     mockPrisma.interventionMetric.create.mockRejectedValue(new Error('DB fail'))

@@ -7,6 +7,7 @@ import { Modal, Field, Input, SelectInput, Textarea, Btn } from './ui'
 import { MiniMap } from '@/components/ui/MiniMap'
 import { useTrade } from '@/providers/TradeProvider'
 import { cachedFetch } from '@/lib/clientCache'
+import { JargonTip } from '@/components/ui/Tooltip'
 
 const SKILL_OPTIONS = ['permis_C', 'permis_CE', 'CACES', 'grue', 'HAZMAT', 'ADR']
 
@@ -16,7 +17,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
   onClose: () => void
   title: string
 }) {
-  const { missionLabel, missionIcon, enabledTypes } = useTrade()
+  const { missionLabel, missionIcon, enabledTypes, vocab } = useTrade()
   const typeOpts = enabledTypes.map(t => ({ value: t, label: `${missionIcon(t)} ${missionLabel(t)}` }))
 
   const [form, setForm] = useState(initial)
@@ -217,7 +218,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
 
           {}
           {selectedSiteId && (
-            <Field label="3. Produit (matiere + benne)">
+            <Field label={`3. Produit (${vocab.wasteType.toLowerCase()} + ${vocab.binSize.toLowerCase()})`}>
               {availableProducts.length > 0 ? (
                 <div className="grid grid-cols-1 gap-1.5">
                   {availableProducts.map(p => (
@@ -231,7 +232,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
                         {p.binSizeLabel && <span className="text-xs text-surface-400">{p.binSizeLabel}</span>}
                         {p.binSizeM3 && <span className="text-xs text-surface-400">({p.binSizeM3} m³)</span>}
                       </div>
-                      {p.defaultExutoire && <div className="text-xs text-surface-400 mt-0.5">Exutoire: {p.defaultExutoire.name}</div>}
+                      {p.defaultExutoire && <div className="text-xs text-surface-400 mt-0.5">{vocab.exutoire}: {p.defaultExutoire.name}</div>}
                     </button>
                   ))}
                 </div>
@@ -254,14 +255,13 @@ export function MissionForm({ initial, onSave, onClose, title }: {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Priorite">
+        <Field label={<span>Priorite <JargonTip term="p1" position="right" /></span>}>
           <SelectInput
-            value={form.priority !== null && form.priority !== undefined ? String(form.priority) : ''}
+            value={form.priority !== null && form.priority !== undefined ? String(form.priority) : '2'}
             onChange={v => setForm(p => ({ ...p, priority: v ? (Number(v) as 1 | 2 | 3) : undefined }))}
             options={[
-              { value: '',  label: 'Normale' },
-              { value: '1', label: 'P1 — Urgent' },
-              { value: '2', label: 'P2 — Normal' },
+              { value: '2', label: 'P2 — Normal (défaut)' },
+              { value: '1', label: 'P1 — Urgent (avant 10h)' },
               { value: '3', label: 'P3 — Flexible' },
             ]}
           />
@@ -298,8 +298,8 @@ export function MissionForm({ initial, onSave, onClose, title }: {
             <Field label="Longitude"><Input type="number" value={String(form.longitude)} onChange={setN('longitude')} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Matiere"><Input value={form.wasteTypeLabel || ''} onChange={set('wasteTypeLabel')} placeholder="Gravats, DIB..." /></Field>
-            <Field label="Materiel / Benne"><Input value={form.binSize || ''} onChange={set('binSize')} placeholder="Benne 35m³" /></Field>
+            <Field label={vocab.wasteType}><Input value={form.wasteTypeLabel || ''} onChange={set('wasteTypeLabel')} placeholder="Gravats, DIB..." /></Field>
+            <Field label={vocab.binSize}><Input value={form.binSize || ''} onChange={set('binSize')} placeholder="Benne 35m³" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Volume (m³)">
@@ -356,12 +356,12 @@ export function MissionForm({ initial, onSave, onClose, title }: {
 
       {}
       {(form.type === 'RETIRER' || form.type === 'ECHANGER' || form.type === 'ALLER_RETOUR' || form.type === 'CHARGER_IMMEDIAT') && (
-        <Field label={`Exutoire${form.type === 'ALLER_RETOUR' ? ' (obligatoire)' : ''}`}>
+        <Field label={`${vocab.exutoire}${form.type === 'ALLER_RETOUR' ? ' (obligatoire)' : ''}`}>
           <SelectInput
             value={form.linkedExutoireId || ''}
             onChange={v => setForm(p => ({ ...p, linkedExutoireId: v || undefined }))}
             options={[
-              { value: '', label: '-- Aucun exutoire --' },
+              { value: '', label: `-- Aucun ${vocab.exutoire.toLowerCase()} --` },
               ...exutoires.map(ex => ({ value: ex.id, label: `${ex.name} — ${ex.address}` })),
             ]}
           />

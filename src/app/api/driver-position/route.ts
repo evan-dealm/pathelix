@@ -7,6 +7,20 @@ import {
 import { getDriver } from '@/lib/data/drivers'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 
+const _driverIdCache = new Map<string, { ids: Set<string>; expiresAt: number }>()
+const DRIVER_ID_CACHE_TTL_MS = 60_000
+
+async function getTenantDriverIds(tenantId: string): Promise<Set<string>> {
+  const now    = Date.now()
+  const cached = _driverIdCache.get(tenantId)
+  if (cached && now < cached.expiresAt) return cached.ids
+  const prisma = (await import('@/lib/db')).default
+  const rows   = await prisma.driver.findMany({ where: { tenantId }, select: { id: true } })
+  const ids    = new Set(rows.map((r: { id: string }) => r.id))
+  _driverIdCache.set(tenantId, { ids, expiresAt: now + DRIVER_ID_CACHE_TTL_MS })
+  return ids
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const token   = req.cookies.get(SESSION_COOKIE)?.value ?? null
@@ -41,14 +55,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ positions, history: { [driverId]: history } })
   }
 
-  const allPositions = getAllCurrentPositions()
-  const tenantDriverIds = new Set<string>()
-
-  const tenantDrivers = await (await import('@/lib/db')).default.driver.findMany({
-    where: { tenantId: tenantHeader },
-    select: { id: true },
-  })
-  for (const d of tenantDrivers) tenantDriverIds.add(d.id)
+  const allPositions    = getAllCurrentPositions()
+  const tenantDriverIds = await getTenantDriverIds(tenantHeader)
 
   const positions = allPositions.filter(p => tenantDriverIds.has(p.driverId))
   const allHistory = getAllSpeedHistories(date)
@@ -91,8 +99,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { driverId, latitude, longitude, speedKmh, timestamp } = parsed.data
 
-  const driver = await getDriver(session.tenantId, driverId)
-  if (!driver) {
+  // Use cached ID set (60s TTL) — avoids 1 DB query per position update
+  const knownIds = await getTenantDriverIds(session.tenantId)
+  if (!knownIds.has(driverId)) {
     return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
   }
 

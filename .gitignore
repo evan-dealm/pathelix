@@ -27,6 +27,7 @@ coverage/
 tsconfig.tsbuildinfo
 playwright-result.txt
 test-results/
+load-tests/results/
 
 # Claude Code Intelligence
 .claude/daemon.log

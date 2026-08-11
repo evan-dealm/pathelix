@@ -79,7 +79,7 @@ export const blankMission = (date: string): Omit<Mission, 'id'> => ({
   latitude: 0, longitude: 0,
   estimatedDurationMin: 30, maneuverTimeMin: 15,
   wasteTypeLabel: '', binSize: '', accessNotes: '',
-  priority: undefined, binSizeM3: undefined, timeWindow: undefined,
+  priority: 2, binSizeM3: undefined, timeWindow: undefined,
 })
 
 export const BLANK_EXUTOIRE: Omit<import('@/lib/types').Exutoire, 'id'> = {

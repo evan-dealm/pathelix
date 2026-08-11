@@ -19,7 +19,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
   onDuplicate: (_id: string) => void
   onImportCSV: (_missions: Array<Omit<Mission, 'id'>>) => void
 }) {
-  const { missionIcon, missionLabel, enabledTypes } = useTrade()
+  const { missionIcon, missionLabel, enabledTypes, vocab } = useTrade()
 
   const poolTypes = enabledTypes.filter(t => !SYNTHETIC_TYPES.includes(t))
 
@@ -191,7 +191,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
         )}
         <input
           value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Rechercher client, adresse, chauffeur…"
+          placeholder={`Rechercher client, adresse, ${vocab.driver.toLowerCase()}…`}
           className="bg-surface-100 border border-surface-200 rounded-lg px-3 py-1 text-surface-900 placeholder-surface-400 text-xs focus:outline-none focus:border-[#0055A4] w-40 md:w-60"
         />
         {}
@@ -304,7 +304,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
             <span className="text-surface-400 text-xs">Assigner à :</span>
             <select value={bulkDriverId} onChange={e => setBulkDriverId(e.target.value)} title="Assigner à un chauffeur"
               className="bg-surface-100 border border-surface-200 rounded px-2 py-0.5 text-surface-900 text-xs focus:outline-none focus:border-[#0055A4]">
-              <option value="">— Chauffeur —</option>
+              <option value="">— {vocab.driver} —</option>
               {(Array.isArray(drivers) ? drivers : []).filter(d => !d.archived).map(d =>
                 <option key={d.id} value={d.id}>{d.firstName} {d.lastName}</option>
               )}
@@ -438,12 +438,12 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
                 <SortTh k="priority" label="P." />
                 <SortTh k="type" label="Type" />
                 <SortTh k="date" label="Date" />
-                <SortTh k="client" label="Client / Exutoire" />
+                <SortTh k="client" label={`Client / ${vocab.exutoire}`} />
                 <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal">Adresse</th>
                 <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal whitespace-nowrap">GPS</th>
                 <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal whitespace-nowrap">Durée</th>
                 <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal whitespace-nowrap">Assigné à</th>
-                <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal">Déchets / Benne</th>
+                <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal">{vocab.wasteType} / {vocab.binSize}</th>
                 <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal">Actions</th>
               </tr>
             </thead>

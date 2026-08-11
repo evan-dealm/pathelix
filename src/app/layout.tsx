@@ -39,7 +39,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  // Pas de maximumScale : les chauffeurs doivent pouvoir zoomer sur le terrain
+  // (soleil, gants) — bloquer le pinch-zoom est une violation d'accessibilité
   themeColor: '#F7F7F4',
 }
 

@@ -44,6 +44,9 @@ const PUBLIC_PATHS: Array<string | RegExp> = [
   '/api/webhooks/geotab',
   '/api/webhooks/samsara',
   '/api/webhooks/obd',
+  // Auto-protégés par HMAC (timingSafeEqual) — appelés par des services externes sans session
+  '/api/webhooks/trackdechets',
+  '/api/ai/callback',
 ]
 
 const SUPERADMIN_ONLY_PATTERNS: RegExp[] = [
@@ -186,5 +189,5 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.svg|sw.js|uploads|icons|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.webp|.*\\.svg|.*\\.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.svg|sw.js|manifest.json|uploads|icons|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.webp|.*\\.svg|.*\\.ico).*)'],
 }
