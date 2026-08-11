@@ -72,6 +72,7 @@ export default function DriverPage() {
   const [apiError, setApiError] = useState<string | null>(null)
 
   const [statuses, setStatuses] = useState<Record<string, MissionStatus>>({})
+  const [pendingScanMissionId, setPendingScanMissionId] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(true)
   const [pendingSync, setPendingSync] = useState(0)
   const [lastSynced, setLastSynced] = useState<string | null>(null)
@@ -301,6 +302,25 @@ export default function DriverPage() {
   )
   const currentIdx = currentMission ? realMissions.indexOf(currentMission) : -1
 
+  const pendingScanMission = useMemo(
+    () => (pendingScanMissionId ? sorted.find(m => m.id === pendingScanMissionId) ?? null : null),
+    [pendingScanMissionId, sorted],
+  )
+
+  const prevStatusesRef = useRef<Record<string, MissionStatus>>({})
+  useEffect(() => {
+    const prev = prevStatusesRef.current
+    for (const m of sorted) {
+      const wasStatus = prev[m.id] ?? 'todo'
+      const isStatus  = statuses[m.id] ?? 'todo'
+      if (wasStatus !== 'done' && isStatus === 'done' && m.type === 'VIDER') {
+        setPendingScanMissionId(m.id)
+        break
+      }
+    }
+    prevStatusesRef.current = statuses
+  }, [statuses, sorted])
+
   const tourResult = useMemo(() => {
     if (!driver || sorted.length === 0) return null
     return calcTour(sorted, driver.depotLat, driver.depotLng, startTime, speed)
@@ -404,7 +424,34 @@ export default function DriverPage() {
       </div>
 
       {}
-      {currentMission && !showAll ? (
+      {pendingScanMission && !showAll ? (
+        <div className="px-5 pb-6">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl">
+            <div className="bg-green-900/30 px-5 py-3 flex items-center gap-2 border-b border-zinc-800">
+              <span className="text-2xl">{'✅'}</span>
+              <span className="font-bold text-sm uppercase tracking-wide text-green-300">Vidage termine</span>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <div className="text-xl font-bold leading-tight">
+                  {pendingScanMission.clientName || pendingScanMission.outletName || 'Mission'}
+                </div>
+                <div className="text-zinc-400 text-sm mt-0.5">{pendingScanMission.address}</div>
+              </div>
+              <ScanTicketButton
+                missionId={pendingScanMission.id}
+                driverId={driverId}
+                missionType={pendingScanMission.type}
+                status="done"
+              />
+              <button type="button" onClick={() => setPendingScanMissionId(null)}
+                className="w-full py-4 bg-zinc-800 rounded-xl text-zinc-300 text-base font-bold active:bg-zinc-700 transition">
+                Continuer
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : currentMission && !showAll ? (
         <div className="px-5 pb-6">
           {}
           <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl">
@@ -577,14 +624,6 @@ export default function DriverPage() {
                   {nextAction.next.toUpperCase()}
                 </button>
               )}
-
-              {}
-              <ScanTicketButton
-                missionId={currentMission.id}
-                driverId={driverId}
-                missionType={currentMission.type}
-                status={currentStatus}
-              />
             </div>
           </div>
 

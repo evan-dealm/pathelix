@@ -43,7 +43,18 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Correction proposée** : découpler l'UI de scan de `currentMission` — suivre un id distinct
   "mission en attente de scan ticket" au lieu de dériver purement de `currentMission`, ou afficher
   le bouton dans une sous-étape de complétion avant de passer à la mission suivante.
-- **Statut** : à corriger (Phase 2)
+- **Statut** : ✅ **corrigé + testé**. Ajout d'un état `pendingScanMissionId` détecté via un
+  `useEffect` qui diffuse les transitions de statut (ancien statut ≠ 'done', nouveau statut ===
+  'done', type === 'VIDER') — indépendant de `currentMission`. Un écran intermédiaire
+  "Vidage terminé" affiche désormais `ScanTicketButton` pour la mission qui vient d'être
+  complétée, avec un bouton "Continuer" pour reprendre le flux normal. Test de régression ajouté
+  (`scanTicketFlow.test.tsx`) qui échouait avant le correctif (le flux sautait directement à la
+  mission suivante) et passe après.
+  Note technique : une première tentative (lire un flag positionné à l'intérieur du updater
+  `setStatuses` juste après l'appel) s'est avérée incorrecte — React n'exécute pas forcément
+  l'updater de façon synchrone au moment de l'appel, donc le flag n'était pas encore posé au
+  moment de la lecture. D'où le passage à un `useEffect` qui réagit à `statuses` une fois le
+  re-render effectif, seule approche fiable ici.
 
 ---
 
@@ -487,7 +498,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 
 | # | Titre | Sévérité | Statut initial |
 |---|---|---|---|
-| C1 | Scan ticket pesée inaccessible | 🔴 critique | à corriger |
+| C1 | Scan ticket pesée inaccessible | 🔴 critique | ✅ corrigé + testé |
 | M1 | VIDER/PAUSE créables par utilisateur | 🟠 majeure | à corriger |
 | M2 | Suppression abonnements push sur erreur transitoire | 🟠 majeure | à corriger |
 | M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | à valider utilisateur |
