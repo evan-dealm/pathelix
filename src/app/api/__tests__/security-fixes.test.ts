@@ -169,6 +169,7 @@ describe('Security: delivery-proof — UUID filenames', () => {
     vi.doMock('@/lib/db', () => ({
       default: {
         mission:       { findFirst: vi.fn(async () => ({ id: 'm-1', tenantId: 'tenant-test' })) },
+        driver:        { findFirst: vi.fn(async () => ({ id: 'driver-1' })) },
         deliveryProof: { upsert:    vi.fn(async () => ({ id: 'p-1' })) },
       },
     }))

@@ -41,6 +41,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const mission = await prisma.mission.findFirst({ where: { id: missionId, tenantId } })
   if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
 
+  // DeliveryProof.driverId has no DB-level FK (see AUDIT_BUGS.md N19) — driverId comes straight
+  // from client form data, so it must be checked against tenantId here or a proof could get
+  // written referencing a driver that belongs to a different tenant.
+  const driver = await prisma.driver.findFirst({ where: { id: driverId, tenantId }, select: { id: true } })
+  if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
+
   const uploadsDir = join(process.cwd(), 'public', 'uploads', safeName(tenantId))
   await mkdir(uploadsDir, { recursive: true })
 

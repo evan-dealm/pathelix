@@ -503,7 +503,14 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   heure locale du process — décalage possible d'un jour si `TZ` ≠ UTC.
 - **Correction** : utiliser exclusivement des opérations UTC (`setUTCDate` etc.) ou confirmer
   `TZ=UTC` fixé en déploiement.
-- **Statut** : à vérifier en Phase 3 (config déploiement), corriger par prudence en Phase 2
+- **Statut** : ✅ **corrigé**, sans test dédié. `setDate`/`getDate` (heure locale) remplacés par
+  `setUTCDate`/`getUTCDate` — correctif pur (aucun changement de comportement si `TZ=UTC` en
+  prod, corrige le vrai bug latent sinon). Pas de test ajouté : `vrpWorker.ts` n'a pas de garde
+  `isDirectRun` comme `recurringMissionsWorker.ts`/`auditRetentionWorker.ts` — il crée un vrai
+  worker BullMQ + connexion Redis **au niveau module, sans fonction englobante du tout** ; importer
+  ce module pour tester `getJ7Date()` isolément démarrerait une vraie connexion. Refactoriser tout
+  le fichier pour le rendre testable est hors du périmètre de cette correction ponctuelle —
+  vérifié par inspection + `npm run build` propre.
 
 ### N10 — `catch {}` silencieux sur calibrage ML (VRP index.ts)
 - **Fichier** : `src/lib/vrp/index.ts` lignes ~110-112, ~163-166
@@ -607,7 +614,28 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   driverId manuellement (hors périmètre de cette entrée, à croiser avec l'audit routes)
 - **Description** : contrairement à `Plan.driverId`/`Vehicle.assignedDriverId` (FK avec
   `@relation`), ces 4 champs sont de simples colonnes indexées sans intégrité référentielle DB.
-- **Statut** : à vérifier en Phase 2 (croiser avec validation applicative des routes concernées)
+- **Statut** : ✅ **`DeliveryProof` corrigé + testé** ; **`FuelRecord` et `PushSubscription`
+  identifiés, non corrigés** ; `InterventionMetric` vérifié non concerné.
+  - **`DeliveryProof.driverId`** (`src/app/api/delivery-proof/route.ts`) : CONFIRMÉ exploitable —
+    `driverId` venait tel quel du `FormData` client, jamais vérifié contre `tenantId`, alors que
+    `missionId` l'était déjà (ligne 41). Un `driverId` d'un AUTRE tenant pouvait être écrit dans
+    une preuve de livraison. Corrigé : `prisma.driver.findFirst({where:{id:driverId,tenantId}})`
+    ajouté, 404 si absent. Test ajouté (`incidents-comments-proof.test.ts`, +1, vérifié en
+    échouant sans le correctif — retournait 200 avec un driverId d'un autre tenant).
+  - **`FuelRecord.driverId`** (`src/app/api/fuel-records/route.ts`) : même schéma confirmé par
+    inspection (`vehicleId` validé contre `tenantId` ligne 80, `driverId` non — champ optionnel du
+    payload, écrit tel quel ligne 86) — **non corrigé**, laissé pour un futur passage, même classe
+    de correctif que `DeliveryProof` directement applicable.
+  - **`PushSubscription.driverId`** (`src/app/api/push/subscribe/route.ts`) : pattern similaire
+    mais risque réel moindre — le destinataire réel d'un push est déterminé par
+    `endpoint`/`p256dh`/`auth` (liés à l'abonnement navigateur, jamais falsifiables côté client
+    de façon utile), et `/api/push/notify` filtre déjà par `tenantId` (serveur, jamais fourni par
+    le client) avant tout filtre `driverId`. Un `driverId` incorrect ici mal-attribue
+    l'abonnement au sein du BON tenant, ce n'est pas une fuite inter-tenant — **non corrigé,
+    priorité plus basse**.
+  - **`InterventionMetric.driverId`** (`src/lib/metricCollector.ts`) : `driverId` provient d'un
+    appel interne serveur-à-serveur (pipeline de complétion de mission), pas d'une entrée client
+    brute — **vérifié, pas d'action nécessaire**.
 
 ### N21 — Test flaky : `crypto.test.ts` "throws on tampered ciphertext" (~6% échec)
 - **Fichier** : `src/lib/trackdechets/__tests__/crypto.test.ts:42-46`
@@ -708,7 +736,9 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N11 | Mutation objet options (VRP) | 🟡 mineure | ✅ corrigé + testé |
 | N12 | estimatedDurationMin non protégé | 🟡 mineure | ✅ corrigé + testé |
 | N15 | .find() non catché Geotab/Samsara | 🟡 mineure | ✅ corrigé + testé (impact réel plus large que prévu) |
-| N4,N8,N9,N13,N14,N16-N20 (reste) | Voir détail | 🟡 mineure | mix accepté/à valider/à faire |
+| N9 | getJ7Date UTC/local | 🟡 mineure | ✅ corrigé (pas de test — voir détail) |
+| N19 | driverId sans FK | 🟡 mineure/majeure | ✅ DeliveryProof corrigé+testé ; FuelRecord identifié non corrigé ; PushSubscription priorité basse ; InterventionMetric non concerné |
+| N4,N8,N13,N14,N16-N18,N20 (reste) | Voir détail | 🟡 mineure | mix accepté/à valider/à faire |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme

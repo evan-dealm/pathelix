@@ -17,6 +17,9 @@ const mockPrisma = vi.hoisted(() => ({
     findFirst: vi.fn(),
     upsert:    vi.fn(),
   },
+  driver: {
+    findFirst: vi.fn(),
+  },
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
@@ -243,6 +246,7 @@ describe('POST /api/delivery-proof', () => {
 
   it('saves proof and returns ok (200)', async () => {
     mockPrisma.mission.findFirst.mockResolvedValue({ id: 'm-1' })
+    mockPrisma.driver.findFirst.mockResolvedValue({ id: 'd-1' })
     const proof = { id: 'p-1', missionId: 'm-1', driverId: 'd-1', tenantId: 'tenant-test' }
     mockPrisma.deliveryProof.upsert.mockResolvedValue(proof)
 
@@ -252,6 +256,18 @@ describe('POST /api/delivery-proof', () => {
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
     expect(json.proof.id).toBe('p-1')
+  })
+
+  // Regression N19: driverId came straight from client form data with no check that it belongs
+  // to the request's tenant — DeliveryProof.driverId has no DB-level FK (see AUDIT_BUGS.md N19),
+  // so a proof could get written referencing a driver from a different tenant entirely.
+  it('returns 404 when driverId does not belong to the request tenant', async () => {
+    mockPrisma.mission.findFirst.mockResolvedValue({ id: 'm-1' })
+    mockPrisma.driver.findFirst.mockResolvedValue(null) // driver query is tenant-scoped — no match
+
+    const res = await proofPOST(makeFormRequest({ missionId: 'm-1', driverId: 'd-other-tenant' }))
+    expect(res.status).toBe(404)
+    expect(mockPrisma.deliveryProof.upsert).not.toHaveBeenCalled()
   })
 
   it('returns 400 when formData throws', async () => {
@@ -281,6 +297,7 @@ describe('POST /api/delivery-proof', () => {
 
   it('returns 500 on DB error', async () => {
     mockPrisma.mission.findFirst.mockResolvedValue({ id: 'm-1' })
+    mockPrisma.driver.findFirst.mockResolvedValue({ id: 'd-1' })
     mockPrisma.deliveryProof.upsert.mockRejectedValue(new Error('DB fail'))
 
     const res = await proofPOST(makeFormRequest({ missionId: 'm-1', driverId: 'd-1' }))
