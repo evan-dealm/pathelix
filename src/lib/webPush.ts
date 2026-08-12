@@ -27,13 +27,21 @@ export interface PushSubRecord {
   auth:     string
 }
 
+export interface PushSendResult {
+  ok:      boolean
+  // True only when the push service confirmed the subscription is gone (410/404) — safe to
+  // delete. Any other failure (5xx, timeout, throttling, malformed payload...) is transient and
+  // must NOT be treated as "expired", or a temporary outage silently deletes valid subscriptions.
+  expired: boolean
+}
+
 export async function sendPushNotification(
   sub:     PushSubRecord,
   payload: PushPayload,
-): Promise<boolean> {
+): Promise<PushSendResult> {
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     log.warn('VAPID keys not configured — skipping push')
-    return false
+    return { ok: false, expired: false }
   }
 
   try {
@@ -42,15 +50,14 @@ export async function sendPushNotification(
       JSON.stringify(payload),
       { urgency: 'normal' },
     )
-    return true
+    return { ok: true, expired: false }
   } catch (err: unknown) {
     const status = (err as { statusCode?: number }).statusCode
     if (status === 410 || status === 404) {
-
-      return false
+      return { ok: false, expired: true }
     }
     log.error('Push failed', { endpoint: sub.endpoint.slice(0, 40), err: String(err) })
-    return false
+    return { ok: false, expired: false }
   }
 }
 
@@ -58,15 +65,15 @@ export async function broadcastToTenant(
   subs:    PushSubRecord[],
   payload: PushPayload,
 ): Promise<{ sent: number; failed: number; expired: string[] }> {
-  const results = await Promise.allSettled(subs.map(s => sendPushNotification(s, payload)))
+  const results = await Promise.all(subs.map(s => sendPushNotification(s, payload)))
   let sent = 0, failed = 0
   const expired: string[] = []
 
   results.forEach((r, i) => {
-    if (r.status === 'fulfilled' && r.value) { sent++ }
+    if (r.ok) { sent++ }
     else {
       failed++
-      if (r.status === 'rejected') expired.push(subs[i].endpoint)
+      if (r.expired) expired.push(subs[i].endpoint)
     }
   })
 

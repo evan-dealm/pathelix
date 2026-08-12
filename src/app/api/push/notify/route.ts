@@ -40,12 +40,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (subs.length === 0) return NextResponse.json({ sent: 0, message: 'Aucun abonné' })
 
-  let sent = 0; const expired: string[] = []
+  let sent = 0, failed = 0; const expired: string[] = []
 
   await Promise.all(subs.map(async sub => {
-    const ok = await sendPushNotification(sub, { title, body: msgBody, tag, data })
-    if (ok) { sent++ }
-    else    { expired.push(sub.endpoint) }
+    const result = await sendPushNotification(sub, { title, body: msgBody, tag, data })
+    if (result.ok) { sent++ }
+    else {
+      failed++
+      if (result.expired) expired.push(sub.endpoint)
+    }
   }))
 
   if (expired.length > 0) {
@@ -53,6 +56,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     log.info('Expired subscriptions deleted', { tenantId, count: expired.length })
   }
 
-  log.info('Push notifications sent', { tenantId, sent, failed: expired.length })
-  return NextResponse.json({ sent, failed: expired.length })
+  log.info('Push notifications sent', { tenantId, sent, failed, expiredDeleted: expired.length })
+  return NextResponse.json({ sent, failed })
 }

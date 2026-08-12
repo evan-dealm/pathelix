@@ -27,7 +27,7 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/lib/webPush', () => ({
   VAPID_PUBLIC_KEY:       'BTest1234',
-  sendPushNotification:   vi.fn(async () => true),
+  sendPushNotification:   vi.fn(async () => ({ ok: true, expired: false })),
 }))
 
 vi.mock('@/lib/demandPrediction', () => ({
@@ -147,7 +147,7 @@ describe('POST /api/push/notify', () => {
       { endpoint: 'https://fcm.test/1', p256dh: 'k1', auth: 'a1' },
       { endpoint: 'https://fcm.test/2', p256dh: 'k2', auth: 'a2' },
     ])
-    vi.mocked(sendPushNotification).mockResolvedValue(true)
+    vi.mocked(sendPushNotification).mockResolvedValue({ ok: true, expired: false })
     const res  = await pushNotifyPOST(makePost('http://localhost/api/push/notify', { title: 'Hello', body: 'Test' }))
     const json = await res.json()
     expect(res.status).toBe(200)
@@ -162,17 +162,34 @@ describe('POST /api/push/notify', () => {
     expect(json.sent).toBe(0)
   })
 
-  it('deletes expired subscriptions when push fails', async () => {
+  it('deletes subscriptions confirmed expired by the push service (410/404)', async () => {
     mockPrisma.pushSubscription.findMany.mockResolvedValue([
       { endpoint: 'https://fcm.test/expired', p256dh: 'k1', auth: 'a1' },
     ])
     mockPrisma.pushSubscription.deleteMany.mockResolvedValue({ count: 1 })
-    vi.mocked(sendPushNotification).mockResolvedValue(false)
+    vi.mocked(sendPushNotification).mockResolvedValue({ ok: false, expired: true })
     const res  = await pushNotifyPOST(makePost('http://localhost/api/push/notify', { title: 'Hello', body: 'Test' }))
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.failed).toBe(1)
-    expect(mockPrisma.pushSubscription.deleteMany).toHaveBeenCalled()
+    expect(mockPrisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { endpoint: { in: ['https://fcm.test/expired'] } },
+    })
+  })
+
+  // Regression M2: a transient push failure (push service down, timeout, throttled...) is not
+  // a confirmed-expired subscription and must not be deleted — only reported as failed.
+  it('does NOT delete subscriptions on a transient push failure', async () => {
+    mockPrisma.pushSubscription.findMany.mockResolvedValue([
+      { endpoint: 'https://fcm.test/transient', p256dh: 'k1', auth: 'a1' },
+    ])
+    vi.mocked(sendPushNotification).mockResolvedValue({ ok: false, expired: false })
+    const res  = await pushNotifyPOST(makePost('http://localhost/api/push/notify', { title: 'Hello', body: 'Test' }))
+    const json = await res.json()
+    expect(res.status).toBe(200)
+    expect(json.sent).toBe(0)
+    expect(json.failed).toBe(1)
+    expect(mockPrisma.pushSubscription.deleteMany).not.toHaveBeenCalled()
   })
 
   it('returns 403 for driver role', async () => {

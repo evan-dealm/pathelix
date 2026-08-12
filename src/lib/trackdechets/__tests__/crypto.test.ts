@@ -40,8 +40,15 @@ describe('encryptToken / decryptToken', () => {
   })
 
   it('throws on tampered ciphertext', () => {
+    // Flip the last hex digit deterministically (encryptedToken is hex, alphabet 0-9a-f).
+    // A frequency-based replace (e.g. every 'a' -> 'b') is flaky: for a short plaintext the
+    // ~44-char hex string has a real chance (~6%) of containing zero 'a's, in which case the
+    // "tampered" payload is byte-identical to the original and decrypts successfully — flaking
+    // this assertion. Flipping a fixed position always produces a different string.
     const payload = encryptToken('secret')
-    const tampered = { ...payload, encryptedToken: payload.encryptedToken.replace(/a/g, 'b') }
+    const last = payload.encryptedToken.at(-1)
+    const flipped = last === '0' ? '1' : '0'
+    const tampered = { ...payload, encryptedToken: payload.encryptedToken.slice(0, -1) + flipped }
     expect(() => decryptToken(tampered)).toThrow()
   })
 

@@ -95,7 +95,17 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   définitive d'abonnements valides — le chauffeur ne reçoit plus rien sans savoir pourquoi.
 - **Correction proposée** : remonter le statusCode réel (`{ ok: boolean, expired: boolean }` au
   lieu d'un simple booléen), ne supprimer que si `expired === true`.
-- **Statut** : à corriger (Phase 2)
+- **Statut** : ✅ **corrigé + testé**. `sendPushNotification` retourne désormais
+  `{ ok, expired }` ; `expired` n'est `true` que sur 410/404 confirmé par le service push. La
+  route `/api/push/notify` ne supprime que les abonnements `expired`, et remonte `failed`
+  (total, y compris transitoires) séparément de la suppression. `broadcastToTenant` avait le
+  même bug par ricochet (son tableau `expired[]` reposait sur `Promise.allSettled` + rejet, alors
+  que `sendPushNotification` ne rejette jamais — `expired[]` était donc toujours vide,
+  silencieusement ; corrigé au passage, aucun appelant actuel n'utilisait ce champ donc aucune
+  régression fonctionnelle, juste une correction de dette). Tests ajoutés/mis à jour :
+  `webPush.test.ts` (nouveaux cas 500 vs 410/404, `broadcastToTenant.expired[]`),
+  `push-predictions-routing.test.ts` (nouveau test : échec transitoire ne supprime pas
+  l'abonnement).
 
 ### M3 — Isolation tenant absente à l'écriture des positions GPS OBD/Geotab/Samsara
 - **Fichiers** : `src/app/api/webhooks/obd/route.ts`, `src/app/api/webhooks/geotab/route.ts:88-104`,
@@ -445,6 +455,24 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   `@relation`), ces 4 champs sont de simples colonnes indexées sans intégrité référentielle DB.
 - **Statut** : à vérifier en Phase 2 (croiser avec validation applicative des routes concernées)
 
+### N21 — Test flaky : `crypto.test.ts` "throws on tampered ciphertext" (~6% échec)
+- **Fichier** : `src/lib/trackdechets/__tests__/crypto.test.ts:42-46`
+- **Catégorie** : dette technique (fiabilité de la suite de tests, pas du code produit)
+- **Confiance** : CONFIRMÉ — trouvé par accident pendant la vérification de M2 (suite complète,
+  1 échec sur ~3430 tests), isolé et reproduit la cause racine
+- **Description** : le test altérait `encryptedToken` (hex) via `.replace(/a/g, 'b')`. Pour un
+  texte clair court, la chaîne hex (~44 car.) a une probabilité non négligeable (~6%, calcul :
+  `(15/16)^44`) de ne contenir AUCUN caractère `'a'` — dans ce cas le "payload altéré" est
+  strictement identique à l'original, le déchiffrement réussit, et l'assertion `toThrow()` échoue
+  de façon intermittente selon l'IV aléatoire du run.
+- **Impact** : faux échec CI occasionnel, aucun risque produit (le code de chiffrement lui-même
+  est correct — c'est uniquement le test qui était mal construit).
+- **Correction** : ✅ **corrigé**. Remplacé par une altération déterministe (bascule du dernier
+  caractère hex vers une valeur garantie différente), qui échoue systématiquement le round-trip
+  quel que soit le contenu. Vérifié stable sur 15 exécutions consécutives après correction.
+- **Statut** : ✅ corrigé + vérifié (pas de nouveau test ajouté — le test existant est maintenant
+  fiable, c'était bien lui la source du problème)
+
 ### N20 — `ClientSite` sans `tenantId` propre
 - **Fichier** : `prisma/schema.prisma:186-196`
 - **Confiance** : À VÉRIFIER
@@ -504,7 +532,8 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 |---|---|---|---|
 | C1 | Scan ticket pesée inaccessible | 🔴 critique | ✅ corrigé + testé |
 | M1 | VIDER/PAUSE créables par utilisateur | 🟠 majeure | ✅ corrigé + testé |
-| M2 | Suppression abonnements push sur erreur transitoire | 🟠 majeure | à corriger |
+| M2 | Suppression abonnements push sur erreur transitoire | 🟠 majeure | ✅ corrigé + testé |
+| N21 | Test flaky `crypto.test.ts` (tamper ~6% échec) | 🟡 mineure | ✅ corrigé (trouvé pendant vérif. M2) |
 | M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | à valider utilisateur |
 | M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | à corriger |
 | M5 | Custom trades jamais enregistrés | 🟠 majeure | à corriger |
