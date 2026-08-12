@@ -92,6 +92,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ? (parsed.data as { data: z.infer<typeof SamsaraEventSchema>[] }).data
       : [parsed.data as z.infer<typeof SamsaraEventSchema>]
 
+  const candidateDriverIds = new Set<string>()
+  for (const e of events) {
+    const vehicle = e.vehicle ?? {}
+    const driverId = String(vehicle.name ?? vehicle.id ?? e.driverId ?? '')
+    if (driverId) candidateDriverIds.add(driverId)
+  }
+  // driverId has no DB-level FK tying it to a tenant — must be checked here or a Samsara
+  // payload could write GPS readings attributed to another tenant's driver.
+  const validDrivers = await prisma.driver.findMany({
+    where: { id: { in: [...candidateDriverIds] }, tenantId: integration.tenantId },
+    select: { id: true },
+  })
+  const validDriverIds = new Set(validDrivers.map(d => d.id))
+
   let recorded = 0
 
   for (const e of events) {
@@ -101,6 +115,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const lat       = Number((location as Record<string, unknown>).latitude ?? (location as Record<string, unknown>).lat ?? 0)
     const lng       = Number((location as Record<string, unknown>).longitude ?? (location as Record<string, unknown>).lng ?? 0)
     if (!lat || !lng || !driverId) continue
+    if (!validDriverIds.has(driverId)) {
+      log.warn('Samsara reading skipped — driverId does not belong to this tenant', { tenantId: integration.tenantId, driverId })
+      continue
+    }
 
     recordOBDReading({
       driverId,

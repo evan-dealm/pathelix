@@ -94,6 +94,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   } catch {  }
 
+  const candidateDriverIds = new Set<string>()
+  for (const r of readings) {
+    const deviceId = String(r.deviceId ?? r.device ?? r.id ?? '')
+    candidateDriverIds.add(deviceMapping.get(deviceId) ?? deviceId)
+  }
+  // driverId (from deviceMapping or raw payload) has no DB-level FK tying it to a tenant —
+  // must be checked here or a misconfigured/malicious mapping could write GPS readings
+  // attributed to another tenant's driver.
+  const validDrivers = await prisma.driver.findMany({
+    where: { id: { in: [...candidateDriverIds] }, tenantId: integration.tenantId },
+    select: { id: true },
+  })
+  const validDriverIds = new Set(validDrivers.map(d => d.id))
+
   let recorded = 0
   for (const r of readings) {
     const deviceId = String(r.deviceId ?? r.device ?? r.id ?? '')
@@ -101,6 +115,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const lat = r.latitude ?? r.lat ?? 0
     const lng = r.longitude ?? r.lng ?? r.lon ?? 0
     if (!lat || !lng) continue
+    if (!validDriverIds.has(driverId)) {
+      log.warn('Geotab reading skipped — driverId does not belong to this tenant', { tenantId: integration.tenantId, driverId })
+      continue
+    }
 
     recordOBDReading({
       driverId,

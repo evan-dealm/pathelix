@@ -12,6 +12,9 @@ const { mockPrisma } = vi.hoisted(() => {
     tenant: {
       findUnique: vi.fn(),
     },
+    driver: {
+      findMany: vi.fn((): Promise<{ id: string }[]> => Promise.resolve([])),
+    },
   }
   return { mockPrisma }
 })
@@ -283,6 +286,47 @@ describe('POST /api/webhooks/geotab', () => {
     expect(res.status).toBe(200)
     vi.unstubAllEnvs()
   })
+
+  // Regression: driverId (from Geotab deviceMapping or raw deviceId fallback) had no tenant
+  // check before being written via recordOBDReading — a device mapped (accidentally or not) to
+  // another tenant's driverId could overwrite that driver's live GPS position.
+  it('skips a reading whose resolved driverId does not belong to this tenant', async () => {
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { tenantId: 'tenant-1', config: { apiKey: 'good-key' } },
+    ])
+    mockPrisma.driver.findMany.mockResolvedValue([]) // no driver in tenant-1 matches 'd1'
+
+    const { POST } = await import('@/app/api/webhooks/geotab/route')
+    const req = makeRequest('http://localhost:3000/api/webhooks/geotab', {
+      method: 'POST',
+      body: [{ deviceId: 'd1', latitude: 45.76, longitude: 6.05, speed: 50 }],
+      headers: { 'x-api-key': 'good-key' },
+    })
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.recorded).toBe(0)
+  })
+
+  it('records a reading whose resolved driverId belongs to this tenant', async () => {
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { tenantId: 'tenant-1', config: { apiKey: 'good-key' } },
+    ])
+    mockPrisma.driver.findMany.mockResolvedValue([{ id: 'd1' }])
+
+    const { POST } = await import('@/app/api/webhooks/geotab/route')
+    const req = makeRequest('http://localhost:3000/api/webhooks/geotab', {
+      method: 'POST',
+      body: [{ deviceId: 'd1', latitude: 45.76, longitude: 6.05, speed: 50 }],
+      headers: { 'x-api-key': 'good-key' },
+    })
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.recorded).toBe(1)
+  })
 })
 
 describe('POST /api/webhooks/samsara', () => {
@@ -333,5 +377,45 @@ describe('POST /api/webhooks/samsara', () => {
     expect(res.status).not.toBe(401)
     expect(res.status).not.toBe(500)
     vi.unstubAllEnvs()
+  })
+
+  // Regression: Samsara driverId comes straight from vehicle.name/vehicle.id/driverId in the
+  // payload with no tenant check before recordOBDReading — same class of bug as the Geotab fix.
+  it('skips an event whose driverId does not belong to this tenant', async () => {
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { tenantId: 'tenant-1', config: { apiToken: 'good-token' } },
+    ])
+    mockPrisma.driver.findMany.mockResolvedValue([])
+
+    const { POST } = await import('@/app/api/webhooks/samsara/route')
+    const req = makeRequest('http://localhost:3000/api/webhooks/samsara', {
+      method: 'POST',
+      body: [{ driverId: 'driver-other-tenant', location: { latitude: 45.76, longitude: 6.05, speed: 50 } }],
+      headers: { Authorization: 'Bearer good-token' },
+    })
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.recorded).toBe(0)
+  })
+
+  it('records an event whose driverId belongs to this tenant', async () => {
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { tenantId: 'tenant-1', config: { apiToken: 'good-token' } },
+    ])
+    mockPrisma.driver.findMany.mockResolvedValue([{ id: 'driver-1' }])
+
+    const { POST } = await import('@/app/api/webhooks/samsara/route')
+    const req = makeRequest('http://localhost:3000/api/webhooks/samsara', {
+      method: 'POST',
+      body: [{ driverId: 'driver-1', location: { latitude: 45.76, longitude: 6.05, speed: 50 } }],
+      headers: { Authorization: 'Bearer good-token' },
+    })
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.recorded).toBe(1)
   })
 })

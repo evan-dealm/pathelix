@@ -122,7 +122,24 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   lecture reste bien filtrée par tenant (`driver-position/route.ts`) — c'est l'écriture qui fuit.
 - **Correction proposée** : pour Geotab/Samsara, valider `driverId ∈ getTenantDriverIds(tenantId)`
   avant `recordOBDReading`. Pour OBD, scoper par tenant ou documenter le risque comme assumé.
-- **Statut** : à valider par l'utilisateur (choix produit avant correction — voir résumé final)
+- **Statut** : ✅ **Geotab/Samsara corrigés + testés** ; **OBD générique laissé tel quel, à valider
+  par l'utilisateur** (question produit réelle, pas juste "flemme de fixer").
+  - **Geotab/Samsara** : contrairement à OBD générique, ces deux webhooks résolvent déjà un
+    `tenantId` fiable (secret par-tenant déchiffré et vérifié, cf. correctif N15). Le seul trou
+    était le `driverId` lui-même (`deviceMapping` Geotab ou champ payload brut Samsara), jamais
+    vérifié contre ce `tenantId` avant écriture — même défaut que N19, correction identique
+    appliquée : `prisma.driver.findMany({id:{in:[...]}, tenantId})`, lectures avec un `driverId`
+    non résolu ignorées + `log.warn`. Ce n'était donc pas un choix de conception à trancher, juste
+    le même bug que N19 sous une autre forme.
+  - **OBD générique** (`src/app/api/webhooks/obd/route.ts`) : **reste non corrigé, intentionnellement**
+    — cas structurellement différent. Il n'y a AUCUNE résolution de tenant du tout : un seul secret
+    global (`OBD_WEBHOOK_TOKEN`) pour tous les tenants, donc même en validant `driverId` contre un
+    tenant on ne saurait pas CONTRE QUEL tenant le valider. Corriger ça nécessite une vraie décision
+    produit (un secret par tenant ? un `tenantId` dans le payload signé côté device ? le matériel
+    OBD visé est-il par nature mono-tenant, auquel cas le risque est peut-être déjà acceptable ?)
+    — décision non prise unilatéralement, laissée pour validation utilisateur.
+  - Tests ajoutés (`integrations.test.ts`, +4 : 2 par webhook — un cas rejeté, un cas accepté —
+    vérifiés en échouant sans le correctif pour les 2 cas "rejeté").
 
 ### M4 — Aucune isolation par tentative/template dans le worker de missions récurrentes
 - **Fichier** : `src/workers/recurringMissionsWorker.ts:57-111`
