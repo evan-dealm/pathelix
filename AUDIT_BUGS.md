@@ -420,7 +420,14 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   (tenantId avec underscore rejeté) — latent, pas actuellement déclenchable.
 - **Correction** : extraire une regex partagée exportée depuis `context.ts`, réutilisée dans
   `session.ts`.
-- **Statut** : à corriger (Phase 2, defense-in-depth)
+- **Statut** : ✅ **corrigé + testé**. `TENANT_ID_RE` exportée depuis `context.ts`, importée dans
+  `session.ts` (import statique dynamique-safe : `context.ts` n'importe `@/lib/db` que via
+  `await import()` à l'intérieur d'une fonction, donc pas d'inclusion eager de Prisma dans le
+  bundle edge du middleware — vérifié via `npm run build` réussi). Tests ajoutés
+  (`session.extra.test.ts`, +2, un vérifié en échouant sans le correctif) : un tenantId de 2
+  caractères, valide sous l'ancienne regex de `session.ts` mais pas sous `TENANT_ID_RE`, est
+  maintenant rejeté dès la vérification du token plutôt que de provoquer un 500 plus tard sur
+  `getRequestContext()`.
 
 ### N4 — Cache de suspension tenant non partagé entre instances
 - **Fichier** : `src/lib/data/context.ts:44-91`
@@ -669,7 +676,8 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N1 | `!oi === undefined` garde mort (externalRoutingApi) | 🟡 mineure | ✅ corrigé + testé |
 | N5 | advanceStatus effets de bord dans updater | 🟡 mineure | accepté tel quel (StrictMode = dev only, jamais en prod ; risque réel de régression identifié dans la correction "propre") |
 | N2 | `x-tenant-trade` non strippé | 🟡 mineure | ✅ corrigé (pas de test dédié — impact nul confirmé, limite harnais middleware) |
-| N3-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
+| N3 | Divergence regex tenantId session.ts/context.ts | 🟡 mineure | ✅ corrigé + testé |
+| N4-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme

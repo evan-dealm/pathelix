@@ -1,3 +1,5 @@
+import { TENANT_ID_RE } from './data/context'
+
 function getSessionSecret(): string {
   const secret = process.env.SESSION_SECRET
   if (!secret) {
@@ -131,7 +133,7 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
     ) return null
 
     const tenantStr = raw.tenantId as string
-    if (tenantStr.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(tenantStr)) return null
+    if (tenantStr.length > 64 || !TENANT_ID_RE.test(tenantStr)) return null
 
     const nowSec = Math.floor(Date.now() / 1000)
     const CLOCK_SKEW = 60

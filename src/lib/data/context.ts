@@ -3,7 +3,9 @@ import { NextResponse } from 'next/server'
 
 // Autorise cuid (t7abc…), slugs avec tirets, et IDs préfixés type "t_xxx" (seed/import).
 // Défense en profondeur seulement : le header est réinjecté par le middleware depuis le JWT vérifié.
-const TENANT_ID_RE = /^[a-z0-9][a-z0-9_\-]{5,}$/i
+// Exportée et réutilisée telle quelle par session.ts — une regex distincte y divergeait déjà une
+// fois (rejet des tenantId avec underscore avant correction), une seule source évite la récidive.
+export const TENANT_ID_RE = /^[a-z0-9][a-z0-9_\-]{5,}$/i
 
 export interface RequestContext {
   tenantId:  string

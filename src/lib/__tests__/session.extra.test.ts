@@ -165,6 +165,23 @@ describe('verifySession — rejection cases', () => {
     const [header, , sig] = token.split('.')
     expect(await verifySession(`${header}.TAMPEREDBODY.${sig}`)).toBeNull()
   })
+
+  // Regression N3: session.ts validated tenantId with its own regex (/^[a-zA-Z0-9_-]+$/, no
+  // minimum length) while getRequestContext()/getTenantId() in lib/data/context.ts used a
+  // stricter one requiring 6+ chars (TENANT_ID_RE). A tenantId short enough to pass signing but
+  // fail context.ts's check would be accepted at login, then 500 on every subsequent request
+  // that reads it via getRequestContext — the exact bug class already hit once before (rejection
+  // of tenantId with underscores, fixed in the July 2026 audit). Both now share TENANT_ID_RE.
+  it('returns null for a tenantId shorter than TENANT_ID_RE allows (min 6 chars)', async () => {
+    const token = await signSession({ ...BASE_PAYLOAD, tenantId: 'ab' })
+    expect(await verifySession(token)).toBeNull()
+  })
+
+  it('still accepts a tenantId with underscores (matches TENANT_ID_RE, min 6 chars)', async () => {
+    const token = await signSession({ ...BASE_PAYLOAD, tenantId: 't_5c3mevlp2b1k4fdyrdz3' })
+    const payload = await verifySession(token)
+    expect(payload?.tenantId).toBe('t_5c3mevlp2b1k4fdyrdz3')
+  })
 })
 
 describe('verifySession — correct payload extraction', () => {
