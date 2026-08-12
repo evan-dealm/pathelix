@@ -136,7 +136,15 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   tenants jusqu'à 24h.
 - **Correction proposée** : try/catch par occurrence, logger + continuer sur échec au lieu de
   propager.
-- **Statut** : à corriger (Phase 2)
+- **Statut** : ✅ **corrigé + testé**. `findFirst`+`create` par occurrence encapsulés dans un
+  try/catch, compteur `errors` ajouté (loggé + retourné), la boucle continue sur les autres
+  occurrences/templates/tenants. Fonction exportée pour test unitaire direct (elle ne l'était
+  pas). Bug annexe trouvé en écrivant le test : contrairement à `auditRetentionWorker.ts`, ce
+  worker appelait `main()` sans garde `isDirectRun` — donc le simple fait d'importer le module
+  (à des fins de test) tentait de démarrer une vraie connexion Redis/BullMQ. Ajouté le même garde
+  `isDirectRun` que `auditRetentionWorker.ts` (pattern déjà établi dans le repo, copié à
+  l'identique). Nouveau fichier de test `recurringMissionsWorker.test.ts` (5 tests, le worker
+  n'avait aucun test avant).
 
 ### M5 — Registre `_customTrades` jamais peuplé — fonctionnalité "trade personnalisé" non fonctionnelle
 - **Fichier** : `src/lib/trades.ts:231-254`, `src/app/api/superadmin/trades/route.ts:74-84`
@@ -535,7 +543,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M2 | Suppression abonnements push sur erreur transitoire | 🟠 majeure | ✅ corrigé + testé |
 | N21 | Test flaky `crypto.test.ts` (tamper ~6% échec) | 🟡 mineure | ✅ corrigé (trouvé pendant vérif. M2) |
 | M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | à valider utilisateur |
-| M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | à corriger |
+| M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | ✅ corrigé + testé |
 | M5 | Custom trades jamais enregistrés | 🟠 majeure | à corriger |
 | M6 | planningStore IndexedDB non nettoyé (fuite tenant) | 🟠 majeure | à corriger |
 | M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | à corriger |

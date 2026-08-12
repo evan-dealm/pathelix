@@ -40,7 +40,7 @@ function toRRule(rule: RecurrenceRule, startDate: Date, endDate: Date | null): R
   return new RRule(opts)
 }
 
-async function processRecurringMissions(_job: Job) {
+export async function processRecurringMissions(_job: Job) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const horizon = new Date(today)
@@ -52,7 +52,7 @@ async function processRecurringMissions(_job: Job) {
 
   log.info('Processing recurring missions', { templates: templates.length, horizon: horizon.toISOString().split('T')[0] })
 
-  let created = 0, skipped = 0
+  let created = 0, skipped = 0, errors = 0
 
   for (const tpl of templates) {
     const recurrence = tpl.recurrence as unknown as RecurrenceRule
@@ -72,47 +72,55 @@ async function processRecurringMissions(_job: Job) {
     for (const occ of occurrences) {
       const dateStr = occ.toISOString().split('T')[0]
 
-      const existing = await prisma.mission.findFirst({
-        where: {
-          tenantId:   tpl.tenantId,
-          date:       dateStr,
-          address:    tpl.address,
-          type:       tpl.type as MissionType,
-          clientName: tpl.clientName || undefined,
-        },
-        select: { id: true },
-      })
+      try {
+        const existing = await prisma.mission.findFirst({
+          where: {
+            tenantId:   tpl.tenantId,
+            date:       dateStr,
+            address:    tpl.address,
+            type:       tpl.type as MissionType,
+            clientName: tpl.clientName || undefined,
+          },
+          select: { id: true },
+        })
 
-      if (existing) { skipped++; continue }
+        if (existing) { skipped++; continue }
 
-      await prisma.mission.create({
-        data: {
-          tenantId:            tpl.tenantId,
-          type:                tpl.type as MissionType,
-          date:                dateStr,
-          address:             tpl.address,
-          latitude:            tpl.latitude,
-          longitude:           tpl.longitude,
-          clientName:          tpl.clientName || undefined,
-          estimatedDurationMin: tpl.estimatedDurationMin,
-          maneuverTimeMin:     tpl.maneuverTimeMin,
-          wasteTypeLabel:      tpl.wasteTypeLabel || undefined,
-          binSize:             tpl.binSize || undefined,
-          binSizeM3:           tpl.binSizeM3 ?? undefined,
-          accessNotes:         tpl.accessNotes || undefined,
-          priority:            tpl.priority ?? undefined,
-          timeWindowOpenMin:   (tpl.timeWindow as { openMin?: number } | null)?.openMin,
-          timeWindowCloseMin:  (tpl.timeWindow as { closeMin?: number } | null)?.closeMin,
-          linkedExutoireId:    tpl.linkedExutoireId ?? undefined,
-          notes:               `[Auto] Template: ${tpl.label}`,
-        },
-      })
-      created++
+        await prisma.mission.create({
+          data: {
+            tenantId:            tpl.tenantId,
+            type:                tpl.type as MissionType,
+            date:                dateStr,
+            address:             tpl.address,
+            latitude:            tpl.latitude,
+            longitude:           tpl.longitude,
+            clientName:          tpl.clientName || undefined,
+            estimatedDurationMin: tpl.estimatedDurationMin,
+            maneuverTimeMin:     tpl.maneuverTimeMin,
+            wasteTypeLabel:      tpl.wasteTypeLabel || undefined,
+            binSize:             tpl.binSize || undefined,
+            binSizeM3:           tpl.binSizeM3 ?? undefined,
+            accessNotes:         tpl.accessNotes || undefined,
+            priority:            tpl.priority ?? undefined,
+            timeWindowOpenMin:   (tpl.timeWindow as { openMin?: number } | null)?.openMin,
+            timeWindowCloseMin:  (tpl.timeWindow as { closeMin?: number } | null)?.closeMin,
+            linkedExutoireId:    tpl.linkedExutoireId ?? undefined,
+            notes:               `[Auto] Template: ${tpl.label}`,
+          },
+        })
+        created++
+      } catch (err) {
+        errors++
+        log.error('Failed to generate occurrence — skipping, other templates/tenants unaffected', {
+          templateId: tpl.id, tenantId: tpl.tenantId, date: dateStr,
+          err: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
 
-  log.info('Recurring missions done', { created, skipped })
-  return { created, skipped }
+  log.info('Recurring missions done', { created, skipped, errors })
+  return { created, skipped, errors }
 }
 
 async function main() {
@@ -143,4 +151,10 @@ async function main() {
   log.info('Recurring missions worker started (CRON 01:00 daily)')
 }
 
-main().catch(err => { log.error('Worker crashed', { err: err instanceof Error ? err.message : String(err) }); process.exit(1) })
+const isDirectRun = process.argv[1]
+  ? /recurringMissionsWorker\.(ts|js)$/.test(process.argv[1].replace(/\\/g, '/'))
+  : false
+
+if (isDirectRun) {
+  main().catch(err => { log.error('Worker crashed', { err: err instanceof Error ? err.message : String(err) }); process.exit(1) })
+}
