@@ -292,7 +292,10 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   cœur de métier.
 - **Correction proposée** : clé composite string `${x1},${y1},${x2},${y2}` au lieu d'un hash int32,
   ou garder le hash + vérifier l'égalité des coordonnées d'origine en cas de hit.
-- **Statut** : à corriger (Phase 2) — nécessite suite de tests VRP complète avant/après
+- **Statut** : ✅ **corrigé + testé**. Clé composite string `${x1},${y1},${x2},${y2}` (`Map<string,
+  ...>`) remplace le hash int32 (`Map<number,...>`) — structurellement sans collision possible, plus
+  besoin de stocker/vérifier les coordonnées d'origine. Test ajouté (`distanceCache.test.ts`, +2).
+  Suite VRP complète (523/523) vérifiée avant/après par prudence (fichier cœur du moteur).
 
 ### M9 — Unité incohérente dans le rééquilibrage de secteurs (VRP)
 - **Fichier** : `src/lib/vrp/sector.ts::rebalanceSectors()` lignes ~338-405
@@ -626,7 +629,13 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   silencieusement ignoré ; une mission manuelle avec la même signature supprime la génération
   auto du jour.
 - **Correction proposée** : ajouter un champ `generatedFromTemplateId` sur `Mission`.
-- **Statut** : à corriger si simple (Phase 2) sinon reporté (nécessite migration schema)
+- **Statut** : **reporté, non corrigé dans cette session** — nécessite une migration de schéma
+  (`prisma migrate dev`) sur un modèle en production (`Mission`), ce qui dépasse le périmètre d'un
+  correctif ponctuel de Phase 2 : la correction "propre" change la forme des données existantes et
+  mérite sa propre revue (impact sur les migrations déjà appliquées, backfill des missions
+  récurrentes déjà générées). Le risque réel reste modéré — dédup silencieuse uniquement en cas de
+  collision exacte `tenantId+date+address+type+clientName`, un scénario rare en usage normal — donc
+  pas un bloquant pour le pilote. À traiter comme un chantier dédié, pas glissé dans Phase 4.
 
 ### N19 — Modèles avec `driverId` sans relation Prisma (pas de FK)
 - **Fichier** : `prisma/schema.prisma` — `FuelRecord.driverId`, `DeliveryProof.driverId`,
@@ -756,12 +765,12 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M1 | VIDER/PAUSE créables par utilisateur | 🟠 majeure | ✅ corrigé + testé |
 | M2 | Suppression abonnements push sur erreur transitoire | 🟠 majeure | ✅ corrigé + testé |
 | N21 | Test flaky `crypto.test.ts` (tamper ~6% échec) | 🟡 mineure | ✅ corrigé (trouvé pendant vérif. M2) |
-| M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | à valider utilisateur |
+| M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | ✅ Geotab/Samsara corrigés+testés ; OBD générique à valider utilisateur (pas de tenantId résolvable du tout) |
 | M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | ✅ corrigé + testé |
 | M5 | Custom trades jamais enregistrés | 🟠 majeure | ✅ corrigé serveur + testé (⚠️ gap client documenté) |
 | M6 | planningStore IndexedDB non nettoyé (fuite tenant) | 🟠 majeure | ✅ corrigé + testé (gap couverture admin/superadmin page.tsx documenté) |
 | M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | ✅ corrigé + testé |
-| M8 | Collision hash 32 bits cache haversine | 🟠 majeure | à corriger |
+| M8 | Collision hash 32 bits cache haversine | 🟠 majeure | ✅ corrigé + testé |
 | M9 | Unité incohérente rebalanceSectors | 🟠 majeure | ✅ corrigé + testé (garde-fou oscillation ajouté) |
 | M10 | forceAssignP1 peut violer invariant ALLER_RETOUR | 🟠 majeure | ✅ corrigé + testé |
 | M11 | Divergence syncQueue/sw.js erreurs réseau | 🟠 majeure | ✅ corrigé + testé |
@@ -778,7 +787,10 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N15 | .find() non catché Geotab/Samsara | 🟡 mineure | ✅ corrigé + testé (impact réel plus large que prévu) |
 | N9 | getJ7Date UTC/local | 🟡 mineure | ✅ corrigé (pas de test — voir détail) |
 | N19 | driverId sans FK | 🟡 mineure/majeure | ✅ DeliveryProof corrigé+testé ; FuelRecord identifié non corrigé ; PushSubscription priorité basse ; InterventionMetric non concerné |
-| N4,N8,N13,N14,N16-N18,N20 (reste) | Voir détail | 🟡 mineure | mix accepté/à valider/à faire |
+| N4,N13,N14,N16,N17 (reste, non actionnable sans arbitrage) | Voir détail | 🟡 mineure | accepté tel quel / à valider utilisateur |
+| N8 | Calcul mort ejectionChainSearch (VRP) | 🟡 mineure | ✅ corrigé (refactor pur, pas de test dédié) |
+| N18 | Dédup fragile worker missions récurrentes | 🟡 mineure | reporté — nécessite migration schéma |
+| N20 | ClientSite sans tenantId propre | 🟡 mineure→**bug réel** | ✅ corrigé + testé (vrai bug cross-tenant trouvé sur PUT /api/clients/[id]) |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme
