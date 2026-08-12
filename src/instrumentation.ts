@@ -7,6 +7,9 @@ export async function register() {
 
     const { initTelemetry } = await import('./lib/telemetry')
     await initTelemetry()
+
+    const { loadCustomTradesFromDb } = await import('./lib/data/customTrades')
+    await loadCustomTradesFromDb()
   }
 }
 

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
+import { syncCustomTradeRegistered, syncCustomTradeUnregistered } from '@/lib/data/customTrades'
 
 const log = createLogger('/api/superadmin/trades/[id]')
 
@@ -38,6 +39,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       data: updateData,
     })
 
+    syncCustomTradeRegistered(trade)
     log.info('Custom trade updated', { id, keys: Object.keys(parsed.data) })
     return NextResponse.json(trade)
   } catch (err) {
@@ -69,6 +71,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
 
     await prisma.customTrade.delete({ where: { id } })
 
+    syncCustomTradeUnregistered(trade.tradeKey)
     log.info('Custom trade deleted', { id, tradeKey: trade.tradeKey })
     return NextResponse.json({ ok: true })
   } catch (err) {

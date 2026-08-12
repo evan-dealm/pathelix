@@ -4,6 +4,7 @@ import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { TRADES, TRADE_IDS } from '@/lib/trades'
+import { syncCustomTradeRegistered } from '@/lib/data/customTrades'
 
 const log = createLogger('/api/superadmin/trades')
 
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     })
 
+    syncCustomTradeRegistered(trade)
     log.info('Custom trade created', { tradeKey, tradeName })
     return NextResponse.json(trade, { status: 201 })
   } catch (err) {

@@ -42,6 +42,7 @@ vi.mock('@/lib/db', () => ({
 import { PUT, DELETE } from '@/app/api/superadmin/trades/[id]/route'
 import { POST as obdPOST } from '@/app/api/webhooks/obd/route'
 import { getRequestContext } from '@/lib/data/context'
+import { getTradeConfig, unregisterCustomTrade } from '@/lib/trades'
 
 const mockGetCtx = vi.mocked(getRequestContext)
 
@@ -93,11 +94,34 @@ describe('PUT /api/superadmin/trades/[id]', () => {
   })
 
   it('returns 200 when trade updated successfully', async () => {
-    mockTradeUpdate.mockResolvedValueOnce({ id: 'trade-1', tradeName: 'BTP Modifié' })
+    mockTradeUpdate.mockResolvedValueOnce({
+      id: 'trade-1', tradeKey: 'btp_custom', tradeName: 'BTP Modifié',
+      tradeDescription: '', tradeIcon: '🔧', vocabulary: {}, enabledMissionTypes: ['POSER'],
+    })
     const res = await PUT(makePUT('trade-1', { tradeName: 'BTP Modifié' }), makeParams('trade-1'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.tradeName).toBe('BTP Modifié')
+    unregisterCustomTrade('btp_custom')
+  })
+
+  // Regression M5: PUT never re-synced the in-memory registry, so an update to an already
+  // (correctly, post-M5) registered custom trade would silently keep serving the STALE config
+  // until the next server restart.
+  it('re-registers the trade with updated data so getTradeConfig() reflects the change immediately', async () => {
+    mockTradeUpdate.mockResolvedValueOnce({
+      id: 'trade-1', tradeKey: 'btp_custom_live', tradeName: 'BTP Nouveau Nom',
+      tradeDescription: '', tradeIcon: '🚧', vocabulary: {}, enabledMissionTypes: ['RETIRER', 'ECHANGER'],
+    })
+    try {
+      const res = await PUT(makePUT('trade-1', { tradeName: 'BTP Nouveau Nom' }), makeParams('trade-1'))
+      expect(res.status).toBe(200)
+      const config = getTradeConfig('btp_custom_live')
+      expect(config.vocabulary.tradeName).toBe('BTP Nouveau Nom')
+      expect(config.enabledMissionTypes).toEqual(['RETIRER', 'ECHANGER'])
+    } finally {
+      unregisterCustomTrade('btp_custom_live')
+    }
   })
 
   it('returns 404 when trade not found', async () => {
@@ -145,6 +169,25 @@ describe('DELETE /api/superadmin/trades/[id]', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ok).toBe(true)
+  })
+
+  // Regression M5: DELETE never unregistered the trade — getTradeConfig() would keep serving a
+  // deleted trade's config until the next server restart.
+  it('unregisters the trade so getTradeConfig() no longer resolves it after delete', async () => {
+    const { registerCustomTrade } = await import('@/lib/trades')
+    registerCustomTrade('btp_to_delete', {
+      id: 'btp_to_delete',
+      vocabulary: { tradeName: 'A supprimer', tradeDescription: '', tradeIcon: '📋', driver: 'Chauffeur', drivers: 'Chauffeurs', vehicle: 'Camion', vehicles: 'Camions', mission: 'Mission', missions: 'Missions', exutoire: 'Site', exutoires: 'Sites', depot: 'Dépôt', client: 'Client', tour: 'Tournée', tours: 'Tournées', binSize: 'Taille', wasteType: 'Type', optimize: 'Optimiser', collect: 'Collecter', missionTypeLabels: {}, missionTypeIcons: {} },
+      enabledMissionTypes: ['POSER'],
+    })
+
+    mockTradeFindUnique.mockResolvedValueOnce({ tradeKey: 'btp_to_delete' })
+    mockTenantCount.mockResolvedValueOnce(0)
+    mockTradeDelete.mockResolvedValueOnce({})
+
+    const res = await DELETE(makeDELETE('trade-1'), makeParams('trade-1'))
+    expect(res.status).toBe(200)
+    expect(getTradeConfig('btp_to_delete').id).not.toBe('btp_to_delete')
   })
 
   it('returns 500 on DB error', async () => {

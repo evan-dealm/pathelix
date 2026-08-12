@@ -161,7 +161,37 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   démarrage serveur, resynchroniser sur POST/PUT/DELETE. Note : approche en mémoire process-local
   ne se propage pas en déploiement multi-instance — envisager un cache DB/Redis plutôt qu'une Map
   locale si scaling horizontal prévu.
-- **Statut** : à corriger (Phase 2)
+- **Statut** : ✅ **corrigé côté serveur + testé** — ⚠️ **gap restant côté navigateur, documenté
+  ci-dessous, non corrigé dans cette passe**.
+  - Nouveau module `src/lib/data/customTrades.ts` (server-only, importe Prisma — ne peut pas
+    vivre dans `trades.ts` qui est aussi importé côté client) : `loadCustomTradesFromDb()`
+    (chargement complet), `syncCustomTradeRegistered/Unregistered()` (sync ciblée).
+  - `src/instrumentation.ts` (hook Next.js officiel "au démarrage serveur", déjà utilisé pour
+    Sentry/telemetry) appelle `loadCustomTradesFromDb()` — couvre le cas redémarrage serveur.
+  - `POST`/`PUT`/`DELETE /api/superadmin/trades[/[id]]` appellent
+    `syncCustomTradeRegistered`/`syncCustomTradeUnregistered` juste après l'écriture DB — le
+    trade est utilisable immédiatement, sans attendre un redémarrage.
+  - `TradeConfig.id` élargi de `TradeId` (union fermée des 6 métiers intégrés) à `TradeId |
+    string` — un trade personnalisé n'a jamais pu avoir un `id` valide dans l'ancien type
+    (incohérence latente, jamais détectée car `registerCustomTrade` n'était jamais appelé).
+  - Corrigé au passage : `TradeProvider.tsx` avait sa PROPRE vérification `tradeId in TRADES`
+    (métiers intégrés uniquement) au lieu de déléguer à `getTradeConfig` — même bug, occurrence
+    indépendante, dans le seul composant qui l'exerçait vraiment côté client.
+  - **Ce qui n'est PAS corrigé (limitation connue, hors périmètre de cette correction)** : le
+    Map `_customTrades` est en mémoire, process-local. Il est maintenant correctement peuplé
+    **côté serveur** (routes API, moteur VRP, workers) — c'est là que se trouvait l'impact métier
+    réel (filtrage des types de mission, stats ML, planification VRP). Mais **le navigateur a son
+    propre process JS** : `_customTrades` y est TOUJOURS vide, donc tout composant client qui
+    appelle `getMissionTypeLabel`/`getMissionTypeIcon`/`getTradeConfig` directement (ex:
+    `driver/[id]/page.tsx`) continue d'afficher le vocabulaire par défaut (pas celui du métier
+    personnalisé) pour un tenant en métier personnalisé — un souci cosmétique (mauvaise
+    icône/libellé affiché), pas fonctionnel. Une correction complète nécessite un canal pour faire
+    parvenir la config du métier personnalisé jusqu'au bundle client (nouvel endpoint public +
+    injection via `TradeProvider` avec les données déjà chargées côté serveur) — travail plus
+    large, volontairement laissé de côté ici plutôt que bâclé.
+  - Tests ajoutés : `customTrades.test.ts` (8, nouveau module), `trades.test.ts` (+7, registre
+    jamais testé avant), `superadmin-trades-systemhealth.test.ts` (+1),
+    `superadmin-trades-obd.test.ts` (+2).
 
 ### M6 — Fuite tenant potentielle via `planningStore` persisté (IndexedDB) non nettoyé
 - **Fichier** : `src/stores/planningStore.ts:753-816`, `src/app/admin/page.tsx:569-571`,
@@ -544,7 +574,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N21 | Test flaky `crypto.test.ts` (tamper ~6% échec) | 🟡 mineure | ✅ corrigé (trouvé pendant vérif. M2) |
 | M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | à valider utilisateur |
 | M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | ✅ corrigé + testé |
-| M5 | Custom trades jamais enregistrés | 🟠 majeure | à corriger |
+| M5 | Custom trades jamais enregistrés | 🟠 majeure | ✅ corrigé serveur + testé (⚠️ gap client documenté) |
 | M6 | planningStore IndexedDB non nettoyé (fuite tenant) | 🟠 majeure | à corriger |
 | M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | à corriger |
 | M8 | Collision hash 32 bits cache haversine | 🟠 majeure | à corriger |

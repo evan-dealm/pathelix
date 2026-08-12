@@ -43,7 +43,8 @@ export interface TradeVocabulary {
 }
 
 export interface TradeConfig {
-  id:              TradeId
+  // Custom (superadmin-created) trades use a free-form key, not the closed TradeId union.
+  id:              TradeId | string
   vocabulary:      TradeVocabulary
 
   enabledMissionTypes: MissionType[]

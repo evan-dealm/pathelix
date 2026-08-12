@@ -32,6 +32,7 @@ vi.mock('@/lib/redisClient', () => ({
 import { GET as tradesGet, POST as tradesPost } from '@/app/api/superadmin/trades/route'
 import { GET as systemHealthGet }               from '@/app/api/superadmin/system-health/route'
 import { getRequestContext }                    from '@/lib/data/context'
+import { getTradeConfig, unregisterCustomTrade } from '@/lib/trades'
 
 function makeReq(
   url: string,
@@ -170,6 +171,28 @@ describe('POST /api/superadmin/trades', () => {
         data: expect.objectContaining({ tradeKey: 'custom_sector' }),
       }),
     )
+  })
+
+  // Regression M5: registerCustomTrade() was never called anywhere — a custom trade created via
+  // this route was persisted to the DB but getTradeConfig() (used everywhere at runtime: mission
+  // type filtering, VRP vocabulary, ML accuracy stats) silently fell back to DEFAULT_TRADE for
+  // any tenant assigned to it, with no error surfaced.
+  it('registers the new trade so getTradeConfig() resolves it immediately (same process, no restart needed)', async () => {
+    const created = { id: 'ct-2', ...validTradeBody, tradeKey: 'custom_sector_live', createdAt: new Date() }
+    mockPrisma.customTrade.create.mockResolvedValue(created)
+
+    try {
+      const res = await tradesPost(makeReq('http://localhost/api/superadmin/trades', {
+        method: 'POST', body: { ...validTradeBody, tradeKey: 'custom_sector_live' },
+      }))
+      expect(res.status).toBe(201)
+
+      const config = getTradeConfig('custom_sector_live')
+      expect(config.id).toBe('custom_sector_live')
+      expect(config.enabledMissionTypes).toEqual(['POSER', 'RETIRER'])
+    } finally {
+      unregisterCustomTrade('custom_sector_live')
+    }
   })
 
   it('returns 409 on unique constraint violation', async () => {

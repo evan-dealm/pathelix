@@ -1,10 +1,25 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import {
   TRADES, TRADE_IDS, DEFAULT_TRADE,
   getTradeConfig, isMissionTypeEnabled, getMissionTypeLabel,
   getMissionTypeIcon, filterMissionsByTrade,
+  registerCustomTrade, unregisterCustomTrade, getAllTradeIds, getAllTrades,
+  type TradeConfig,
 } from '@/lib/trades'
 import type { MissionType } from '@/lib/types'
+
+const CUSTOM_CONFIG: TradeConfig = {
+  id: 'transport_medical',
+  vocabulary: {
+    tradeName: 'Transport Médical', tradeDescription: 'x', tradeIcon: '🚑',
+    driver: 'Ambulancier', drivers: 'Ambulanciers', vehicle: 'Ambulance', vehicles: 'Ambulances',
+    mission: 'Transport', missions: 'Transports', exutoire: 'Hôpital', exutoires: 'Hôpitaux',
+    depot: 'Base', client: 'Patient', tour: 'Tournée', tours: 'Tournées',
+    binSize: 'N/A', wasteType: 'N/A', optimize: 'Optimiser', collect: 'Transporter',
+    missionTypeLabels: { POSER: 'Prise en charge' }, missionTypeIcons: {},
+  },
+  enabledMissionTypes: ['POSER', 'RETIRER'],
+}
 
 describe('Trades — Configuration', () => {
   it('a exactement 6 métiers définis', () => {
@@ -271,6 +286,60 @@ describe('Trades — Cohérence', () => {
       expect(v.vehicles).not.toBe(v.vehicle)
       expect(v.missions).not.toBe(v.mission)
     }
+  })
+})
+
+describe('Custom trade registry', () => {
+  afterEach(() => unregisterCustomTrade('transport_medical'))
+
+  it('is empty for an unregistered custom trade id — getTradeConfig falls back to default', () => {
+    const config = getTradeConfig('transport_medical')
+    expect(config.id).toBe(DEFAULT_TRADE)
+  })
+
+  it('registerCustomTrade makes getTradeConfig resolve the custom trade', () => {
+    registerCustomTrade('transport_medical', CUSTOM_CONFIG)
+    const config = getTradeConfig('transport_medical')
+    expect(config.id).toBe('transport_medical')
+    expect(config.vocabulary.tradeName).toBe('Transport Médical')
+  })
+
+  it('unregisterCustomTrade reverts getTradeConfig to the default fallback', () => {
+    registerCustomTrade('transport_medical', CUSTOM_CONFIG)
+    unregisterCustomTrade('transport_medical')
+    expect(getTradeConfig('transport_medical').id).toBe(DEFAULT_TRADE)
+  })
+
+  it('getAllTradeIds includes registered custom trades alongside the 6 built-ins', () => {
+    registerCustomTrade('transport_medical', CUSTOM_CONFIG)
+    const ids = getAllTradeIds()
+    expect(ids).toHaveLength(7)
+    expect(ids).toContain('transport_medical')
+  })
+
+  it('getAllTrades includes the registered custom trade config', () => {
+    registerCustomTrade('transport_medical', CUSTOM_CONFIG)
+    const all = getAllTrades()
+    expect(all.transport_medical).toEqual(CUSTOM_CONFIG)
+  })
+
+  it('a built-in trade key cannot be shadowed by a custom registration', () => {
+    // getTradeConfig checks TRADES (built-ins) first — this is a defensive invariant check,
+    // not a scenario the app is expected to trigger (POST /api/superadmin/trades already
+    // rejects tradeKey values that collide with TRADE_IDS).
+    registerCustomTrade('collecte_recyclage', CUSTOM_CONFIG)
+    expect(getTradeConfig('collecte_recyclage').vocabulary.tradeName).toBe('Collecte & Recyclage')
+    unregisterCustomTrade('collecte_recyclage')
+  })
+
+  it('isMissionTypeEnabled/getMissionTypeLabel/filterMissionsByTrade honor a registered custom trade', () => {
+    registerCustomTrade('transport_medical', CUSTOM_CONFIG)
+    expect(isMissionTypeEnabled('transport_medical', 'POSER')).toBe(true)
+    expect(isMissionTypeEnabled('transport_medical', 'TASSER')).toBe(false)
+    expect(getMissionTypeLabel('transport_medical', 'POSER')).toBe('Prise en charge')
+
+    const missions = [{ type: 'POSER' as MissionType }, { type: 'TASSER' as MissionType }]
+    expect(filterMissionsByTrade('transport_medical', missions)).toEqual([{ type: 'POSER' }])
   })
 })
 

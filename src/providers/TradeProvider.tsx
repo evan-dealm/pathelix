@@ -5,7 +5,7 @@ import type { MissionType } from '@/lib/types'
 import { MISSION_TYPE_LABELS, MISSION_TYPE_ICONS } from '@/lib/types'
 import {
   type TradeId, type TradeConfig, type TradeVocabulary,
-  TRADES, DEFAULT_TRADE, getTradeConfig,
+  DEFAULT_TRADE, getTradeConfig,
 } from '@/lib/trades'
 
 interface TradeContextValue {
@@ -31,8 +31,12 @@ interface TradeProviderProps {
 
 export function TradeProvider({ tradeId, children }: TradeProviderProps) {
   const value = useMemo<TradeContextValue>(() => {
-    const resolvedId = (tradeId && tradeId in TRADES ? tradeId : DEFAULT_TRADE) as TradeId
-    const config = getTradeConfig(resolvedId)
+    // Delegate entirely to getTradeConfig — it already knows how to resolve built-in AND
+    // custom trades (falling back to DEFAULT_TRADE only if truly unknown). Previously this
+    // pre-check only accepted `tradeId in TRADES` (built-ins), silently discarding any custom
+    // trade id before getTradeConfig ever got a chance to look it up.
+    const config = getTradeConfig(tradeId)
+    const resolvedId = config.id as TradeId
     const vocab = config.vocabulary
 
     return {
