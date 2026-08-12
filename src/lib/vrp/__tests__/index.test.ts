@@ -22,8 +22,11 @@ const { mockRunSectorsInParallel } = vi.hoisted(() => ({
 vi.mock('../threadPool', () => ({
   runSectorsInParallel: mockRunSectorsInParallel,
 }))
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}))
 vi.mock('@/lib/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => mockLog,
 }))
 
 import { runVRP } from '../index'
@@ -160,6 +163,31 @@ describe('runVRP — tenantId ML calibration', () => {
     await runVRP([mission('m-1')], [driver()], [], DATE, FAST)
     expect(applyMLCoefficients).not.toHaveBeenCalled()
   })
+
+  // Regression N10: catch {} around ML calibration was completely silent — a tenant whose
+  // calibration kept failing had no way to be alerted, despite a logger already being available
+  // in this file.
+  it('logs a warning (not silent) when ML coefficient calibration throws', async () => {
+    vi.mocked(applyMLCoefficients).mockRejectedValueOnce(new Error('ML service down'))
+    const result = await runVRP([mission('m-1')], [driver()], [], DATE, { ...FAST, tenantId: 't-1' })
+    expect(result.stats.totalMissions).toBe(1) // still completes, degraded (uncalibrated)
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.stringContaining('calibration'),
+      expect.objectContaining({ tenantId: 't-1' }),
+    )
+  })
+
+  // Regression N11: `options.defaultSpeedKmh = Math.round(...)` mutated the CALLER's options
+  // object in place instead of a local copy. Not currently triggered by any call site (each
+  // vrpWorker.ts call constructs a fresh options object), but fragile if options were ever
+  // reused across calls — e.g. calling runVRP twice with the same options reference would let
+  // the second call see the first call's already-adjusted speed.
+  it('does not mutate the caller-supplied options.defaultSpeedKmh', async () => {
+    vi.mocked(getTravelCoeff).mockResolvedValueOnce(1.5)
+    const opts = { ...FAST, tenantId: 't-1', defaultSpeedKmh: 50 }
+    await runVRP([mission('m-1')], [driver()], [], DATE, opts)
+    expect(opts.defaultSpeedKmh).toBe(50)
+  })
 })
 
 // ─── stability weight / familiarity ──────────────────────────────────────────
@@ -181,6 +209,21 @@ describe('runVRP — stability weight', () => {
       weights: { distance: 1, punctuality: 1, balance: 1, stability: 0 },
     })
     expect(loadFamiliarity).not.toHaveBeenCalled()
+  })
+
+  // Regression N10: same silent catch {} issue for familiarity loading.
+  it('logs a warning (not silent) when familiarity loading throws', async () => {
+    vi.mocked(loadFamiliarity).mockRejectedValueOnce(new Error('Redis down'))
+    const result = await runVRP([mission('m-1')], [driver()], [], DATE, {
+      ...FAST,
+      tenantId: 't-1',
+      weights: { distance: 1, punctuality: 1, balance: 1, stability: 1 },
+    })
+    expect(result.stats.totalMissions).toBe(1)
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Familiarity'),
+      expect.objectContaining({ tenantId: 't-1' }),
+    )
   })
 })
 

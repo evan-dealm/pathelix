@@ -95,20 +95,25 @@ export async function runVRP(
   let calibratedMissions = missions
 
   let effectiveValhallaFactor = options?.valhallaFactor ?? 1.60
+  // Local copy — mutating options.defaultSpeedKmh directly would mutate the CALLER's object
+  // (options is a reference the caller still holds), fragile if it's ever reused across calls.
+  let effectiveDefaultSpeedKmh = options?.defaultSpeedKmh
   if (options?.tenantId) {
     try {
       calibratedMissions = await applyMLCoefficients(options.tenantId, missions)
 
       const travelCoeff = await getTravelCoeff(options.tenantId)
       if (travelCoeff !== 1.0) {
-        if (options.defaultSpeedKmh) {
-          options.defaultSpeedKmh = Math.round(options.defaultSpeedKmh / travelCoeff)
+        if (effectiveDefaultSpeedKmh) {
+          effectiveDefaultSpeedKmh = Math.round(effectiveDefaultSpeedKmh / travelCoeff)
         }
 
         effectiveValhallaFactor *= travelCoeff
       }
-    } catch {
-
+    } catch (err) {
+      log.warn('ML coefficient calibration failed — falling back to uncalibrated missions', {
+        tenantId: options.tenantId, err: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
@@ -161,8 +166,10 @@ export async function runVRP(
   if (options?.tenantId && options?.weights?.stability && options.weights.stability > 0) {
     try {
       familiarity = await loadFamiliarity(options.tenantId)
-    } catch {
-
+    } catch (err) {
+      log.warn('Familiarity load failed — continuing without stability bonus', {
+        tenantId: options.tenantId, err: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
@@ -177,7 +184,7 @@ export async function runVRP(
       const m = Math.max(0, Math.min(59, parts[1] || 0))
       return h * 60 + m
     })(),
-    speedKmh:     Math.max(1, Math.min(130, options?.defaultSpeedKmh ?? 50)),
+    speedKmh:     Math.max(1, Math.min(130, effectiveDefaultSpeedKmh ?? 50)),
     exutoires,
     date,
     weights: options?.weights,
