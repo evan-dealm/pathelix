@@ -1,4 +1,4 @@
-const _cache = new Map<number, number>()
+const _cache = new Map<string, number>()
 const _CACHE_MAX = 500_000
 
 const RAD    = Math.PI / 180
@@ -14,7 +14,14 @@ function fastCosLat(lat: number): number {
   return Math.cos(lat * RAD)
 }
 
-function _key(lat1: number, lng1: number, lat2: number, lng2: number): number {
+// A composite string key (rather than a hashed int32) is used deliberately: with up to
+// _CACHE_MAX (500k) entries, the birthday paradox makes a 32-bit hash collision near-certain
+// well before the cache fills (>60% probability by ~100k unique pairs) — a collision meant two
+// different coordinate pairs would silently share one cached distance, with no error or log.
+// The string key can't collide by construction (it *is* the coordinates), at the cost of a
+// slightly more expensive Map key than a raw int, which is negligible next to the trig this
+// cache exists to avoid recomputing.
+function _key(lat1: number, lng1: number, lat2: number, lng2: number): string {
   const a1 = Math.round(lat1 * 1e4)
   const b1 = Math.round(lng1 * 1e4)
   const a2 = Math.round(lat2 * 1e4)
@@ -23,12 +30,7 @@ function _key(lat1: number, lng1: number, lat2: number, lng2: number): number {
   let x1 = a1, y1 = b1, x2 = a2, y2 = b2
   if (a1 > a2 || (a1 === a2 && b1 > b2)) { x1 = a2; y1 = b2; x2 = a1; y2 = b1 }
 
-  let h = 2166136261
-  h ^= x1; h = Math.imul(h, 16777619)
-  h ^= y1; h = Math.imul(h, 16777619)
-  h ^= x2; h = Math.imul(h, 16777619)
-  h ^= y2; h = Math.imul(h, 16777619)
-  return h >>> 0
+  return `${x1},${y1},${x2},${y2}`
 }
 
 export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {

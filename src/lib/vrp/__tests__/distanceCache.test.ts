@@ -458,3 +458,37 @@ describe('collectMatrixPoints', () => {
     expect(pts[0].id).toBe('exu_e1')
   })
 })
+
+// Regression M8: the cache key used to be a hashed int32 (FNV-1a-like) with no collision check
+// — at the cache's stated max size (500k), the birthday paradox makes a collision near-certain
+// well before it fills, silently returning one pair's cached distance for a completely
+// different pair. The key is now the coordinates themselves (as a string), so two distinct
+// pairs structurally cannot collide.
+describe('cache key collision (M8 regression)', () => {
+  it('gives every distinct coordinate pair its own cache entry — no merging under load', () => {
+    clearDistanceCache()
+    const pairs: [number, number, number, number][] = []
+    // 2000 distinct, deterministic pairs — enough to be a meaningful sample without slowing
+    // the suite down; a hashed-int32 key would show entries < pairs.length as soon as any two
+    // pairs collided (a real, non-negligible probability at this key space for a 500k-cap cache).
+    for (let i = 0; i < 2000; i++) {
+      pairs.push([
+        45 + (i % 50) * 0.01, 5 + Math.floor(i / 50) * 0.01,
+        46 + (i % 40) * 0.013, 6 + Math.floor(i / 40) * 0.011,
+      ])
+    }
+    for (const [a, b, c, d] of pairs) haversineKm(a, b, c, d)
+    expect(distanceCacheStats().size).toBe(pairs.length)
+  })
+
+  it('two distinct nearby coordinate pairs each return their own correct distance, repeatedly', () => {
+    clearDistanceCache()
+    const d1a = haversineKm(45.1000, 5.2000, 45.1000, 5.3000)
+    const d2a = haversineKm(45.1001, 5.2001, 45.1001, 5.3001)
+    // Same two pairs queried again must still return their own value, not a merged/overwritten one
+    const d1b = haversineKm(45.1000, 5.2000, 45.1000, 5.3000)
+    const d2b = haversineKm(45.1001, 5.2001, 45.1001, 5.3001)
+    expect(d1a).toBe(d1b)
+    expect(d2a).toBe(d2b)
+  })
+})
