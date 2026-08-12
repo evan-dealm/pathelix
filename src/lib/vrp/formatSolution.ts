@@ -351,7 +351,7 @@ export function formatSolutionForAPI(
       }
 
       const arrivalMin   = currentMin
-      const onSiteMin    = mission.estimatedDurationMin + (mission.maneuverTimeMin ?? 0)
+      const onSiteMin    = (mission.estimatedDurationMin ?? 0) + (mission.maneuverTimeMin ?? 0)
       const departureMin = arrivalMin + onSiteMin
       totalWork         += onSiteMin
       currentMin         = departureMin
@@ -685,7 +685,7 @@ export function formatSolutionForAPI(
         curMin = m.timeWindow.openMin
       }
 
-      const onSite = m.estimatedDurationMin + (m.maneuverTimeMin ?? 0)
+      const onSite = (m.estimatedDurationMin ?? 0) + (m.maneuverTimeMin ?? 0)
       routeOnSite += onSite
       routeWork   += onSite
       curMin      += onSite

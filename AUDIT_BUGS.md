@@ -511,14 +511,21 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Description** : `applyMLCoefficients`/`loadFamiliarity` avalent les erreurs sans log, alors
   que `createLogger` est déjà importé dans ce fichier.
 - **Correction** : logger l'erreur en `warn` avant de continuer en dégradé.
-- **Statut** : à corriger (Phase 2, trivial, observabilité)
+- **Statut** : ✅ **corrigé + testé**. Les deux `catch` loggent maintenant en `warn` avec
+  tenantId + message d'erreur. Tests ajoutés (`index.test.ts`, +2, vérifiés en échouant sans le
+  correctif) : `mockLog.warn` appelé sur échec de `applyMLCoefficients` et de `loadFamiliarity`,
+  le run continue en dégradé dans les deux cas.
 
 ### N11 — Mutation de l'objet `options` fourni par l'appelant (VRP index.ts)
 - **Fichier** : `src/lib/vrp/index.ts` ligne ~105
 - **Confiance** : À VÉRIFIER (pas de trigger identifié actuellement)
 - **Description** : `options.defaultSpeedKmh = Math.round(...)` mute l'objet appelant au lieu
   d'une copie locale. Fragile si `options` était un jour réutilisé par l'appelant.
-- **Statut** : à corriger si trivial (Phase 2) sinon Phase 4
+- **Statut** : ✅ **corrigé + testé**. Variable locale `effectiveDefaultSpeedKmh` introduite,
+  mutée à la place de `options.defaultSpeedKmh`, réutilisée dans la construction de `ctx.speedKmh`
+  (seul autre point de lecture). Test ajouté (+1, vérifié en échouant sans le correctif) : l'objet
+  `options` fourni par l'appelant reste inchangé après l'appel, même quand le travelCoeff ML
+  déclenche l'ajustement de vitesse.
 
 ### N12 — `estimatedDurationMin` non protégé contre `undefined` (formatSolution.ts)
 - **Fichier** : `src/lib/vrp/formatSolution.ts::formatSolutionForAPI()` ligne 354
@@ -528,7 +535,13 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Description** : addition sans `?? 0`/`Math.max(0, ...)`, contrairement à `routeCost.ts` qui
   protège systématiquement. Risque de `NaN` dans les horaires affichés au chauffeur si jamais
   undefined.
-- **Statut** : à corriger par prudence (Phase 2, trivial)
+- **Statut** : ✅ **corrigé + testé** (2 occurrences trouvées et corrigées, pas 1 : ligne 354 ET
+  688). Test ajouté (+1, vérifié en échouant sans le correctif) : une mission avec
+  `estimatedDurationMin` corrompu (`undefined`, cast) au milieu d'une tournée de 19 missions
+  n'empêche pas le warning de surcharge horaire (`totalWork > MAX_WORK_MIN`) de se déclencher
+  correctement pour les 18 autres — sans la garde, `NaN` se propage dans `totalWork`/`currentMin`
+  pour toutes les missions suivantes de la tournée, et `NaN > seuil` est toujours faux (warning
+  supprimé silencieusement).
 
 ### N13 — `DEFAULT_URBAN_CENTERS` codé en dur (région Rhône-Alpes)
 - **Fichier** : `src/lib/algorithm.ts:75-81`
@@ -684,7 +697,10 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N3 | Divergence regex tenantId session.ts/context.ts | 🟡 mineure | ✅ corrigé + testé |
 | N6 | Tooltip.tsx timer non nettoyé | 🟡 mineure | ✅ corrigé + testé |
 | N7 | DRIVER_SELECT sur-fetch | 🟡 mineure | ✅ corrigé + testé |
-| N4,N8-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
+| N10 | catch{} silencieux calibrage ML | 🟡 mineure | ✅ corrigé + testé |
+| N11 | Mutation objet options (VRP) | 🟡 mineure | ✅ corrigé + testé |
+| N12 | estimatedDurationMin non protégé | 🟡 mineure | ✅ corrigé + testé |
+| N4,N8,N9,N13-N20 (reste) | Voir détail | 🟡 mineure | mix accepté/à valider/à faire |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme

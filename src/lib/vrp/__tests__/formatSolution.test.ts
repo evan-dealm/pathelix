@@ -214,6 +214,26 @@ describe('formatSolutionForAPI — overtime warnings', () => {
     expect(warn).toBeDefined()
     expect(warn!.severity).toBe('error')
   })
+
+  // Regression N12: `mission.estimatedDurationMin + (mission.maneuverTimeMin ?? 0)` had no `?? 0`
+  // guard on estimatedDurationMin itself (unlike every other usage in this file). Type says it's
+  // required, but a malformed/legacy row bypassing that would turn onSiteMin into NaN, which then
+  // poisons totalWork/currentMin for every mission processed after it in the same route — e.g.
+  // silently suppressing a legitimate overtime warning, since `NaN > MAX_WORK_MIN` is false.
+  it('still correctly totals work (and warns) when one mission has a malformed duration', () => {
+    const missions = [
+      // Malformed: bypasses the required `number` type — simulates bad/legacy data.
+      mission('m-bad', { estimatedDurationMin: undefined as unknown as number, maneuverTimeMin: 5 }),
+      ...Array.from({ length: 18 }, (_, i) =>
+        mission(`m-${i}`, { estimatedDurationMin: 30, maneuverTimeMin: 5 }),
+      ),
+    ]
+    mockRealDurationMin.mockReturnValue(5)
+    const result = formatSolutionForAPI(solution('d-1', missions), [driver()], ctx())
+    const warn = result.warnings.find(w => w.message.includes('10h'))
+    expect(warn).toBeDefined()
+    expect(warn!.severity).toBe('error')
+  })
 })
 
 // ─── formatSolutionForAPI — P1 deadline ───────────────────────────────────
