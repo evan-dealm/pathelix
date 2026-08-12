@@ -66,6 +66,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const existing = await prisma.client.findFirst({ where: { id, tenantId } })
     if (!existing) return NextResponse.json({ error: 'Client introuvable' }, { status: 404 })
 
+    if (siteIds !== undefined && siteIds.length > 0) {
+      const validSites = await prisma.site.count({
+        where: { id: { in: siteIds }, tenantId },
+      })
+      if (validSites !== siteIds.length) {
+        return NextResponse.json({ error: 'Un ou plusieurs sites sont introuvables' }, { status: 400 })
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
       await tx.client.update({
         where: { id, tenantId },

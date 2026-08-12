@@ -494,7 +494,11 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Description** : `routeJChain.missions` calculé une première fois via `.filter()` (résultat
   jeté), puis écrasé. Gaspillage CPU dans une boucle imbriquée sous budget-temps serré, pas un bug
   de correction.
-- **Statut** : à corriger si simple (Phase 2) sinon reporté Phase 4 (dette technique)
+- **Statut** : ✅ **corrigé**, sans nouveau test (refactor pur, comportement identique — le calcul
+  jeté ne pouvait pas produire d'effet observable). `routeJChain` construit directement à partir de
+  `tempMissions` (déjà calculé juste après pour le vrai usage) au lieu d'un `.filter()` intermédiaire
+  immédiatement écrasé à la ligne suivante. Vérifié : suite VRP complète (523/523) inchangée avant/
+  après, typecheck et lint propres.
 
 ### N9 — `getJ7Date()` : mélange UTC/heure locale (VRP worker)
 - **Fichier** : `src/workers/vrpWorker.ts::getJ7Date()` lignes 29-33
@@ -657,11 +661,30 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 
 ### N20 — `ClientSite` sans `tenantId` propre
 - **Fichier** : `prisma/schema.prisma:186-196`
-- **Confiance** : À VÉRIFIER
-- **Description** : pas de colonne `tenantId`, seulement `clientId`/`siteId`. Fine tant que tout
-  accès passe par un `Client`/`Site` déjà vérifié tenant — à confirmer qu'aucun lookup direct par
-  id brut n'existe.
-- **Statut** : à vérifier en Phase 2
+- **Confiance** : CONFIRMÉ (élevé à partir d'"à vérifier" — vrai bug trouvé, pas juste une absence
+  de colonne théorique)
+- **Description** : pas de colonne `tenantId`, seulement `clientId`/`siteId`. Sûr tant que tout
+  accès passe par un `Client`/`Site` déjà vérifié tenant.
+- **Statut** : ✅ **corrigé + testé**. Audit de tous les points d'écriture `clientSite.*` (4 réels,
+  hors client Prisma généré) :
+  - `POST /api/clients` (création, `siteIds`) : déjà correct — `prisma.site.count({id:{in:siteIds},
+    tenantId})` vérifié avant `clientSites: {create: ...}`.
+  - `PUT /api/sites/[id]` (`clientIds`) : déjà correct — même pattern côté `client.count`.
+  - `POST /api/site-products` : déjà correct — `client`/`site` chargés individuellement avec
+    `tenantId` avant l'`upsert` `clientSite`.
+  - **`PUT /api/clients/[id]` (`siteIds`) : BUG RÉEL CONFIRMÉ.** Le `clientId` (`id` de l'URL)
+    était bien vérifié contre `tenantId`, mais les `siteIds` du body ne l'étaient PAS avant
+    `tx.clientSite.createMany({data: siteIds.map(siteId => ({clientId: id, siteId}))})` — alors que
+    la route POST équivalente (création) fait cette vérification. Un admin du tenant A pouvait
+    lier son propre client à un `siteId` appartenant à un AUTRE tenant B ; le `GET` suivant
+    (`include: {clientSites: {include: {site: true}}}`) exposait alors nom/adresse/coordonnées du
+    site de B au tenant A — fuite cross-tenant réelle, pas théorique.
+  - **Correction** : ajout du même garde `prisma.site.count({id:{in:siteIds}, tenantId})` juste
+    avant la transaction, miroir exact du pattern déjà utilisé par `POST /api/clients` et
+    `PUT /api/sites/[id]`.
+  - Tests ajoutés (`crud.test.ts`, +2, vérifiés en échouant sans le correctif — l'un attendait 400
+    et recevait 200, l'autre vérifiait l'appel à `site.count` non fait) : rejet d'un `siteId` hors
+    tenant, acceptation normale d'un `siteId` du bon tenant.
 
 ---
 

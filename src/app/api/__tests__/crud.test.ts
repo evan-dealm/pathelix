@@ -17,6 +17,7 @@ const { mockPrisma } = vi.hoisted(() => {
       findFirst:  vi.fn(),
       findUnique: vi.fn(),
       update:     vi.fn(),
+      count:      vi.fn(),
     },
     siteProduct: {
       findFirst:  vi.fn(),
@@ -143,6 +144,38 @@ describe('PUT /api/clients/[id]', () => {
     const res = await clientsPut(req, makeIdParams('c-1'))
 
     expect(res.status).toBe(200)
+  })
+
+  it('rejects siteIds not belonging to this tenant (cross-tenant ClientSite link)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    mockPrisma.client.findFirst.mockResolvedValue({ id: 'c-1', tenantId: 'tenant-test' })
+    mockPrisma.site.count.mockResolvedValue(0) // requested site belongs to another tenant
+
+    const req = makeRequest('http://localhost:3000/api/clients/c-1', {
+      method: 'PUT',
+      body:   { siteIds: ['site-other-tenant'] },
+    })
+    const res = await clientsPut(req, makeIdParams('c-1'))
+
+    expect(res.status).toBe(400)
+    expect(mockPrisma.clientSite.createMany).not.toHaveBeenCalled()
+  })
+
+  it('accepts siteIds that belong to this tenant', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    mockPrisma.client.findFirst.mockResolvedValue({ id: 'c-1', tenantId: 'tenant-test' })
+    mockPrisma.site.count.mockResolvedValue(1)
+    mockPrisma.client.update.mockResolvedValue({ id: 'c-1' })
+
+    const req = makeRequest('http://localhost:3000/api/clients/c-1', {
+      method: 'PUT',
+      body:   { siteIds: ['site-1'] },
+    })
+    const res = await clientsPut(req, makeIdParams('c-1'))
+
+    expect(res.status).toBe(200)
+    expect(mockPrisma.site.count).toHaveBeenCalledWith({ where: { id: { in: ['site-1'] }, tenantId: 'tenant-test' } })
+    expect(mockPrisma.clientSite.createMany).toHaveBeenCalled()
   })
 
   it('returns 400 for empty body (invalid JSON)', async () => {

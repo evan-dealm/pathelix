@@ -1446,21 +1446,16 @@ export function ejectionChainSearch(
 
                   const costK = computeRouteCost(routeK, ctx, drivers)
 
-                  const routeJChain = {
-                    driverId: routeJ.driverId,
-                    missions: routeJWith.missions.filter((_, idx2) => {
-
-                      const origIdx = idx2 < pos ? idx2 : idx2 - 1
-                      return origIdx !== mj || idx2 === pos
-                    }),
-                  }
-
                   const tempMissions = [...routeJ.missions]
                   tempMissions.splice(pos, 0, missionToEject)
 
                   const ejIdx = mj >= pos ? mj + 1 : mj
                   tempMissions.splice(ejIdx, 1)
-                  routeJChain.missions = tempMissions
+
+                  const routeJChain = {
+                    driverId: routeJ.driverId,
+                    missions: tempMissions,
+                  }
 
                   const costJChain = computeRouteCost(routeJChain, ctx, drivers)
 
