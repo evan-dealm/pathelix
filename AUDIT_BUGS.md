@@ -307,7 +307,17 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   être cassé silencieusement, sans warning remonté au dispatcher.
 - **Correction proposée** : dans le fallback, préférer une route passant
   `isAllerRetourCompatible` ; à défaut, pousser un warning dans `result.warnings`.
-- **Statut** : à corriger (Phase 2) — nécessite suite de tests VRP complète avant/après
+- **Statut** : ✅ **corrigé + testé**. Le fallback essaie d'abord une route respectant
+  `isAllerRetourCompatible` (charge minimale parmi celles-ci) ; seulement si aucune n'existe,
+  force sur la route la moins chargée ET pousse un warning explicite (sévérité `warning`,
+  mentionne l'id de la mission) dans le tableau `warnings` (déjà existant : `hfvrpWarnings`,
+  fusionné dans `result.warnings` par l'appelant). `forceAssignP1` exporté (seule fonction interne
+  de ce fichier à l'être) spécifiquement pour permettre un test direct de ce fallback — le forcer
+  de façon fiable via le pipeline public `runVRP` aurait nécessité de contourner l'aléatoire
+  seedé de la recherche ALNS, sans garantie. Tests ajoutés (`forceAssignP1.test.ts`, nouveau
+  fichier, 4 tests, un vérifié en échouant sans le correctif) : route vide respectée sans warning
+  quand disponible ; mission forcée + warning explicite quand aucune route ne respecte
+  ALLER_RETOUR ; pas de crash si `warnings` omis.
 
 ### M11 — Divergence `syncQueue.ts`/`sw.js` sur le comptage des erreurs réseau
 - **Fichiers** : `src/lib/syncQueue.ts:82-85`, `public/sw.js:100-102`
@@ -613,7 +623,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | à corriger |
 | M8 | Collision hash 32 bits cache haversine | 🟠 majeure | à corriger |
 | M9 | Unité incohérente rebalanceSectors | 🟠 majeure | ✅ corrigé + testé (garde-fou oscillation ajouté) |
-| M10 | forceAssignP1 peut violer invariant ALLER_RETOUR | 🟠 majeure | à corriger |
+| M10 | forceAssignP1 peut violer invariant ALLER_RETOUR | 🟠 majeure | ✅ corrigé + testé |
 | M11 | Divergence syncQueue/sw.js erreurs réseau | 🟠 majeure | ✅ corrigé + testé |
 | M12 | Nessy secret global + tenantId appelant | 🟠 majeure | à valider utilisateur |
 | N1-N20 | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |

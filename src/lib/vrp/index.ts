@@ -307,7 +307,7 @@ export async function runVRP(
 
   best = batchByWasteType(best, ctx, drivers)
 
-  best = forceAssignP1(best, assignableMissions, ctx, drivers)
+  best = forceAssignP1(best, assignableMissions, ctx, drivers, hfvrpWarnings)
 
   let paretoFrontResult: Array<{ label: string; totalDistanceKm: number; totalLatenessMin: number; workloadCV: number }> | undefined
   if (options?.usePareto && drivers.length <= 300) {
@@ -512,11 +512,16 @@ function compactRoutes(
   return result
 }
 
-function forceAssignP1(
+// Exported (only internal step function that is) specifically so its ALLER_RETOUR fallback
+// behavior can be unit-tested directly — forcing this exact path deterministically through the
+// full public runVRP/optimizeVRP pipeline would require fighting the ALNS search's seeded
+// randomness with no reliable guarantee, unlike a hard structural constraint check like this one.
+export function forceAssignP1(
   solution: VRPSolution,
   allMissions: Mission[],
   ctx: CostContext,
   drivers: Driver[],
+  warnings?: OptimizationResult['warnings'],
 ): VRPSolution {
 
   if (!solution || !solution.routes || solution.routes.length === 0) return solution
@@ -594,12 +599,34 @@ function forceAssignP1(
 
     if (bestRouteIdx === -1) {
 
+      // No route passed both compatibility checks above (capacity/skills + ALLER_RETOUR-alone).
+      // Before falling back to a blind "least loaded route" pick — which could silently violate
+      // ALLER_RETOUR (a route must carry no other mission alongside one) or vehicle
+      // capacity/skills — try again for the least-loaded route that at least respects
+      // ALLER_RETOUR, ignoring capacity/skills only as a last resort before giving up entirely.
       let minLoad = Infinity
       for (let ri = 0; ri < result.routes.length; ri++) {
-        const load = result.routes[ri].missions.length
+        const route = result.routes[ri]
+        if (!isAllerRetourCompatible(route.missions, mission.type)) continue
+        const load = route.missions.length
         if (load < minLoad) { minLoad = load; bestRouteIdx = ri }
       }
-      if (bestRouteIdx === -1) bestRouteIdx = 0
+
+      if (bestRouteIdx === -1) {
+        // Truly nothing respects ALLER_RETOUR either — force onto the least-loaded route
+        // regardless, but warn: this may violate ALLER_RETOUR or vehicle capacity/skills.
+        minLoad = Infinity
+        for (let ri = 0; ri < result.routes.length; ri++) {
+          const load = result.routes[ri].missions.length
+          if (load < minLoad) { minLoad = load; bestRouteIdx = ri }
+        }
+        if (bestRouteIdx === -1) bestRouteIdx = 0
+        warnings?.push({
+          driverId: result.routes[bestRouteIdx]?.driverId ?? '',
+          message:  `Mission P1 ${mission.id} (${mission.address}) forcée sur une tournée sans respecter toutes ses contraintes (véhicule/ALLER_RETOUR) — aucune tournée compatible disponible`,
+          severity: 'warning',
+        })
+      }
       bestPos = 0
     }
 
