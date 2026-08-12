@@ -94,4 +94,26 @@ describe('forceAssignP1', () => {
     }
     expect(() => forceAssignP1(solution, [m1, m2, p1], CTX, [driver('d-1'), driver('d-2')])).not.toThrow()
   })
+
+  // Regression M7: unlike its sibling steps (threeOptOnWorstRoutes, ejectionChainSearch), this
+  // function had no internal deadline check at all — on a large instance it could run past
+  // timeBudgetMs uncontrolled. A past deadline must not stop it from placing P1 missions (they
+  // are high priority) — it must skip straight to the cheap ALLER_RETOUR-respecting fallback
+  // instead of the expensive per-position cost search.
+  it('still places a P1 mission when the deadline has already passed, skipping the cost search', () => {
+    const m1 = mission('m-routed', { priority: 2 })
+    const p1 = mission('m-p1', { priority: 1 })
+    const solution: VRPSolution = {
+      routes: [
+        { driverId: 'd-1', missions: [m1] },
+        { driverId: 'd-empty', missions: [] },
+      ],
+      cost: 0,
+    }
+    const pastDeadline = Date.now() - 1000
+    const result = forceAssignP1(solution, [m1, p1], CTX, [driver('d-1'), driver('d-empty')], undefined, pastDeadline)
+
+    const placedIn = result.routes.filter(r => r.missions.some(m => m.id === 'm-p1'))
+    expect(placedIn).toHaveLength(1)
+  })
 })

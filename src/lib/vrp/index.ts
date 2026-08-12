@@ -301,13 +301,15 @@ export async function runVRP(
     best = ejectionChainSearch(best, ctx, drivers, ejDeadline, 3)
   }
 
-  if (best.routes.length <= 200) {
-    best = compactRoutes(best, ctx, drivers)
+  const compactDeadline = startTs + timeBudgetMs - 400
+  if (Date.now() < compactDeadline && best.routes.length <= 200) {
+    best = compactRoutes(best, ctx, drivers, compactDeadline)
   }
 
   best = batchByWasteType(best, ctx, drivers)
 
-  best = forceAssignP1(best, assignableMissions, ctx, drivers, hfvrpWarnings)
+  const forceAssignDeadline = startTs + timeBudgetMs - 200
+  best = forceAssignP1(best, assignableMissions, ctx, drivers, hfvrpWarnings, forceAssignDeadline)
 
   let paretoFrontResult: Array<{ label: string; totalDistanceKm: number; totalLatenessMin: number; workloadCV: number }> | undefined
   if (options?.usePareto && drivers.length <= 300) {
@@ -444,10 +446,13 @@ function batchByWasteType(
   return result
 }
 
-function compactRoutes(
+// Exported alongside forceAssignP1 for direct deadline-guard testing — see that function's
+// comment for why (unreliable to force deterministically through the public runVRP pipeline).
+export function compactRoutes(
   solution: VRPSolution,
   ctx: CostContext,
   drivers: Driver[],
+  deadline?: number,
 ): VRPSolution {
   const result: VRPSolution = {
     routes: solution.routes.map(r => ({ driverId: r.driverId, missions: [...r.missions] })),
@@ -459,6 +464,8 @@ function compactRoutes(
     .filter(r => r.count === 1)
 
   for (const { idx: shortIdx } of shortRoutes) {
+    if (deadline !== undefined && Date.now() > deadline) break
+
     const shortRoute = result.routes[shortIdx]
     if (shortRoute.missions.length === 0) continue
 
@@ -473,6 +480,7 @@ function compactRoutes(
     const currentShortCost = computeRouteCost(shortRoute, ctx, drivers)
 
     for (let ti = 0; ti < result.routes.length; ti++) {
+      if (deadline !== undefined && Date.now() > deadline) break
       if (ti === shortIdx) continue
       const targetRoute = result.routes[ti]
       if (targetRoute.missions.length === 0) continue
@@ -512,16 +520,18 @@ function compactRoutes(
   return result
 }
 
-// Exported (only internal step function that is) specifically so its ALLER_RETOUR fallback
-// behavior can be unit-tested directly — forcing this exact path deterministically through the
-// full public runVRP/optimizeVRP pipeline would require fighting the ALNS search's seeded
-// randomness with no reliable guarantee, unlike a hard structural constraint check like this one.
+// Exported specifically so its ALLER_RETOUR fallback and deadline-guard behavior can be
+// unit-tested directly — forcing either path deterministically through the full public
+// runVRP/optimizeVRP pipeline would require fighting the ALNS search's seeded randomness (or
+// real wall-clock timing) with no reliable guarantee, unlike a direct call with a hand-built
+// VRPSolution and an already-past deadline.
 export function forceAssignP1(
   solution: VRPSolution,
   allMissions: Mission[],
   ctx: CostContext,
   drivers: Driver[],
   warnings?: OptimizationResult['warnings'],
+  deadline?: number,
 ): VRPSolution {
 
   if (!solution || !solution.routes || solution.routes.length === 0) return solution
@@ -571,7 +581,13 @@ export function forceAssignP1(
       candidateIndices = result.routes.map((_, i) => i)
     }
 
-    for (const ri of candidateIndices) {
+    // Past deadline: skip the expensive per-position cost search below and go straight to the
+    // cheap ALLER_RETOUR-respecting fallback (still O(routes), no cost computation) so remaining
+    // P1 missions get placed rather than silently dropped — this loop has no other deadline
+    // guard, unlike its sibling steps (threeOptOnWorstRoutes, ejectionChainSearch).
+    const pastDeadline = deadline !== undefined && Date.now() > deadline
+
+    for (const ri of pastDeadline ? [] : candidateIndices) {
       const route = result.routes[ri]
       if (!route) continue
       const driver = driverMap.get(route.driverId)

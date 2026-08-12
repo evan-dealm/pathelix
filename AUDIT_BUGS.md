@@ -243,7 +243,22 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   `AUDIT_TRACKING.md` de juillet.
 - **Correction proposée** : passer une `deadline` calculée à `compactRoutes()`/`forceAssignP1()`,
   vérifier `Date.now() < deadline` dans leurs boucles, sortir proprement si dépassée.
-- **Statut** : à corriger (Phase 2) — nécessite suite de tests VRP complète avant/après
+- **Statut** : ✅ **corrigé + testé**. Les deux fonctions acceptent désormais un `deadline?:
+  number`, avec un budget dédié calculé dans `runVRP` (`startTs + timeBudgetMs - 400` pour
+  `compactRoutes`, `- 200` pour `forceAssignP1`, cohérent avec le pattern décroissant déjà en
+  place pour `threeOptDeadline`/`ejDeadline`). `compactRoutes` sort proprement (`break`) si le
+  délai est dépassé — pure optimisation, sans danger à l'écourter. `forceAssignP1` reste TOUJOURS
+  appelée (missions P1 prioritaires, ne doivent jamais être silencieusement ignorées) mais, une
+  fois le délai dépassé, saute directement la recherche coûteuse par position/coût et va au
+  fallback pas cher (déjà corrigé par M10, respecte ALLER_RETOUR quand possible + warning sinon).
+  Les deux fonctions exportées (seules de ce fichier, avec un commentaire expliquant pourquoi) —
+  forcer ces chemins de façon fiable via le pipeline public `runVRP` aurait nécessité de
+  contourner soit l'aléatoire seedé de l'ALNS, soit un vrai minutage horloge réelle, sans
+  garantie ; un appel direct avec une `deadline` déjà dépassée est déterministe. Tests ajoutés
+  (`compactRoutes.test.ts`, nouveau fichier, 3 tests, dont 1 vérifié en échouant sans le
+  correctif ; `forceAssignP1.test.ts` +1 test) : compaction normale quand il reste du temps,
+  aucune action si le délai est déjà dépassé, mission P1 quand même placée (fallback) si le délai
+  est dépassé.
 
 ### M8 — Collision de hash 32 bits dans le cache haversine (`distanceCache.ts`)
 - **Fichier** : `src/lib/vrp/distanceCache.ts:17-32,34-59`
@@ -620,7 +635,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | ✅ corrigé + testé |
 | M5 | Custom trades jamais enregistrés | 🟠 majeure | ✅ corrigé serveur + testé (⚠️ gap client documenté) |
 | M6 | planningStore IndexedDB non nettoyé (fuite tenant) | 🟠 majeure | ✅ corrigé + testé (gap couverture admin/superadmin page.tsx documenté) |
-| M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | à corriger |
+| M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | ✅ corrigé + testé |
 | M8 | Collision hash 32 bits cache haversine | 🟠 majeure | à corriger |
 | M9 | Unité incohérente rebalanceSectors | 🟠 majeure | ✅ corrigé + testé (garde-fou oscillation ajouté) |
 | M10 | forceAssignP1 peut violer invariant ALLER_RETOUR | 🟠 majeure | ✅ corrigé + testé |
