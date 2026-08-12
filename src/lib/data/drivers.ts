@@ -16,9 +16,17 @@ const DRIVER_SELECT = {
   email: true, employeeNumber: true, hiredAt: true, birthDate: true,
   licenseExpiry: true, licenseCategories: true, emergencyContact: true, color: true,
 
-  vehicles: { where: { archived: false }, take: 1 },
+  // Only the fields prismaRowToDriver actually reads off v = vehicles?.[0] — the unfiltered
+  // select previously returned every Vehicle column (licensePlate, insuranceExpiry, etc.) on
+  // every driver list/get call.
+  vehicles: {
+    where: { archived: false },
+    take: 1,
+    select: { maxBins: true, weightTon: true, heightM: true, widthM: true, lengthM: true, axleCount: true, hazmat: true },
+  },
 
-  startingExutoire: { select: { lat: true, lng: true, name: true } },
+  // startingExutoireId (scalar, above) is what the mapper reads — this joined object was never
+  // consumed, just a wasted join on every driver list/get call.
 } as const
 
 export async function getAllDrivers(tenantId: string): Promise<Driver[]> {

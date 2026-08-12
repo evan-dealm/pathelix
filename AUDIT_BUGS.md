@@ -483,7 +483,10 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   scalaires de `Vehicle` alors que le mapper n'en consomme que 6.
 - **Correction** : retirer le join `startingExutoire` inutilisé, ajouter un `select` imbriqué sur
   `vehicles` limité aux 6 champs utilisés.
-- **Statut** : à corriger (Phase 2, trivial, perf)
+- **Statut** : ✅ **corrigé + testé** (7 champs en réalité, pas 6 : `maxBins`, `weightTon`,
+  `heightM`, `widthM`, `lengthM`, `axleCount`, `hazmat`). Tests ajoutés (+2, vérifiés en échouant
+  sans le correctif) : `startingExutoire` absent du select, `startingExutoireId` (scalaire)
+  présent ; `vehicles.select` limité exactement aux 7 champs utilisés par le mapper.
 
 ### N8 — Ejection chain search : calcul mort dans une boucle chaude (VRP)
 - **Fichier** : `src/lib/vrp/operators.ts::ejectionChainSearch()` lignes ~1449-1463
@@ -680,7 +683,8 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N2 | `x-tenant-trade` non strippé | 🟡 mineure | ✅ corrigé (pas de test dédié — impact nul confirmé, limite harnais middleware) |
 | N3 | Divergence regex tenantId session.ts/context.ts | 🟡 mineure | ✅ corrigé + testé |
 | N6 | Tooltip.tsx timer non nettoyé | 🟡 mineure | ✅ corrigé + testé |
-| N4,N7-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
+| N7 | DRIVER_SELECT sur-fetch | 🟡 mineure | ✅ corrigé + testé |
+| N4,N8-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme

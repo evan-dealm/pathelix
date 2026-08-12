@@ -70,6 +70,28 @@ describe('getAllDrivers (DB path)', () => {
     const result = await getAllDrivers('t-1') as unknown[]
     expect(result).toHaveLength(0)
   })
+
+  // Regression N7: DRIVER_SELECT joined startingExutoire (never read by prismaRowToDriver — only
+  // the scalar startingExutoireId is) and selected every Vehicle column via an unfiltered nested
+  // `vehicles: {...}` (no `select`), even though the mapper only reads 7 fields off it. Both were
+  // wasted joins/over-fetching on every driver list call.
+  it('does not join startingExutoire (unused by the mapper — only startingExutoireId is read)', async () => {
+    mockPrisma.driver.findMany.mockResolvedValueOnce([])
+    await getAllDrivers('t-1')
+    const call = mockPrisma.driver.findMany.mock.calls[0][0]
+    expect(call.select.startingExutoire).toBeUndefined()
+    expect(call.select.startingExutoireId).toBe(true)
+  })
+
+  it('selects only the vehicle fields the mapper reads, not every Vehicle column', async () => {
+    mockPrisma.driver.findMany.mockResolvedValueOnce([])
+    await getAllDrivers('t-1')
+    const call = mockPrisma.driver.findMany.mock.calls[0][0]
+    expect(call.select.vehicles.select).toEqual({
+      maxBins: true, weightTon: true, heightM: true, widthM: true,
+      lengthM: true, axleCount: true, hazmat: true,
+    })
+  })
 })
 
 describe('getDriver (DB path)', () => {
