@@ -471,7 +471,9 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Description** : `show()` programme `setVisible(true)` via `setTimeout(200ms)` sans cleanup au
   démontage. Composant démonté pendant le délai → `setVisible` appelé sur composant démonté.
 - **Correction** : `useEffect(() => () => clearTimeout(timerRef.current), [])`.
-- **Statut** : à corriger (Phase 2, trivial)
+- **Statut** : ✅ **corrigé + testé**. Test ajouté (+1, vérifié en échouant sans le correctif) :
+  `clearTimeout` appelé au démontage pendant le délai de 200ms, pas de throw si les timers
+  avancent après démontage.
 
 ### N7 — `DRIVER_SELECT` sur-fetch (jointures inutiles)
 - **Fichier** : `src/lib/data/drivers.ts:19,21`
@@ -677,7 +679,8 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N5 | advanceStatus effets de bord dans updater | 🟡 mineure | accepté tel quel (StrictMode = dev only, jamais en prod ; risque réel de régression identifié dans la correction "propre") |
 | N2 | `x-tenant-trade` non strippé | 🟡 mineure | ✅ corrigé (pas de test dédié — impact nul confirmé, limite harnais middleware) |
 | N3 | Divergence regex tenantId session.ts/context.ts | 🟡 mineure | ✅ corrigé + testé |
-| N4-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
+| N6 | Tooltip.tsx timer non nettoyé | 🟡 mineure | ✅ corrigé + testé |
+| N4,N7-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme

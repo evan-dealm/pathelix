@@ -67,6 +67,24 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
     vi.useRealTimers()
   })
+
+  // Regression N6: show() scheduled setVisible(true) via a 200ms setTimeout with no cleanup on
+  // unmount — a component unmounted while the timer is pending (e.g. hovered element removed
+  // from the DOM right after mouseenter) would still fire and call setVisible on an unmounted
+  // component.
+  it('clears the pending show timer on unmount', () => {
+    vi.useFakeTimers()
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
+    const { unmount } = render(<Tooltip content="Aide"><span>Unmount me</span></Tooltip>)
+    const wrapper = screen.getByText('Unmount me').parentElement!
+    fireEvent.mouseEnter(wrapper)
+    unmount()
+    expect(clearTimeoutSpy).toHaveBeenCalled()
+    // Advancing timers past the delay must not throw or touch unmounted state.
+    expect(() => act(() => { vi.advanceTimersByTime(200) })).not.toThrow()
+    clearTimeoutSpy.mockRestore()
+    vi.useRealTimers()
+  })
 })
 
 describe('JargonTip', () => {
