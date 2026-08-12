@@ -86,6 +86,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           errors.push(`Ligne ${i + 1}: type de mission inconnu "${rawType}"`)
           continue
         }
+        if (rawType === 'VIDER' || rawType === 'PAUSE') {
+          errors.push(`Ligne ${i + 1}: type "${rawType}" réservé au moteur VRP, import manuel refusé`)
+          continue
+        }
         const lat = parseCoord(m.latitude)
         const lng = parseCoord(m.longitude)
         const coordsOk = hasValidCoords(lat, lng)

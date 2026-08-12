@@ -77,7 +77,11 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   vidages, le reporting CO2, et les statistiques par type de mission de `/api/superadmin/ml-accuracy`.
 - **Correction proposée** : `.refine()` sur `MissionSchema` rejetant `type` ∈ `['VIDER','PAUSE']`
   avec message explicite ; même contrôle dans la boucle de validation ligne-par-ligne de l'import.
-- **Statut** : à corriger (Phase 2)
+- **Statut** : ✅ **corrigé + testé**. `MissionSchema` (POST) et nouveau `MissionUpdateSchema`
+  (PUT, remplace l'ancien `MissionSchema.partial()`) rejettent `type` ∈ `['VIDER','PAUSE']` via
+  `.refine()`. Import bulk (`/api/import`) rejette aussi ces types ligne par ligne avec message
+  explicite. Tests ajoutés : `schemas.test.ts` (4 tests), `routes-import-clients-history.test.ts`
+  (1 test).
 
 ### M2 — Suppression permanente d'abonnements push valides sur erreur transitoire
 - **Fichier** : `src/lib/webPush.ts:46-54`, appelant `src/app/api/push/notify/route.ts:43-53`
@@ -499,7 +503,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | # | Titre | Sévérité | Statut initial |
 |---|---|---|---|
 | C1 | Scan ticket pesée inaccessible | 🔴 critique | ✅ corrigé + testé |
-| M1 | VIDER/PAUSE créables par utilisateur | 🟠 majeure | à corriger |
+| M1 | VIDER/PAUSE créables par utilisateur | 🟠 majeure | ✅ corrigé + testé |
 | M2 | Suppression abonnements push sur erreur transitoire | 🟠 majeure | à corriger |
 | M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | à valider utilisateur |
 | M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | à corriger |

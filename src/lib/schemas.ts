@@ -11,7 +11,7 @@ const dateSchema = z.string()
     return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === day
   }, 'Date calendaire invalide')
 
-export const MissionSchema = z.object({
+const MissionObjectSchema = z.object({
   type: z.enum(['POSER', 'RETIRER', 'ECHANGER', 'VIDER', 'PAUSE', 'CHARGER_IMMEDIAT', 'DEPLACER', 'TASSER', 'EXPEDIER', 'ALLER_RETOUR']),
   date: dateSchema,
 
@@ -53,7 +53,18 @@ export const MissionSchema = z.object({
   externalRef:       z.string().optional(),
 })
 
-export type MissionInput = z.infer<typeof MissionSchema>
+const NOT_USER_CREATABLE_TYPES = new Set(['VIDER', 'PAUSE'])
+const notSyntheticType = <T extends { type?: string }>(data: T) =>
+  data.type === undefined || !NOT_USER_CREATABLE_TYPES.has(data.type)
+const SYNTHETIC_TYPE_ISSUE = {
+  message: 'Type VIDER/PAUSE réservé au moteur VRP — ne peut pas être créé ou modifié manuellement',
+  path: ['type'],
+}
+
+export const MissionSchema = MissionObjectSchema.refine(notSyntheticType, SYNTHETIC_TYPE_ISSUE)
+export const MissionUpdateSchema = MissionObjectSchema.partial().refine(notSyntheticType, SYNTHETIC_TYPE_ISSUE)
+
+export type MissionInput = z.infer<typeof MissionObjectSchema>
 
 export const DriverSchema = z.object({
   firstName: z.string().min(1),

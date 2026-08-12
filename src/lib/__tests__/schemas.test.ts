@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MissionSchema,
+  MissionUpdateSchema,
   DriverSchema,
   ExutoireSchema,
   OptimizeRequestSchema,
@@ -44,6 +45,29 @@ describe('MissionSchema', () => {
   it('rejects invalid mission type', () => {
     const result = MissionSchema.safeParse({ ...validMission, type: 'INVALID' })
     expect(result.success).toBe(false)
+  })
+
+  // Regression M1: VIDER/PAUSE are synthetic, VRP-generated-only mission types (never created
+  // by a user) — a bare enum accepted them, letting POST /api/missions and PUT /api/missions/[id]
+  // create/rewrite a mission into one of these types.
+  it('rejects VIDER as a user-creatable type', () => {
+    const result = MissionSchema.safeParse({ ...validMission, type: 'VIDER' })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects PAUSE as a user-creatable type', () => {
+    const result = MissionSchema.safeParse({ ...validMission, type: 'PAUSE' })
+    expect(result.success).toBe(false)
+  })
+
+  it('MissionUpdateSchema rejects changing type to VIDER/PAUSE', () => {
+    expect(MissionUpdateSchema.safeParse({ type: 'VIDER' }).success).toBe(false)
+    expect(MissionUpdateSchema.safeParse({ type: 'PAUSE' }).success).toBe(false)
+  })
+
+  it('MissionUpdateSchema still allows partial updates that do not touch type', () => {
+    const result = MissionUpdateSchema.safeParse({ address: '99 rue Neuve' })
+    expect(result.success).toBe(true)
   })
 
   it('rejects latitude out of range', () => {

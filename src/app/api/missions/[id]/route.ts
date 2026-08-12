@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { MissionSchema } from '@/lib/schemas'
+import { MissionUpdateSchema } from '@/lib/schemas'
 import { createLogger } from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getMission, updateMission, deleteMission } from '@/lib/data/missions'
@@ -28,7 +28,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   try { body = await req.json() }
   catch { return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 }) }
 
-  const parsed = MissionSchema.partial().safeParse(body)
+  const parsed = MissionUpdateSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }

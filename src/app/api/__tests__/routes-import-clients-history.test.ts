@@ -89,6 +89,32 @@ describe('POST /api/import', () => {
     expect(json.errors).toHaveLength(0)
   })
 
+  // Regression M1: VIDER/PAUSE are synthetic, VRP-generated-only mission types — bulk import
+  // must not let a user create real Mission rows of these types.
+  it('rejects VIDER/PAUSE rows on mission import', async () => {
+    // Distinct tenantId so this doesn't share the 10/hour rate-limit bucket with the other
+    // admin-role tests in this describe block (already at the limit by design/count).
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-m1-vider-pause', userId: 'user-1', role: 'admin', requestId: 'r1' } as never)
+    mockPrisma.mission.createMany.mockResolvedValue({ count: 1 })
+
+    const res = await postImport(makePost('/api/import', {
+      type: 'missions',
+      data: [
+        { type: 'POSER', date: '2026-04-01', address: '1 rue test', latitude: 45.76, longitude: 4.83 },
+        { type: 'VIDER', date: '2026-04-01', address: '2 rue test' },
+        { type: 'PAUSE', date: '2026-04-01', address: '3 rue test' },
+      ],
+    }))
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.imported).toBe(1)
+    expect(json.errors).toEqual([
+      expect.stringContaining('VIDER'),
+      expect.stringContaining('PAUSE'),
+    ])
+  })
+
   it('imports drivers successfully', async () => {
     mockPrisma.driver.createMany.mockResolvedValue({ count: 1 })
 
