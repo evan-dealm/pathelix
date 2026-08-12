@@ -117,6 +117,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
   requestHeaders.delete('x-user-id')
   requestHeaders.delete('x-user-role')
+  requestHeaders.delete('x-tenant-trade')
 
   function withContext(response: NextResponse): NextResponse {
     response.headers.set('x-request-id', requestId)

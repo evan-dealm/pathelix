@@ -403,7 +403,13 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   métier (toutes relisent `tenant.trade` en base) — risque latent seulement (futur développeur
   qui ferait confiance à ce champ en pensant qu'il est aussi fiable que tenantId/role).
 - **Correction** : `requestHeaders.delete('x-tenant-trade')` dans le bloc de strip.
-- **Statut** : à corriger (Phase 2, trivial, defense-in-depth)
+- **Statut** : ✅ **corrigé**. Ajouté juste après les deletes existants de `x-user-id`/
+  `x-user-role`. Pas de test dédié : impact comportemental confirmé nul (aucune route ne lit ce
+  header), et le harnais de test de `middleware.ts` ne peut pas inspecter les headers de la
+  requête AVAL modifiée (confirmé par un commentaire déjà présent dans un test existant —
+  `NextResponse.next({request:{headers}})` n'expose pas ces headers sur l'objet réponse
+  retourné). Écrire un test qui ne vérifie que `res.status === 200` n'aurait rien prouvé.
+  Suite middleware complète (27 tests) verte après le changement.
 
 ### N3 — Divergence de regex tenantId entre `session.ts` et `context.ts`
 - **Fichiers** : `src/lib/session.ts:134`, `src/lib/data/context.ts:6`
@@ -662,7 +668,8 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M12 | Nessy secret global + tenantId appelant | 🟠 majeure | à valider utilisateur |
 | N1 | `!oi === undefined` garde mort (externalRoutingApi) | 🟡 mineure | ✅ corrigé + testé |
 | N5 | advanceStatus effets de bord dans updater | 🟡 mineure | accepté tel quel (StrictMode = dev only, jamais en prod ; risque réel de régression identifié dans la correction "propre") |
-| N2-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
+| N2 | `x-tenant-trade` non strippé | 🟡 mineure | ✅ corrigé (pas de test dédié — impact nul confirmé, limite harnais middleware) |
+| N3-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme
