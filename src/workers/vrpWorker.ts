@@ -27,8 +27,11 @@ function getPrisma(): PrismaClient {
 }
 
 function getJ7Date(dateStr: string): string {
+  // A date-only string parses as UTC midnight — mixing in setDate()/getDate() (LOCAL time) here
+  // would round-trip through the server process's local timezone and could shift the result by
+  // a day near midnight if TZ isn't UTC. Stay in UTC throughout.
   const d = new Date(dateStr)
-  d.setDate(d.getDate() - 7)
+  d.setUTCDate(d.getUTCDate() - 7)
   return d.toISOString().slice(0, 10)
 }
 
