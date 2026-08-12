@@ -57,8 +57,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     select: { tenantId: true, config: true },
   })
   const integration = integrations.find(i => {
-    const cfg = decryptConfig(i.config)
-    return apiKeyMatches(String(cfg.apiKey ?? ''), apiKey)
+    try {
+      const cfg = decryptConfig(i.config)
+      return apiKeyMatches(String(cfg.apiKey ?? ''), apiKey)
+    } catch (err) {
+      // A single tenant's corrupted/undecryptable config (e.g. INTEGRATION_ENCRYPTION_KEY
+      // rotated or misconfigured) must not crash auth for every other tenant's valid Geotab
+      // integration — skip it and keep looking.
+      log.warn('Failed to decrypt integration config — skipping', {
+        tenantId: i.tenantId, err: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    }
   })
   if (!integration) return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
 

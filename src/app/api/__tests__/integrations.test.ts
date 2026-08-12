@@ -260,6 +260,29 @@ describe('POST /api/webhooks/geotab', () => {
     const res = await POST(req)
     expect(res.status).toBe(401)
   })
+
+  // Regression N15: decryptConfig() called directly inside the .find() predicate, uncaught — one
+  // tenant's corrupted/undecryptable config (missing INTEGRATION_ENCRYPTION_KEY, tampered data)
+  // threw out of .find() entirely, crashing auth for every OTHER tenant's valid Geotab
+  // integration in the same batch, not just the broken one.
+  it('skips a tenant whose config fails to decrypt and still matches a later valid integration', async () => {
+    vi.stubEnv('INTEGRATION_ENCRYPTION_KEY', '') // forces getKey() to throw for the encrypted-shaped config
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { tenantId: 'tenant-broken', config: { v: 1, iv: 'ab', tag: 'cd', data: 'ef' } },
+      { tenantId: 'tenant-1',      config: { apiKey: 'good-key' } },
+    ])
+
+    const { POST } = await import('@/app/api/webhooks/geotab/route')
+    const req = makeRequest('http://localhost:3000/api/webhooks/geotab', {
+      method: 'POST',
+      body: [{ deviceId: 'd1', latitude: 45.76, longitude: 6.05, speed: 50 }],
+      headers: { 'x-api-key': 'good-key' },
+    })
+    const res = await POST(req)
+    expect(res.status).not.toBe(500)
+    expect(res.status).toBe(200)
+    vi.unstubAllEnvs()
+  })
 })
 
 describe('POST /api/webhooks/samsara', () => {
@@ -288,5 +311,27 @@ describe('POST /api/webhooks/samsara', () => {
     })
     const res = await POST(req)
     expect(res.status).toBe(401)
+  })
+
+  // Regression N15: same uncaught decryptConfig() issue as Geotab (see equivalent test above).
+  it('skips a tenant whose config fails to decrypt and still matches a later valid integration', async () => {
+    vi.stubEnv('INTEGRATION_ENCRYPTION_KEY', '')
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { tenantId: 'tenant-broken', config: { v: 1, iv: 'ab', tag: 'cd', data: 'ef' } },
+      { tenantId: 'tenant-1',      config: { apiToken: 'good-token' } },
+    ])
+
+    const { POST } = await import('@/app/api/webhooks/samsara/route')
+    const req = makeRequest('http://localhost:3000/api/webhooks/samsara', {
+      method: 'POST',
+      body: [],
+      headers: { Authorization: 'Bearer good-token' },
+    })
+    const res = await POST(req)
+    // The point of this test is that auth succeeds despite tenant-broken's undecryptable config
+    // (not 401/500) — not the exact shape of a valid Samsara payload, so don't over-assert there.
+    expect(res.status).not.toBe(401)
+    expect(res.status).not.toBe(500)
+    vi.unstubAllEnvs()
   })
 })

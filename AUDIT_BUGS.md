@@ -565,7 +565,14 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Description** : si la clé de chiffrement est absente/invalide, `getKey()` throw dans le
   callback `.find()`, non catché localement → 500 générique sans log applicatif clair.
 - **Correction** : wrapper le `.find()` dans un try/catch avec log explicite.
-- **Statut** : à corriger si trivial (Phase 2)
+- **Statut** : ✅ **corrigé + testé**, et l'impact réel s'est avéré plus large que "juste un log
+  peu clair" : sans le correctif, la config corrompue/indéchiffrable d'UN SEUL tenant faisait
+  planter (500) l'authentification du webhook pour TOUS les autres tenants ayant une intégration
+  Geotab/Samsara valide dans le même batch `findMany` — pas juste ce tenant-là. Le `.find()`
+  catch maintenant l'erreur, logue en `warn` (tenantId + message), et continue la recherche.
+  Tests ajoutés (`integrations.test.ts`, +2, un par webhook, vérifiés en échouant sans le
+  correctif) : un tenant à la config indéchiffrable n'empêche pas l'authentification via
+  l'intégration suivante, valide, dans la même liste.
 
 ### N16 — Fuite de timing théorique sur `.find()` avec comparaison constant-time (Geotab/Samsara)
 - **Fichiers** : `src/app/api/webhooks/geotab/route.ts:59-63`, `webhooks/samsara/route.ts:68-72`
@@ -700,7 +707,8 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | N10 | catch{} silencieux calibrage ML | 🟡 mineure | ✅ corrigé + testé |
 | N11 | Mutation objet options (VRP) | 🟡 mineure | ✅ corrigé + testé |
 | N12 | estimatedDurationMin non protégé | 🟡 mineure | ✅ corrigé + testé |
-| N4,N8,N9,N13-N20 (reste) | Voir détail | 🟡 mineure | mix accepté/à valider/à faire |
+| N15 | .find() non catché Geotab/Samsara | 🟡 mineure | ✅ corrigé + testé (impact réel plus large que prévu) |
+| N4,N8,N9,N13,N14,N16-N20 (reste) | Voir détail | 🟡 mineure | mix accepté/à valider/à faire |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme

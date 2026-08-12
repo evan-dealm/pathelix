@@ -66,8 +66,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     select: { tenantId: true, config: true },
   })
   const integration = integrations.find(i => {
-    const cfg = decryptConfig(i.config)
-    return tokenMatches(String(cfg.apiToken ?? ''), token)
+    try {
+      const cfg = decryptConfig(i.config)
+      return tokenMatches(String(cfg.apiToken ?? ''), token)
+    } catch (err) {
+      // A single tenant's corrupted/undecryptable config must not crash auth for every other
+      // tenant's valid Samsara integration — skip it and keep looking.
+      log.warn('Failed to decrypt integration config — skipping', {
+        tenantId: i.tenantId, err: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    }
   })
   if (!integration) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
 
