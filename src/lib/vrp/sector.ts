@@ -345,7 +345,18 @@ export function rebalanceSectors(sectors: Sector[], maxPasses = 10): void {
       lng: s.drivers.reduce((sum, d) => sum + d.depotLng, 0) / Math.max(1, s.drivers.length),
     }))
 
+    // Sectors that already RECEIVED a transfer this pass can't turn around and give it all back
+    // as a SOURCE in the same pass. The transfer-sizing heuristic below often overshoots a
+    // recipient past its own 1.15x threshold (it optimizes total deviation across the pair, not
+    // the recipient's individual cap), so — now that loads[] is correctly workload-based instead
+    // of the old count-based bug — a freshly topped-up sector would otherwise immediately
+    // re-qualify as overloaded and hand everything straight back to where it came from, making
+    // the whole pass a net no-op. Letting it settle until the next pass (fresh loads[]) avoids
+    // that ping-pong while still fixing the unit bug.
+    const receivedThisPass = new Set<number>()
+
     for (let si = 0; si < sectors.length; si++) {
+      if (receivedThisPass.has(si)) continue
       if (loads[si] <= meanLoad * 1.15) continue
 
       const neighbors = sectors
@@ -401,8 +412,13 @@ export function rebalanceSectors(sectors: Sector[], maxPasses = 10): void {
 
           source.missions = source.missions.filter(x => !toTransfer.has(x.id))
           for (const { m } of toTransferMissions) target.missions.push(m)
-          loads[si] = source.missions.length / sourceDrivers
-          loads[sj] = target.missions.length / targetDrivers
+          // Recompute in the same unit loads[] is defined in (workload minutes/driver, via
+          // sectorWorkload) — using mission COUNT/driver here made loads[] mix two different
+          // units for the rest of this pass's `loads[sj] <= meanLoad * 1.15` comparisons,
+          // silently degrading the balancing decisions for any sector visited later in the loop.
+          loads[si] = sectorWorkload(source)
+          loads[sj] = sectorWorkload(target)
+          receivedThisPass.add(sj)
         }
       }
     }

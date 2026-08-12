@@ -204,6 +204,65 @@ describe('rebalanceSectors', () => {
     const totalB = sectorB.missions.length
     expect(totalA + totalB).toBe(10) // no missions lost
   })
+
+  // Regression M9 (loads[] mixed units: sectorWorkload() — minutes/driver — at the top of each
+  // pass, vs mission-COUNT/driver after a transfer completed, corrupting later within-pass
+  // decisions for that sector) together with its companion fix (a sector must not re-trigger as
+  // a source in the same pass right after receiving a transfer — see next test). Verified this
+  // fails without either fix: without the unit fix alone the two together produce a different
+  // wrong split; without the re-trigger guard, B ping-pongs everything straight back out and
+  // ends up holding nothing. A sector holding few-but-heavy missions must be read by its true
+  // workload, not its mission count, for the rest of the pass.
+  it('recognizes a sector as still heavily loaded by WORKLOAD after a transfer, even though its mission COUNT is small', () => {
+    // A: 2 missions, one huge (500min) + one small (100min) = 600min total, very overloaded.
+    // B: empty — A's transfer lands here (nearest qualifying target).
+    // C: single 400min mission — overloaded enough to also trigger and search for a target.
+    //    B, now true-loaded at 600min, must be excluded as C's target; A (now empty) qualifies.
+    const sectorA: Sector = {
+      index: 0,
+      drivers: [makeDriver('dA', 48.0, 2.0)],
+      missions: [makeMission('mA0', 48.0, 2.0, { estimatedDurationMin: 500, maneuverTimeMin: 0 }),
+        makeMission('mA1', 48.0, 2.0, { estimatedDurationMin: 100, maneuverTimeMin: 0 })],
+    }
+    const sectorB: Sector = { index: 1, drivers: [makeDriver('dB', 48.05, 2.05)], missions: [] }
+    const sectorC: Sector = {
+      index: 2,
+      drivers: [makeDriver('dC', 48.5, 2.5)],
+      missions: [makeMission('mC0', 48.5, 2.5, { estimatedDurationMin: 400, maneuverTimeMin: 0 })],
+    }
+
+    rebalanceSectors([sectorA, sectorB, sectorC], 1)
+
+    // B must hold exactly what it got from A (2 missions) — C's mission must not also land here,
+    // since B's true workload (600min) is already well above the "underloaded" threshold.
+    expect(sectorB.missions.map(m => m.id).sort()).toEqual(['mA0', 'mA1'])
+
+    // Total conserved regardless of which sector each mission ends up in.
+    const totalDurations = [...sectorA.missions, ...sectorB.missions, ...sectorC.missions]
+      .reduce((sum, m) => sum + (m.estimatedDurationMin || 0), 0)
+    expect(totalDurations).toBe(1000) // 500 + 100 + 400, nothing lost or duplicated
+  })
+
+  // Regression: fixing M9's unit bug (loads[] now correctly workload-based) exposed a
+  // pre-existing oscillation risk — the transfer-sizing heuristic a few lines above frequently
+  // overshoots a recipient's own 1.15x threshold, so without a guard, a sector that had JUST
+  // received a full transfer would immediately re-qualify as "overloaded" and hand everything
+  // straight back to its source in the same pass, making the whole pass a net no-op.
+  it('does not ping-pong a transfer back to its source within the same pass', () => {
+    const sectorA: Sector = {
+      index: 0,
+      drivers: [makeDriver('dA', 48.0, 2.0)],
+      missions: Array.from({ length: 20 }, (_, i) =>
+        makeMission(`mA${i}`, 48.0, 2.0, { estimatedDurationMin: 60, maneuverTimeMin: 0 })),
+    }
+    const sectorB: Sector = { index: 1, drivers: [makeDriver('dB', 48.05, 2.05)], missions: [] }
+
+    rebalanceSectors([sectorA, sectorB], 1)
+
+    // A must have actually emptied into B, and stayed that way — not bounced back to itself.
+    expect(sectorA.missions).toHaveLength(0)
+    expect(sectorB.missions).toHaveLength(20)
+  })
 })
 
 // ─── validateSectorTemporalFeasibility ───────────────────────────────────────

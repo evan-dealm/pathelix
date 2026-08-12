@@ -274,7 +274,25 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Impact** : dégrade silencieusement l'équilibrage de charge entre secteurs (>20 chauffeurs),
   pas de crash.
 - **Correction proposée** : recalculer `loads[]` via `sectorWorkload()` après chaque transfert.
-- **Statut** : à corriger (Phase 2) — nécessite suite de tests VRP complète avant/après
+- **Statut** : ✅ **corrigé + testé**. `loads[si]`/`loads[sj]` recalculés via `sectorWorkload()`
+  après chaque transfert, cohérent avec le reste de la fonction.
+  **Effet de bord découvert pendant la correction** : rendre `loads[]` correct expose un risque
+  d'oscillation préexistant — l'heuristique de dimensionnement de transfert (quelques lignes plus
+  bas) dépasse fréquemment le seuil individuel du destinataire (elle optimise l'écart total de la
+  paire, pas le plafond du destinataire) ; un secteur venant de recevoir un transfert complet
+  pouvait donc se re-déclencher immédiatement comme "surchargé" et tout redonner à sa source dans
+  la même passe, neutralisant la passe entière. Sous l'ancien bug, l'unité incohérente (nombre de
+  missions au lieu de minutes) empêchait accidentellement ce re-déclenchement — corriger l'unité
+  sans rien d'autre aurait donc pu dégrader certains cas réels (mieux respecter les unités, mais
+  neutraliser des rééquilibrages légitimes). Ajout d'un garde-fou minimal : un secteur qui vient
+  de RECEVOIR un transfert dans la passe en cours ne peut plus être réévalué comme SOURCE avant
+  la passe suivante (`receivedThisPass`). Vérifié empiriquement (probe scripts, supprimés) sur
+  plusieurs scénarios avant de figer le correctif — l'estimation à la main s'est révélée peu
+  fiable à cause de cette même heuristique de dimensionnement, d'où le recours à des scripts
+  exécutables plutôt qu'un calcul théorique.
+  Tests ajoutés (`sector.test.ts`, +2, tous deux vérifiés en échouant sans le(s) correctif(s)) :
+  un secteur peu chargé en nombre mais lourd en minutes est correctement exclu comme cible ; un
+  transfert ne fait plus l'aller-retour vers sa source dans la même passe.
 
 ### M10 — `forceAssignP1` peut violer l'invariant ALLER_RETOUR sans avertissement
 - **Fichier** : `src/lib/vrp/index.ts::forceAssignP1()` lignes ~595-604
@@ -594,7 +612,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M6 | planningStore IndexedDB non nettoyé (fuite tenant) | 🟠 majeure | ✅ corrigé + testé (gap couverture admin/superadmin page.tsx documenté) |
 | M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | à corriger |
 | M8 | Collision hash 32 bits cache haversine | 🟠 majeure | à corriger |
-| M9 | Unité incohérente rebalanceSectors | 🟠 majeure | à corriger |
+| M9 | Unité incohérente rebalanceSectors | 🟠 majeure | ✅ corrigé + testé (garde-fou oscillation ajouté) |
 | M10 | forceAssignP1 peut violer invariant ALLER_RETOUR | 🟠 majeure | à corriger |
 | M11 | Divergence syncQueue/sw.js erreurs réseau | 🟠 majeure | ✅ corrigé + testé |
 | M12 | Nessy secret global + tenantId appelant | 🟠 majeure | à valider utilisateur |
