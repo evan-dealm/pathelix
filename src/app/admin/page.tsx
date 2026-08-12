@@ -568,6 +568,7 @@ export default function AdminPage() {
           </div>
           <button type="button" title="Deconnexion" onClick={async () => {
             await fetch('/api/auth/logout', { method: 'POST' })
+            await usePlanningStore.persist.clearStorage()
             window.location.href = '/login'
           }}
             className="w-full flex items-center justify-center gap-2 px-2 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">

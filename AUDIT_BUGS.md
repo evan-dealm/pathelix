@@ -212,7 +212,23 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   l'entrée/sortie d'impersonation ; ou scoper la clé de persistance par tenantId.
 - **Note associée** : le champ `templates` du store est mort (aucun composant ne le lit,
   `TemplatesTab.tsx` fetch sa propre copie) — à nettoyer en Phase 4.
-- **Statut** : à corriger (Phase 2), avec vérification croisée de `POST /api/plans` en même temps
+- **Statut** : ✅ **corrigé + testé (partiellement)**.
+  - `usePlanningStore.persist.clearStorage()` ajouté à 4 points : logout admin
+    (`admin/page.tsx`), logout superadmin (`superadmin/page.tsx`), **entrée** en impersonation
+    (`superadmin/page.tsx::impersonate()`, avant la redirection) et **sortie** d'impersonation
+    (`ImpersonationBanner.tsx::exitImpersonation()`, sur les deux chemins succès/échec).
+  - Test complet ajouté pour `ImpersonationBanner.tsx` (4 tests, composant jusque-là non testé) :
+    bannière absente si pas d'impersonation, présente sinon, `clearStorage()` appelé avant
+    navigation sur sortie (succès ET échec de l'appel API).
+  - **Limite honnête** : `admin/page.tsx` et `superadmin/page.tsx` n'ont **aucune couverture de
+    test au niveau composant** (0 fichier `.test.tsx`, vérifié — seule couverture existante :
+    e2e Playwright). Ajouter un harnais RTL complet pour ces deux fichiers (1000+ et 2000+
+    lignes) uniquement pour ce changement de 2 lignes chacun aurait été disproportionné. Ces deux
+    ajouts sont donc vérifiés par typecheck + build réussis + revue de code, pas par un test
+    automatisé dédié — à noter comme dette de test préexistante (Phase 4 / follow-up), pas
+    introduite par cette correction.
+  - Vérification croisée `POST /api/plans` (mentionnée dans la correction proposée) : reportée —
+    voir item séparé si un scénario d'exploitation concret est trouvé lors de la Phase 3.
 
 ### M7 — `compactRoutes()`/`forceAssignP1()` sans deadline interne (VRP)
 - **Fichier** : `src/lib/vrp/index.ts:304-310,447-513,515-616`
@@ -575,7 +591,7 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M3 | Isolation tenant absente positions OBD/Geotab/Samsara | 🟠 majeure | à valider utilisateur |
 | M4 | Worker missions récurrentes sans isolation d'erreur | 🟠 majeure | ✅ corrigé + testé |
 | M5 | Custom trades jamais enregistrés | 🟠 majeure | ✅ corrigé serveur + testé (⚠️ gap client documenté) |
-| M6 | planningStore IndexedDB non nettoyé (fuite tenant) | 🟠 majeure | à corriger |
+| M6 | planningStore IndexedDB non nettoyé (fuite tenant) | 🟠 majeure | ✅ corrigé + testé (gap couverture admin/superadmin page.tsx documenté) |
 | M7 | compactRoutes/forceAssignP1 sans deadline | 🟠 majeure | à corriger |
 | M8 | Collision hash 32 bits cache haversine | 🟠 majeure | à corriger |
 | M9 | Unité incohérente rebalanceSectors | 🟠 majeure | à corriger |

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { TRADES, TRADE_IDS } from '@/lib/trades'
+import { usePlanningStore } from '@/stores/planningStore'
 
 interface TenantStats {
   id: string; name: string; slug: string; plan: string
@@ -1448,7 +1449,14 @@ export default function SuperAdminPage() {
     setActionLoading(`${tenantId}:impersonate`)
     try {
       const r = await fetch('/api/superadmin/impersonate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId }) })
-      if (r.ok) { const d = await r.json(); window.location.href = d.redirectTo }
+      if (r.ok) {
+        const d = await r.json()
+        // Clear any planning data cached from a previous session/impersonation before entering
+        // this tenant's context — plans/startTimes/etc are keyed by driverId, not tenantId, so
+        // stale entries from a different tenant would otherwise linger in IndexedDB.
+        await usePlanningStore.persist.clearStorage()
+        window.location.href = d.redirectTo
+      }
     } finally { setActionLoading('') }
   }
 
@@ -1497,7 +1505,11 @@ export default function SuperAdminPage() {
               )}
             </div>
             <div className="text-[10px] text-zinc-500 font-mono hidden lg:block">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
-            <button type="button" onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); window.location.href = '/login' }}
+            <button type="button" onClick={async () => {
+              await fetch('/api/auth/logout', { method: 'POST' })
+              await usePlanningStore.persist.clearStorage()
+              window.location.href = '/login'
+            }}
               className="text-xs text-zinc-400 hover:text-white border border-zinc-700 px-3 py-1.5 rounded-lg transition hover:border-zinc-500">Déconnexion</button>
           </div>
         </div>

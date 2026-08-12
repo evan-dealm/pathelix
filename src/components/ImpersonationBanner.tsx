@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePlanningStore } from '@/stores/planningStore'
 
 interface MeData {
   userId: string
@@ -42,9 +43,14 @@ export function ImpersonationBanner() {
       const res = await fetch('/api/superadmin/exit-impersonation', { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
+        // Clear planning data cached while impersonating this tenant — plans/startTimes/etc are
+        // keyed by driverId, not tenantId, so leaving them in IndexedDB risks a stale entry
+        // getting bundled into the next tenant's requests after a subsequent impersonation.
+        await usePlanningStore.persist.clearStorage()
         window.location.href = data.redirectTo ?? '/superadmin'
       } else {
 
+        await usePlanningStore.persist.clearStorage()
         await fetch('/api/auth/logout')
         window.location.href = '/login'
       }
