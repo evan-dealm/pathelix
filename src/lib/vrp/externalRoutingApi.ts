@@ -135,7 +135,7 @@ async function buildTrimbleMatrix(
       const results = data.RouteMatrixResults ?? []
       for (let ri = 0; ri < results.length; ri++) {
         const oi = origIdxs[ri]
-        if (!oi === undefined) continue
+        if (oi === undefined) continue
         const row = results[ri].Distances ?? []
         for (let ci = 0; ci < row.length; ci++) {
           const di = destIdxs[ci]

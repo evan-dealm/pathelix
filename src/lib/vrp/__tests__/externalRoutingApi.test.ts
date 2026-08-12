@@ -328,4 +328,26 @@ describe('buildExternalRoutingMatrix — Trimble API', () => {
     const result = await buildExternalRoutingMatrix(POINTS) as any
     expect(result).not.toBeNull()
   })
+
+  // Regression N1: `if (!oi === undefined) continue` — operator precedence bug, `!oi` (boolean)
+  // evaluated before `===`, so the condition was always false and never actually guarded
+  // anything. If the API ever returns more result rows than requested origins (malformed/
+  // oversized response), `oi` is undefined for the extra row and `dist[oi][di] = ...` throws,
+  // caught by the outer try/catch, silently discarding the otherwise-valid matrix and falling
+  // back to OSRM/haversine instead of the real API data.
+  it('ignores an extra RouteMatrixResults row beyond the requested origins instead of throwing', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        RouteMatrixResults: [
+          { Distances: [{ Distance: 10, Time: 600 }, { Distance: 10, Time: 600 }] },
+          { Distances: [{ Distance: 10, Time: 600 }, { Distance: 10, Time: 600 }] },
+          { Distances: [{ Distance: 10, Time: 600 }, { Distance: 10, Time: 600 }] }, // extra row, no matching origin
+        ],
+      }),
+    })
+    const result = await buildExternalRoutingMatrix(POINTS) as any
+    expect(result).not.toBeNull()
+    expect(result.size).toBe(2)
+  })
 })

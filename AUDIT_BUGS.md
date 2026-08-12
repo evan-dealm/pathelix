@@ -388,7 +388,11 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 - **Description** : `!oi` (booléen) évalué avant `===`, condition toujours fausse — le garde ne se
   déclenche jamais. Masqué par le try/catch englobant (fallback Valhalla/haversine).
 - **Correction** : `if (oi === undefined) continue`.
-- **Statut** : à corriger (Phase 2, trivial)
+- **Statut** : ✅ **corrigé + testé**. Test ajouté (`externalRoutingApi.test.ts`, +1, vérifié en
+  échouant sans le correctif) : une ligne `RouteMatrixResults` en trop par rapport aux origines
+  demandées (réponse API malformée/surdimensionnée) est ignorée proprement au lieu de faire
+  planter `dist[undefined][...]`, capturé par le try/catch englobant qui aurait sinon jeté toute
+  la matrice valide et forcé un repli OSRM/haversine inutile.
 
 ### N2 — `x-tenant-trade` non strippé du header entrant (middleware)
 - **Fichier** : `src/middleware.ts:114-119,146`
@@ -431,7 +435,22 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   géolocalisation, enqueueAction, setTimeout) — en React 18 StrictMode (dev only), les updaters
   sont invoqués deux fois, doublant potentiellement ces effets.
 - **Correction** : sortir les effets de bord de l'updater, les exécuter après `setStatuses`.
-- **Statut** : à corriger (Phase 2, trivial)
+- **Statut** : ✅ **accepté tel quel, non corrigé** — décision motivée :
+  1. Vérifié : `next.config.mjs` ne configure pas `reactStrictMode`, et de toute façon le
+     double-invocation StrictMode ne se produit QUE sous `next dev`, jamais dans un build/serveur
+     de production (`next build`/`next start`). Impact réel en production : **nul, confirmé**, pas
+     juste "probablement nul".
+  2. Tentative de correction "propre" (sortir les effets vers un `useEffect` réagissant à
+     `statuses`) tracée en détail : entre en collision avec l'hydratation initiale depuis
+     `localStorage` (useEffect ligne ~182-188) — un effet générique sur tout changement de
+     `statuses` déclencherait des resynchronisations parasites vers le serveur à chaque
+     rechargement de page (statuts déjà synchronisés renvoyés comme si "nouveaux"), avec ordre
+     d'exécution ref/closure délicat à garantir correct sans risque de régression fonctionnelle
+     réelle (perte ou double envoi de statuts).
+  3. Étant donné un risque de régression réel identifié contre un bénéfice confirmé nul en
+     production, corriger cet item violerait la règle "ne jamais casser l'existant" pour un gain
+     uniquement esthétique/dev. Laissé tel quel, documenté honnêtement plutôt que corrigé à la
+     hâte.
 
 ### N6 — `Tooltip.tsx` : timer non nettoyé au démontage
 - **Fichier** : `src/components/ui/Tooltip.tsx:15-22`
@@ -641,7 +660,9 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 | M10 | forceAssignP1 peut violer invariant ALLER_RETOUR | 🟠 majeure | ✅ corrigé + testé |
 | M11 | Divergence syncQueue/sw.js erreurs réseau | 🟠 majeure | ✅ corrigé + testé |
 | M12 | Nessy secret global + tenantId appelant | 🟠 majeure | à valider utilisateur |
-| N1-N20 | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
+| N1 | `!oi === undefined` garde mort (externalRoutingApi) | 🟡 mineure | ✅ corrigé + testé |
+| N5 | advanceStatus effets de bord dans updater | 🟡 mineure | accepté tel quel (StrictMode = dev only, jamais en prod ; risque réel de régression identifié dans la correction "propre") |
+| N2-N20 (reste) | Voir détail | 🟡 mineure | mix corrigé/à corriger/accepté/à valider |
 
 **0 faux positif identifié comme tel dans cette synthèse** — tout ce qui reste incertain est
 explicitement marqué "à vérifier" ou "à valider par l'utilisateur" plutôt que présenté comme
