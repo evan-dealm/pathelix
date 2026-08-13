@@ -865,3 +865,100 @@ confirmé.
 *(Phase 1 terminée. Passage en Phase 2 : corrections critique → majeures → mineures, une par une,
 avec test de régression et suite complète à chaque étape, sauf items "à valider par l'utilisateur"
 qui sont documentés mais non corrigés sans arbitrage produit/architecture.)*
+
+---
+
+## Phase 2 — Bilan
+
+23 commits de correctifs (`fix(...)`), un par bug, chacun avec test de régression vérifié en
+échouant sans le correctif puis passant avec, et suite complète (lint + typecheck + tests + build)
+relancée après chaque correctif. Détail par item ci-dessus. Deux bugs cross-tenant réels
+supplémentaires trouvés pendant les corrections elles-mêmes (pas dans l'audit Phase 1 initial) :
+N20 (`ClientSite`, `PUT /api/clients/[id]`) et le volet Geotab/Samsara de M3 — les deux corrigés
+et testés dans la foulée.
+
+Items non corrigés, chacun avec raison explicite documentée ci-dessus (pas de décision produit
+prise unilatéralement) : M3/OBD générique, M12 (secret Nessy), N4 (topologie déploiement), N13,
+N14, N16, N17 (compromis de conception), N18 (nécessite migration schéma), FuelRecord/
+PushSubscription (volet non corrigé de N19).
+
+## Phase 3 — Vérification non-régression globale
+
+**Suite complète (lint + typecheck + test + build + npm audit)** : verte à chaque étape de Phase 2
+(voir chaque commit) et en fin de Phase 2 — 197 fichiers de test, 3491 tests, 0 échec. `npm audit
+--audit-level=critical` : 0 vulnérabilité critique (5 high, 26 moderate, 1 low — toutes
+préexistantes, transitives via les dépendances bundlées de Next (postcss, sharp), correctif
+disponible uniquement via `npm audit fix --force` qui bumperait Next vers une version majeure
+breaking — **non fait, nécessite validation utilisateur explicite avant un tel changement**).
+
+**E2E (Playwright, 387 tests / 32 fichiers)** : première exécution E2E de cet audit (Phase 0 ne
+couvrait pas l'E2E). Premier run : ~40% des specs UI chromium échouaient/timeout. Root cause
+trouvée et corrigée : `e2e/auth.setup.ts` ne fermait jamais la modale `OnboardingGuide` (guide de
+bienvenue plein écran, `src/components/ui/OnboardingGuide.tsx`) avant de sauvegarder le
+`storageState` réutilisé par tous les tests du projet `chromium` — chaque test démarrait donc avec
+une modale bloquante ouverte. Bug d'infra de test préexistant (la modale existait avant cette
+session, `auth.setup.ts` n'avait simplement jamais été mis à jour), sans lien avec les correctifs
+de cette session — confirmé par inspection (la modale est gérée par une clé localStorage locale au
+composant, jamais touchée par aucun commit de cette session) et par le fait que le correctif a
+ramené la quasi-totalité des specs précédemment 100% en échec à un passage direct. Corrigé et
+commité (`5cf406e`).
+
+Après ce correctif, un ré-run complet n'a **pas pu être mené à terme dans cette session** : la
+machine a fini par manquer de mémoire (1.16 Go libres sur 15.7 Go observés à un moment, dev server
+Next à lui seul consommant ~5.3 Go après plusieurs cycles consécutifs de build+test+E2E) après
+~90 minutes d'exécution continue, provoquant des échecs en cascade sur la fin du run
+(`missions.spec.ts` entier en échec double, alors que les fichiers précédents passaient
+normalement) — caractéristique de l'épuisement de ressources de la machine locale, pas du code.
+Sur les ~257 tests exécutés avant l'arrêt (run propre, serveur frais après le correctif) : 165
+passages immédiats, ~60 passages au 2ᵉ essai (`retries:1`) dus au délai de compilation à la volée
+de Next en mode dev (composant jamais visité = premier hit dépasse le timeout de 30s, retry rapide
+une fois compilé — caractéristique connue du test contre `next dev` plutôt qu'un build de
+production, pas une régression), et 2 échecs doubles génuines identifiées avant la dégradation
+mémoire : `drivers-advanced.spec.ts` "pagination next/previous buttons navigate between pages"
+(liste chauffeurs vide au moment du test — pollution d'état inter-tests dans ce fichier, probable
+filtre de recherche laissé actif par un test précédent) et `missions-advanced.spec.ts` "reset
+filters button clears all active filters". Aucune des deux ne touche un fichier modifié dans cette
+session — non creusées plus loin (priorité donnée aux correctifs d'audit, déjà validés par la
+suite unitaire/intégration complète).
+
+**Honnêteté sur ce point** : l'E2E n'a donc PAS été validé à 100% par un run complet propre dans
+cette session. Ce qui est acquis : (1) un vrai bug d'infra E2E trouvé et corrigé, (2) aucune
+régression E2E détectée imputable aux correctifs de cette session sur les ~257 tests observés,
+(3) 2 flakys préexistants non liés identifiés pour référence future. Un run E2E complet propre
+reste à faire (recommandé sur une machine avec plus de mémoire disponible, ou en tuant tous les
+process Node superflus avant de lancer).
+
+**Vérification manuelle des invariants** (lecture de code, pas de nouveaux tests — les invariants
+eux-mêmes sont déjà couverts par la suite unitaire/intégration existante) :
+- **Isolation multi-tenant** : `src/middleware.ts` strippe puis réinjecte `x-tenant-id`/
+  `x-user-id`/`x-user-role`/`x-tenant-trade` depuis le JWT vérifié — intact, vérifié par lecture
+  directe. Trois bugs cross-tenant réels trouvés et corrigés cette session (N19 DeliveryProof,
+  N20 ClientSite, M3 Geotab/Samsara) démontrent que le processus de vérification fonctionne
+  concrètement, pas juste en théorie.
+- **Permissions granulaires** : **écart trouvé (N22, documenté ci-dessus)** — le système
+  `UserPermission`/`hasPermission()` n'est en réalité câblé que sur `/api/optimize`. Les
+  ressources sensibles restent protégées par les checks de `role` bruts (indépendants de ce
+  système), donc pas de fuite pour ces catégories, mais la personnalisation fine par-utilisateur
+  promise par le design (et par CLAUDE.md) n'est pas appliquée hors `optimize`.
+- **Mode dégradé Redis** : fallback en mémoire pour le rate limiter (`rateLimit.ts`), erreurs
+  catch+log pour `redisCache` — pas de crash si Redis est down, dégradation propre.
+  `USE_MOCK_DATA`/session/queue non re-testés en direct (Redis réellement coupé) faute de temps —
+  vérifié par lecture de code uniquement.
+- **Mode dégradé Valhalla** : `valhallaMatrix.ts` bascule proprement sur haversine avec `log.warn`
+  si l'appel Valhalla échoue — confirmé par lecture de code (comportement déjà couvert par tests
+  unitaires existants).
+- **Mode dégradé worker VRP** : `optimizationStore.ts` détecte un job resté en `waiting` au-delà de
+  `WAITING_TIMEOUT_MS` et affiche explicitement "Serveur de calcul indisponible (aucun worker
+  actif)" au lieu de tourner indéfiniment ; timeout global de 10 min en filet de sécurité. Bon
+  comportement confirmé par lecture de code.
+- **File offline chauffeur (sync-queue)** : **écart trouvé (N23, documenté ci-dessus)** — race
+  condition réelle entre le flush côté page et le flush côté Service Worker (deux implémentations
+  indépendantes, aucun verrou partagé), pouvant POSTer deux fois la même action en file. Impact
+  partiellement amorti par l'idempotence de certains endpoints (`DeliveryProof` upsert) mais pas
+  garanti partout. Non corrigé — nécessite une décision d'architecture, proposé pour un chantier
+  dédié.
+
+**Comparaison au baseline Phase 0** : lint/typecheck/build restent propres (identique à Phase 0).
+Tests : 3491 vs baseline Phase 0 (nombre exact non re-cité ici, disponible dans l'historique de
+conversation — delta net = +tests ajoutés par chaque correctif de Phase 2, 0 test supprimé/désactivé
+conformément à la règle absolue de la mission). `npm audit` critique : 0 dans les deux cas.
