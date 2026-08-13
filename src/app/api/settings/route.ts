@@ -5,6 +5,8 @@ import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { redisCache }                from '@/lib/redisCache'
 import prisma                        from '@/lib/db'
+import { TRADE_IDS }                 from '@/lib/trades'
+import { customTradeRowToConfig }    from '@/lib/data/customTrades'
 
 const log = createLogger('/api/settings')
 
@@ -42,9 +44,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const trade = tenant?.trade ?? null
         const routingSource = detectRoutingSource()
 
+        // A9 (AUDIT_BUGS.md M5): custom (superadmin-created) trades are registered server-side
+        // via instrumentation.ts, but that registry lives in this process's memory only — the
+        // browser's own JS bundle never sees it. Ship the resolved config down to the client so
+        // TradeProvider can use it directly instead of an empty client-side registry.
+        const customTradeConfig = trade && !(TRADE_IDS as readonly string[]).includes(trade)
+          ? await prisma.customTrade.findUnique({ where: { tradeKey: trade } })
+              .then(row => row ? customTradeRowToConfig(row) : null)
+              .catch(() => null)
+          : null
+
         if (!settings) {
           return {
-            tenantId, trade, routingSource,
+            tenantId, trade, routingSource, customTradeConfig,
 
             defaultSpeedKmh: 50, defaultStartTime: '07:00',
             maxWorkDayMin: 600, pauseAfterMin: 270, pauseDurationMin: 45,
@@ -63,7 +75,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             valhallaFactor: 1.60,
           }
         }
-        return { ...settings, trade, routingSource }
+        return { ...settings, trade, routingSource, customTradeConfig }
       },
       120_000,
     )

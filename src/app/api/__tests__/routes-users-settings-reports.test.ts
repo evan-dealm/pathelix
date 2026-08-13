@@ -9,6 +9,7 @@ const { mockPrisma } = vi.hoisted(() => {
     },
     tenantSettings: { findUnique: vi.fn(), upsert: vi.fn() },
     tenant: { findUnique: vi.fn() },
+    customTrade: { findUnique: vi.fn((): Promise<Record<string, unknown> | null> => Promise.resolve(null)) },
     mission: { count: vi.fn(), groupBy: vi.fn() },
     plan: { count: vi.fn(), groupBy: vi.fn() },
     driver: { count: vi.fn() },
@@ -184,6 +185,39 @@ describe('GET /api/settings', () => {
 
     const res = await getSettings(makeGet('/api/settings'))
     expect(res.status).toBe(500)
+  })
+
+  // Regression A9 (AUDIT_BUGS.md M5): custom trade config must be resolved and included in the
+  // response so the client can hydrate TradeProvider — the server-side registry never reaches
+  // the browser's own JS bundle.
+  it('includes resolved customTradeConfig when trade is not a built-in TradeId', async () => {
+    mockPrisma.tenantSettings.findUnique.mockResolvedValue(null)
+    mockPrisma.tenant.findUnique.mockResolvedValue({ trade: 'transport_medical' })
+    mockPrisma.customTrade.findUnique.mockResolvedValue({
+      tradeKey: 'transport_medical', tradeName: 'Transport Médical', tradeDescription: '', tradeIcon: '🚑',
+      vocabulary: { driver: 'Ambulancier' }, enabledMissionTypes: ['POSER', 'RETIRER'],
+    })
+
+    const res = await getSettings(makeGet('/api/settings'))
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(mockPrisma.customTrade.findUnique).toHaveBeenCalledWith({ where: { tradeKey: 'transport_medical' } })
+    expect(json.customTradeConfig).toBeTruthy()
+    expect(json.customTradeConfig.id).toBe('transport_medical')
+    expect(json.customTradeConfig.vocabulary.driver).toBe('Ambulancier')
+  })
+
+  it('does not look up customTrade when trade is a built-in TradeId', async () => {
+    mockPrisma.tenantSettings.findUnique.mockResolvedValue(null)
+    mockPrisma.tenant.findUnique.mockResolvedValue({ trade: 'collecte_recyclage' })
+
+    const res = await getSettings(makeGet('/api/settings'))
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(mockPrisma.customTrade.findUnique).not.toHaveBeenCalled()
+    expect(json.customTradeConfig).toBeNull()
   })
 })
 

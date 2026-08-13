@@ -8,6 +8,7 @@ import { TradeProvider } from '@/providers/TradeProvider'
 import type { Driver, Mission } from '@/lib/types'
 import { cachedFetch } from '@/lib/clientCache'
 import type { SettingsApiResponse } from '@/lib/types'
+import type { TradeConfig } from '@/lib/trades'
 
 const PUBLIC_PATH_PREFIXES = ['/login', '/driver']
 
@@ -33,6 +34,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState(0)
   const [trade, setTrade] = useState<string | null>(null)
+  const [customTradeConfig, setCustomTradeConfig] = useState<TradeConfig | null>(null)
   const startedRef = useRef(false)
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         ])
 
         if (settingsRes?.trade) setTrade(settingsRes.trade)
+        if (settingsRes?.customTradeConfig) setCustomTradeConfig(settingsRes.customTradeConfig)
 
         setStep(2)
         setInitialData(drivers, missions)
@@ -102,7 +105,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval)
   }, [isPublic, ready, setInitialData])
 
-  if (isPublic) return <TradeProvider tradeId={trade}>{children}</TradeProvider>
+  if (isPublic) return <TradeProvider tradeId={trade} customConfig={customTradeConfig}>{children}</TradeProvider>
 
   if (error) {
     return (
@@ -155,5 +158,5 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <TradeProvider tradeId={trade}>{children}</TradeProvider>
+  return <TradeProvider tradeId={trade} customConfig={customTradeConfig}>{children}</TradeProvider>
 }

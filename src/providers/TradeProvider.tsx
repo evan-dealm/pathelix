@@ -26,16 +26,21 @@ const TradeContext = createContext<TradeContextValue | null>(null)
 
 interface TradeProviderProps {
   tradeId: string | null | undefined
+  // A9 (AUDIT_BUGS.md M5): custom trades are registered in a server-only, per-process registry
+  // (instrumentation.ts) that the browser's own JS bundle never sees. When `tradeId` is a custom
+  // trade, the caller (DataProvider) fetches its resolved config from /api/settings and passes
+  // it here directly, bypassing the client's empty registry lookup in getTradeConfig().
+  customConfig?: TradeConfig | null
   children: React.ReactNode
 }
 
-export function TradeProvider({ tradeId, children }: TradeProviderProps) {
+export function TradeProvider({ tradeId, customConfig, children }: TradeProviderProps) {
   const value = useMemo<TradeContextValue>(() => {
     // Delegate entirely to getTradeConfig — it already knows how to resolve built-in AND
     // custom trades (falling back to DEFAULT_TRADE only if truly unknown). Previously this
     // pre-check only accepted `tradeId in TRADES` (built-ins), silently discarding any custom
     // trade id before getTradeConfig ever got a chance to look it up.
-    const config = getTradeConfig(tradeId)
+    const config = customConfig && customConfig.id === tradeId ? customConfig : getTradeConfig(tradeId)
     const resolvedId = config.id as TradeId
     const vocab = config.vocabulary
 
@@ -51,7 +56,7 @@ export function TradeProvider({ tradeId, children }: TradeProviderProps) {
         config.enabledMissionTypes.includes(type),
       enabledTypes: config.enabledMissionTypes,
     }
-  }, [tradeId])
+  }, [tradeId, customConfig])
 
   return (
     <TradeContext.Provider value={value}>

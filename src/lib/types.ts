@@ -1,3 +1,5 @@
+import type { TradeConfig } from '@/lib/trades'
+
 export type MissionType = 'POSER' | 'RETIRER' | 'ECHANGER' | 'VIDER' | 'PAUSE' | 'CHARGER_IMMEDIAT' | 'DEPLACER' | 'TASSER' | 'EXPEDIER' | 'ALLER_RETOUR'
 
 export interface TimeWindow {
@@ -250,6 +252,9 @@ export interface SettingsApiResponse {
   maxOptimizationsPerDay?: number
   trade?:                  string
   routingSource?:          string
+  // Resolved custom-trade config, sent when `trade` is not a built-in TradeId — see A9 in
+  // AUDIT_BUGS.md (M5's client-side hydration gap). null when `trade` is a built-in trade.
+  customTradeConfig?:      TradeConfig | null
 }
 
 export interface DriverUnavailability {
