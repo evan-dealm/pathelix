@@ -25,5 +25,13 @@ setup('authenticate', async ({ page }) => {
     await page.waitForURL(/\/admin/, { timeout: 30_000 })
   }
 
+  // OnboardingGuide is gated by localStorage (see src/components/ui/OnboardingGuide.tsx) — if
+  // left un-dismissed here, every test reusing this storageState starts with the modal open,
+  // blocking all page interaction behind it until each test's action timeout expires.
+  const skipTour = page.locator('button[aria-label="Passer le guide"]')
+  if (await skipTour.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await skipTour.click()
+  }
+
   await context.storageState({ path: AUTH_FILE })
 })
