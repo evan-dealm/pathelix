@@ -7,7 +7,3 @@ export function getMissionStore(): Mission[] {
   if (!_store) _store = getMockMissions()
   return _store
 }
-
-export function addMission(m: Mission): void {
-  getMissionStore().push(m)
-}
