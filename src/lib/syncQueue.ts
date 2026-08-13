@@ -71,6 +71,12 @@ async function _doFlush(): Promise<number> {
         await del(action.id)
         synced++
       } else if (res.status >= 500) {
+        // N17 (AUDIT_BUGS.md): intentional head-of-line blocking — `break`, not `continue`.
+        // Actions are ordered (timestamp-sorted by getQueuedActions()) and a 5xx here usually
+        // means the server itself is down/degraded, not that this one action is bad. Retrying
+        // later actions in the same cycle would just spam an already-struggling server for no
+        // benefit. This is a deliberate design choice, not a bug — do not "fix" it into a
+        // `continue` without re-reading AUDIT_BUGS.md N17 first.
         await set(action.id, { ...action, retryCount: action.retryCount + 1 })
         break
       } else {
