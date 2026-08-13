@@ -712,6 +712,72 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
     et recevait 200, l'autre vérifiait l'appel à `site.count` non fait) : rejet d'un `siteId` hors
     tenant, acceptation normale d'un `siteId` du bon tenant.
 
+### N22 — Permissions granulaires (`UserPermission`) quasi jamais consultées (trouvé en Phase 3)
+- **Fichiers** : `src/lib/permissions.ts`, `src/app/api/permissions/route.ts`, tous les routes
+  d'écriture (`drivers`, `vehicles`, `missions`, `exutoires`, `users`, `settings`, `integrations`…)
+- **Catégorie** : écart design/implémentation — trouvé pendant la vérification manuelle Phase 3 de
+  l'invariant "permissions granulaires" listé dans CLAUDE.md, pas pendant l'audit ligne-à-ligne
+  Phase 1
+- **Confiance** : CONFIRMÉ
+- **Description** : `hasPermission(userId, role, permission)` existe, `ALL_PERMISSIONS` liste 11
+  permissions (`optimize`, `manage_drivers`, `manage_exutoires`, `manage_missions`,
+  `manage_vehicles`, `manage_users`, `view_reports`, `view_costs`, `manage_settings`,
+  `api_access`, `manage_integrations`), `DEFAULT_PERMISSIONS` donne un sous-ensemble par défaut
+  aux `dispatcher` (les `admin`/`superadmin` ont toujours tout, court-circuité ligne 35), et
+  `GET/PUT /api/permissions` permet de lire/écrire des `UserPermission` par utilisateur (testé,
+  fonctionnel). Mais `hasPermission()` n'est appelée que dans **UN SEUL** endroit de toute la
+  codebase applicative : `src/app/api/optimize/route.ts` (permission `optimize`). Toutes les
+  autres routes (`drivers`, `vehicles`, `missions`, etc.) gate uniquement sur le `role` brut
+  (`role !== 'admin' && role !== 'dispatcher'`), jamais sur la permission granulaire. De plus,
+  **aucune UI n'appelle `/api/permissions`** (0 résultat dans `src/components/**`, seul le fichier
+  de test l'utilise) — la fonctionnalité de personnalisation par-utilisateur n'est exposée nulle
+  part dans l'admin.
+- **Impact réel** : plus faible qu'il n'y paraît. Les ressources sensibles (`exutoires`, `users`,
+  `settings`, `integrations`) sont déjà bloquées aux non-admins par le `role` check à lui seul,
+  indépendamment du système de permissions granulaires — donc pas de fuite pour ces catégories.
+  Le vrai trou concerne uniquement la possibilité de **restreindre un dispatcher spécifique**
+  en dessous de son défaut de rôle (ex. lui retirer `manage_vehicles` alors que les dispatchers y
+  ont accès par défaut) : cette personnalisation, si elle était configurée via l'API brute
+  (`PUT /api/permissions`), serait silencieusement ignorée par toutes les routes sauf `optimize`.
+  Sans UI pour la configurer, le risque pratique est faible aujourd'hui, mais le système donne une
+  fausse impression de contrôle fin s'il était un jour câblé à une UI sans corriger l'application
+  côté API.
+- **Non corrigé dans cette session** : décision de portée, pas de correctif ponctuel. Câbler
+  `hasPermission()` dans ~9 familles de routes supplémentaires touche la logique d'autorisation
+  centrale de tout le produit — mérite sa propre revue dédiée (quel comportement par défaut si la
+  permission est absente ? message d'erreur ? faut-il vraiment finir de câbler ce système ou le
+  simplifier/retirer puisqu'aucune UI ne l'expose ?). Question produit à trancher par l'utilisateur
+  avant toute correction.
+
+### N23 — Race condition entre le flush page et le flush Service Worker de la file offline
+- **Fichiers** : `src/lib/syncQueue.ts:7,45-53` (verrou `_flushInProgress`), `public/sw.js:57-104`
+  (`flushQueue()`)
+- **Catégorie** : fiabilité — trouvé pendant la vérification manuelle Phase 3 du mode dégradé
+  chauffeur hors-ligne (invariant non couvert par l'audit Phase 1, qui avait déjà trouvé N17 sur
+  le head-of-line blocking du même fichier mais pas cette race-là)
+- **Confiance** : CONFIRMÉ (mécanisme), impact réel dépend de l'idempotence des endpoints ciblés
+- **Description** : `flushSyncQueue()` (page) protège contre les appels concurrents **dans le même
+  contexte JS** via un booléen en mémoire (`_flushInProgress`). Mais `public/sw.js` a sa **propre**
+  implémentation indépendante de `flushQueue()`, exécutée dans le contexte séparé du Service
+  Worker — aucun verrou partagé entre les deux. Pire : `enqueueAction()` (`syncQueue.ts:22-24`)
+  envoie explicitement un `postMessage({type:'FORCE_SYNC'})` au SW à CHAQUE ajout en file, donc le
+  flush SW peut être déclenché activement pendant qu'un flush page est en cours (pas seulement via
+  l'event `sync` en arrière-plan). Les deux flushs lisent la file (IndexedDB) indépendamment,
+  peuvent tous les deux voir la même action encore présente avant que l'un des deux ne la
+  supprime, et donc **POSTer la même action deux fois** au serveur.
+- **Impact réel** : limité par l'idempotence de plusieurs endpoints ciblés par la file offline
+  (ex. `DeliveryProof` utilise déjà un `upsert` sur `missionId`, donc un double-POST n'y crée pas
+  de doublon), mais pas garanti pour tous les types d'actions mises en file (à confirmer action par
+  action — hors périmètre de cette vérification manuelle).
+- **Non corrigé dans cette session** : touche l'architecture de synchronisation hors-ligne
+  (fonctionnalité sensible/critique pour les chauffeurs en zone blanche) — un correctif correct
+  nécessite soit un verrou partagé via IndexedDB lui-même (ex. enregistrement `flush-lock` avec
+  timestamp/expiration lu par les deux contextes), soit une redécision d'architecture (le SW
+  devient le seul flusher, la page ne fait plus que déclencher via `postMessage`/`sync.register`
+  et n'exécute plus jamais `_doFlush()` elle-même). Aucun des deux n'est un correctif ponctuel
+  sûr sans tests de concurrence page/SW dédiés, qui n'existent pas dans la suite actuelle —
+  proposé pour un chantier dédié plutôt que décidé unilatéralement ici.
+
 ---
 
 ## Vérifié conforme — pas de bug trouvé
