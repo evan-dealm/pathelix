@@ -4,6 +4,7 @@ import { UserUpdateSchema }          from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
+import { hasPermission }             from '@/lib/permissions'
 import prisma                        from '@/lib/db'
 
 const log = createLogger('/api/users/[id]')
@@ -37,9 +38,12 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin') {
     return NextResponse.json({ error: 'Réservé aux administrateurs' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'manage_users'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let body: unknown
@@ -81,9 +85,12 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin') {
     return NextResponse.json({ error: 'Réservé aux administrateurs' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'manage_users'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   try {

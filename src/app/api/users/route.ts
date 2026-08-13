@@ -4,6 +4,7 @@ import { UserCreateSchema }          from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
+import { hasPermission }             from '@/lib/permissions'
 import prisma                        from '@/lib/db'
 
 const log = createLogger('/api/users')
@@ -51,6 +52,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const { userId, role } = getRequestContext(req)
+  if (role !== 'admin' && role !== 'superadmin') {
+    return NextResponse.json({ error: 'Accès réservé aux administrateurs' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'manage_users'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
+
   let body: unknown
   try { body = await req.json() }
   catch { return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 }) }

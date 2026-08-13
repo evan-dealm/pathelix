@@ -28,6 +28,7 @@ const mockPrisma = vi.hoisted(() => ({
   tourHistory:       { findFirst: vi.fn(), findMany: vi.fn() },
   auditLog:          { findMany: vi.fn(), count: vi.fn(), deleteMany: vi.fn(), create: vi.fn() },
   apiKey:            { findMany: vi.fn() },
+  userPermission:    { findMany: vi.fn(() => Promise.resolve([])) },
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
@@ -433,11 +434,13 @@ describe('RBAC: role enforcement on sensitive routes', () => {
     expect(res.status).toBe(403)
   })
 
-  it('driver CAN delete missions (not blocked by role — returns 404 for nonexistent)', async () => {
+  // Regression A7: this used to document a real gap — the role check only blocked 'dispatcher',
+  // not 'driver', so a driver could delete any mission. hasPermission('manage_missions') now
+  // closes it: DEFAULT_PERMISSIONS['driver'] is empty, so a driver gets 403 too.
+  it('driver cannot delete missions (403) — A7 closed the gap where only dispatcher was blocked', async () => {
     setTenant('tenant-A', 'driver', 'driver-1')
-    vi.mocked(getMission).mockResolvedValue(null)
-    vi.mocked(deleteMission).mockResolvedValue(false)
     const res = await missionDel(makeDelete('http://localhost/api/missions/m-1'), makeParams('m-1'))
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(403)
+    expect(deleteMission).not.toHaveBeenCalled()
   })
 })

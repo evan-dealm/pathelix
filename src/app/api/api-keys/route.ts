@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'crypto'
 import prisma from '@/lib/db'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
+import { hasPermission } from '@/lib/permissions'
 
 const log = createLogger('/api/api-keys')
 
@@ -46,6 +47,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tenantId, role, userId } = getRequestContext(req)
   if (role !== 'admin' && role !== 'superadmin') {
     return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'api_access'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let raw: unknown

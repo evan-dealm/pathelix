@@ -778,12 +778,61 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   Sans UI pour la configurer, le risque pratique est faible aujourd'hui, mais le système donne une
   fausse impression de contrôle fin s'il était un jour câblé à une UI sans corriger l'application
   côté API.
-- **Non corrigé dans cette session** : décision de portée, pas de correctif ponctuel. Câbler
-  `hasPermission()` dans ~9 familles de routes supplémentaires touche la logique d'autorisation
-  centrale de tout le produit — mérite sa propre revue dédiée (quel comportement par défaut si la
-  permission est absente ? message d'erreur ? faut-il vraiment finir de câbler ce système ou le
-  simplifier/retirer puisqu'aucune UI ne l'expose ?). Question produit à trancher par l'utilisateur
-  avant toute correction.
+- **Statut** : ✅ **corrigé + testé (A7)** — décision tranchée par l'utilisateur : câbler
+  `hasPermission()` dans les 9 familles de routes restantes plutôt que laisser le système de
+  permissions granulaires sans effet réel hors `/api/optimize`.
+  - `hasPermission(userId, role, permission)` ajouté sur `drivers` (POST + PUT/DELETE `[id]`),
+    `vehicles` (POST + PUT/DELETE `[id]`), `missions` (POST + PUT/DELETE `[id]`), `exutoires`
+    (POST + PUT/DELETE `[id]`), `users` (POST + PUT/DELETE `[id]`), `settings` (PUT),
+    `integrations` (POST), `reports` (GET), `api-keys` (POST) — en plus du check de `role` brut
+    déjà existant, jamais en remplacement.
+  - **L'audit initial de N22 sous-estimait l'impact réel** : l'hypothèse « les ressources
+    sensibles sont déjà bloquées par le `role` check à lui seul » s'est révélée **fausse pour
+    plusieurs routes**, découvert en traçant chaque route pendant le câblage :
+    - **`POST /api/users` n'avait AUCUN garde de rôle avant cette correction** — n'importe quel
+      utilisateur authentifié, y compris un `driver`, pouvait appeler `POST /api/users` avec
+      `{"role":"ADMIN",...}` (`UserCreateSchema.role` accepte `'ADMIN'`) et se créer un compte
+      admin sur son propre tenant. **Escalade de privilèges complète, pas juste un écart de
+      permissions granulaires.** Un check `role !== 'admin' && role !== 'superadmin'` a été ajouté
+      en plus de `hasPermission`.
+    - **`POST /api/drivers`, `POST /api/missions`, `PUT /api/missions/[id]`,
+      `PUT`/`DELETE /api/vehicles/[id]`, `PUT /api/drivers/[id]`** : aucun garde de rôle non plus
+      avant cette session — n'importe quel rôle authentifié (y compris `driver`) pouvait créer un
+      chauffeur/une mission, ou modifier/supprimer un véhicule. Corrigé par l'ajout de
+      `hasPermission()` (rôle `driver` → `DEFAULT_PERMISSIONS.driver = []`, donc 403 pour tous ces
+      cas maintenant).
+    - **`DELETE /api/drivers/[id]`, `DELETE /api/missions/[id]`** : le garde existant ne bloquait
+      QUE `role === 'dispatcher'`, laissant passer `driver` — un chauffeur pouvait supprimer
+      n'importe quelle mission ou n'importe quel chauffeur de son tenant. Confirmé exploitable via
+      test de régression (`security-idor.test.ts`, vérifié en échouant contre l'ancien code — 404
+      au lieu du 403 attendu, la suppression était tentée). Corrigé par `hasPermission()` en plus
+      du check existant.
+  - Ces découvertes reclassent une partie de N22 de "écart design mineur" à **bug de sécurité réel
+    (escalade de privilèges via `/api/users`, IDOR via `driver` sur delete)** — la sévérité 🟡
+    listée en tête de cette entrée ne reflète que le design du système `UserPermission` en général,
+    pas ces trous de `role` spécifiques trouvés en le câblant.
+  - **UI ajoutée** (`UsersTab.tsx`) : panneau "Permissions" dans la modale d'édition utilisateur —
+    liste les 11 permissions (`GET /api/permissions?userId=`), case à cocher par permission
+    (`PUT /api/permissions`), bouton "Réinitialiser aux valeurs par défaut du rôle" si des
+    permissions personnalisées existent. Jusqu'ici `/api/permissions` n'était appelé nulle part
+    côté client — la fonctionnalité de personnalisation par-utilisateur documentée dans CLAUDE.md
+    est maintenant réellement exposée dans l'admin.
+  - Tests ajoutés/mis à jour (tous vérifiés en échouant contre l'ancien code avant correctif) :
+    `drivers.test.ts` (+2), `missions-id.test.ts` (+2), `security-idor.test.ts` (le test
+    "driver CAN delete missions" documentait le trou — réécrit en "driver cannot delete missions
+    (403)"), `routes-health-vehicles-exutoires-missions.test.ts` (+2 dispatcher default/revoked
+    sur `vehicles`), `routes-users-settings-reports.test.ts` (+2 sur `reports`, +1 sur `users`
+    admin-bypass), `users-audit-permissions-features.test.ts` (mock `hasPermission` ajouté).
+  - **Bug de fuite d'état entre tests trouvé et corrigé pendant la vérification** : deux fichiers
+    de test utilisaient `mockReturnValue`/`mockResolvedValue` (persistants) au lieu de
+    `mockReturnValueOnce`/`mockResolvedValueOnce` pour simuler un rôle `dispatcher` ponctuel, ou
+    laissaient un `mockResolvedValueOnce` jamais consommé (bypass admin) traîner dans la file —
+    `vi.clearAllMocks()` (utilisé dans tous les `beforeEach` de ce repo) réinitialise l'historique
+    d'appels mais PAS les implémentations/valeurs `Once` déjà enregistrées. Résultat : 10 tests en
+    échec en cascade dans deux fichiers (rôle `dispatcher`/`disp-revoked` fuitant vers des tests
+    suivants censés tourner en `admin`). Corrigé en alignant sur le pattern déjà correct de
+    `drivers.test.ts`/`missions-id.test.ts` (`mockReturnValueOnce`, retrait du mock inutile sur le
+    cas admin-bypass). Suite complète repassée verte après correctif (199 fichiers, 3522 tests).
 
 ### N23 — Race condition entre le flush page et le flush Service Worker de la file offline
 - **Fichiers** : `src/lib/syncQueue.ts:7,45-53` (verrou `_flushInProgress`), `public/sw.js:57-104`
@@ -971,11 +1020,12 @@ eux-mêmes sont déjà couverts par la suite unitaire/intégration existante) :
   directe. Trois bugs cross-tenant réels trouvés et corrigés cette session (N19 DeliveryProof,
   N20 ClientSite, M3 Geotab/Samsara) démontrent que le processus de vérification fonctionne
   concrètement, pas juste en théorie.
-- **Permissions granulaires** : **écart trouvé (N22, documenté ci-dessus)** — le système
-  `UserPermission`/`hasPermission()` n'est en réalité câblé que sur `/api/optimize`. Les
-  ressources sensibles restent protégées par les checks de `role` bruts (indépendants de ce
-  système), donc pas de fuite pour ces catégories, mais la personnalisation fine par-utilisateur
-  promise par le design (et par CLAUDE.md) n'est pas appliquée hors `optimize`.
+- **Permissions granulaires** : **écart trouvé (N22) puis corrigé + testé (A7, décision utilisateur
+  ultérieure, voir détail dans l'entrée N22 ci-dessus)** — `hasPermission()` n'était câblé que sur
+  `/api/optimize` au moment de cette vérification Phase 3. Câblage étendu à 9 familles de routes
+  supplémentaires dans une session suivante, ce qui a aussi mis au jour de vrais trous de `role`
+  (pas seulement de permission granulaire) sur plusieurs routes — dont une escalade de privilèges
+  critique sur `POST /api/users` (aucun garde de rôle, `role:"ADMIN"` acceptable dans le payload).
 - **Mode dégradé Redis** : fallback en mémoire pour le rate limiter (`rateLimit.ts`), erreurs
   catch+log pour `redisCache` — pas de crash si Redis est down, dégradation propre.
   `USE_MOCK_DATA`/session/queue non re-testés en direct (Redis réellement coupé) faute de temps —

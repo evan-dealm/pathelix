@@ -35,6 +35,20 @@ const BLANK_FORM: UserForm = {
   driverRef: '',
 }
 
+const PERMISSION_LABELS: Record<string, string> = {
+  optimize:             'Lancer une optimisation VRP',
+  manage_drivers:       'Gérer les chauffeurs',
+  manage_exutoires:     'Gérer les exutoires',
+  manage_missions:      'Gérer les missions',
+  manage_vehicles:      'Gérer les véhicules',
+  manage_users:         'Gérer les utilisateurs',
+  view_reports:         'Voir les rapports',
+  view_costs:           'Voir les coûts',
+  manage_settings:      'Gérer les paramètres',
+  api_access:           'Accès API (clés)',
+  manage_integrations:  'Gérer les intégrations',
+}
+
 export function UsersTab() {
   const { error: toastError } = useToast()
   const drivers = usePlanningStore(s => s.drivers)
@@ -50,6 +64,13 @@ export function UsersTab() {
   const [resetPwdId, setResetPwdId] = useState<string | null>(null)
   const [resetPwdValue, setResetPwdValue] = useState('')
   const [resetPwdStatus, setResetPwdStatus] = useState<'idle' | 'ok' | 'error'>('idle')
+
+  const [allPermissions, setAllPermissions] = useState<string[]>([])
+  const [perms, setPerms] = useState<string[]>([])
+  const [permsIsCustom, setPermsIsCustom] = useState(false)
+  const [permsLoading, setPermsLoading] = useState(false)
+  const [permsSaving, setPermsSaving] = useState(false)
+  const [permsStatus, setPermsStatus] = useState<'idle' | 'ok' | 'error'>('idle')
 
   function load() {
     setLoading(true)
@@ -78,7 +99,55 @@ export function UsersTab() {
     })
     setError('')
     setResetPwdStatus('idle')
+    setPermsStatus('idle')
     setModal({ kind: 'edit', user: u })
+    loadPermissions(u.id)
+  }
+
+  function loadPermissions(userId: string) {
+    setPermsLoading(true)
+    Promise.all([
+      allPermissions.length > 0
+        ? Promise.resolve({ allPermissions })
+        : fetch('/api/permissions').then(r => r.json()) as Promise<{ allPermissions: string[] }>,
+      fetch(`/api/permissions?userId=${userId}`).then(r => r.json()) as Promise<{ permissions: string[]; isCustom: boolean }>,
+    ])
+      .then(([all, current]) => {
+        setAllPermissions(all.allPermissions)
+        setPerms(current.permissions ?? [])
+        setPermsIsCustom(Boolean(current.isCustom))
+      })
+      .catch(logErr('permissions'))
+      .finally(() => setPermsLoading(false))
+  }
+
+  async function savePermissions(userId: string, next: string[]) {
+    setPermsSaving(true)
+    setPermsStatus('idle')
+    try {
+      const res = await fetch('/api/permissions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, permissions: next }),
+      })
+      if (!res.ok) throw new Error()
+      setPerms(next)
+      setPermsIsCustom(next.length > 0)
+      setPermsStatus('ok')
+      setTimeout(() => setPermsStatus('idle'), 3000)
+    } catch {
+      setPermsStatus('error')
+      setTimeout(() => setPermsStatus('idle'), 3000)
+    } finally {
+      setPermsSaving(false)
+    }
+  }
+
+  function togglePermission(userId: string, permission: string) {
+    const next = perms.includes(permission)
+      ? perms.filter(p => p !== permission)
+      : [...perms, permission]
+    savePermissions(userId, next)
   }
 
   async function handleSave() {
@@ -343,6 +412,51 @@ export function UsersTab() {
                 </div>
                 {resetPwdStatus === 'ok' && <p className="text-emerald-600 text-xs mt-1.5">Mot de passe modifie avec succes</p>}
                 {resetPwdStatus === 'error' && <p className="text-red-600 text-xs mt-1.5">Erreur — min. 12 caractères</p>}
+              </div>
+            )}
+
+            {modal.kind === 'edit' && (
+              <div className="border-t border-surface-200 pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-medium text-surface-500 uppercase tracking-wider">
+                    Permissions
+                  </div>
+                  {permsIsCustom && (
+                    <button
+                      type="button"
+                      onClick={() => savePermissions(modal.user.id, [])}
+                      disabled={permsSaving}
+                      className="text-[11px] text-surface-400 hover:text-surface-600 underline"
+                    >
+                      Réinitialiser aux valeurs par défaut du rôle
+                    </button>
+                  )}
+                </div>
+                {permsLoading ? (
+                  <p className="text-surface-400 text-xs">Chargement...</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5">
+                    {allPermissions.map(p => (
+                      <label key={p} className="flex items-center gap-2 text-xs text-surface-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={perms.includes(p)}
+                          disabled={permsSaving}
+                          onChange={() => togglePermission(modal.user.id, p)}
+                          className="rounded border-surface-300"
+                        />
+                        {PERMISSION_LABELS[p] ?? p}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-surface-400 text-[10px] mt-1.5">
+                  {permsIsCustom
+                    ? 'Permissions personnalisées — remplacent les valeurs par défaut du rôle.'
+                    : 'Valeurs par défaut du rôle actuel — cocher/décocher personnalise cet utilisateur.'}
+                </p>
+                {permsStatus === 'ok' && <p className="text-emerald-600 text-xs mt-1">Permissions mises à jour</p>}
+                {permsStatus === 'error' && <p className="text-red-600 text-xs mt-1">Erreur lors de la mise à jour</p>}
               </div>
             )}
 

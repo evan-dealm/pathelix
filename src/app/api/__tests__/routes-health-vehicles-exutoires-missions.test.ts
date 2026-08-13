@@ -11,6 +11,7 @@ const { mockPrisma } = vi.hoisted(() => {
     // Default to "at least one tenant has a Nessy integration configured" so these unrelated
     // tests get a healthy baseline (matches the old env-var-based workaround this replaced).
     integration: { count: vi.fn(() => Promise.resolve(1)) },
+    userPermission: { findMany: vi.fn(() => Promise.resolve([])) },
     vehicle: {
       findMany:   vi.fn(),
       findFirst:  vi.fn(),
@@ -352,6 +353,31 @@ describe('POST /api/vehicles', () => {
     const res = await vehiclesPost(req)
 
     expect(res.status).toBe(500)
+  })
+
+  // Regression A7: hasPermission('manage_vehicles') wired in on top of the existing role check.
+  // Distinct userIds per test — hasPermission() caches its DB lookup per userId for 60s, so
+  // reusing the same userId across tests in this file would silently serve a stale cached result.
+  it('dispatcher with no custom UserPermission gets the role default (manage_vehicles included, 201)', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-default', role: 'dispatcher', requestId: 'r', trade: null })
+    mockPrisma.userPermission.findMany.mockResolvedValueOnce([])
+    mockPrisma.vehicle.create.mockResolvedValue({ id: 'v-new', ...validBody, tenantId: 'tenant-test' })
+
+    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const res = await vehiclesPost(req)
+
+    expect(res.status).toBe(201)
+  })
+
+  it('dispatcher with manage_vehicles explicitly revoked gets 403', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-revoked', role: 'dispatcher', requestId: 'r', trade: null })
+    mockPrisma.userPermission.findMany.mockResolvedValueOnce([{ permission: 'manage_missions' }] as never)
+
+    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const res = await vehiclesPost(req)
+
+    expect(res.status).toBe(403)
+    expect(mockPrisma.vehicle.create).not.toHaveBeenCalled()
   })
 })
 

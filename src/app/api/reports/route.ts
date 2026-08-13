@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getRequestContext } from '@/lib/data/context'
+import { hasPermission } from '@/lib/permissions'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin' && role !== 'dispatcher' && role !== 'superadmin') {
     return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'view_reports'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
   const period = req.nextUrl.searchParams.get('period') ?? 'month'
   const refDate = req.nextUrl.searchParams.get('date') ?? new Date().toISOString().slice(0, 10)

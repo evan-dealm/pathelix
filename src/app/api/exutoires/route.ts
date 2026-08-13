@@ -4,6 +4,7 @@ import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getAllExutoires, createExutoire } from '@/lib/data/exutoires'
 import { redisCache }                from '@/lib/redisCache'
+import { hasPermission }             from '@/lib/permissions'
 
 const log = createLogger('/api/exutoires')
 
@@ -27,8 +28,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  if (!(await hasPermission(userId, role, 'manage_exutoires'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   let body: unknown
   try { body = await req.json() }

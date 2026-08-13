@@ -8,6 +8,7 @@ import { redisCache }                     from '@/lib/redisCache'
 import { auditAsync }                     from '@/lib/audit'
 import { createTenantRateLimiter }        from '@/lib/rateLimit'
 import { metrics, METRIC }               from '@/lib/metrics'
+import { hasPermission }                  from '@/lib/permissions'
 import prisma                             from '@/lib/db'
 
 const _missionsWriteRl = createTenantRateLimiter(100, 60_000, 'missions-write')
@@ -82,7 +83,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const rlOk = await _missionsWriteRl.check(getRequestContext(req).tenantId)
+  const { tenantId: rlTenantId, userId, role } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_missions'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
+
+  const rlOk = await _missionsWriteRl.check(rlTenantId)
   if (!rlOk) return NextResponse.json({ error: 'Trop de requêtes' }, { status: 429 })
 
   let body: unknown

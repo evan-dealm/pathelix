@@ -4,6 +4,7 @@ import prisma from '@/lib/db'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { encryptConfig } from '@/lib/configCrypto'
+import { hasPermission } from '@/lib/permissions'
 
 const log = createLogger('/api/integrations')
 
@@ -57,9 +58,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin' && role !== 'superadmin') {
     return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'manage_integrations'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let raw: unknown

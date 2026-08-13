@@ -4,6 +4,7 @@ import { createLogger }                                      from '@/lib/logger'
 import { getTenantId, getRequestContext }                     from '@/lib/data/context'
 import { getExutoire, updateExutoire, deleteExutoire }      from '@/lib/data/exutoires'
 import { redisCache } from '@/lib/redisCache'
+import { hasPermission } from '@/lib/permissions'
 
 const log = createLogger('/api/exutoires/[id]')
 
@@ -24,8 +25,11 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  if (!(await hasPermission(userId, role, 'manage_exutoires'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   let body: unknown
   try { body = await req.json() }
@@ -49,8 +53,11 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  if (!(await hasPermission(userId, role, 'manage_exutoires'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
   try {
     const ok = await deleteExutoire(tenantId, id)
     if (!ok) return NextResponse.json({ error: 'Exutoire introuvable' }, { status: 404 })

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { VehicleSchema }             from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
-import { getTenantId }               from '@/lib/data/context'
+import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { redisCache }                from '@/lib/redisCache'
 import { getVehicleStore }           from '../_store'
 import prisma                        from '@/lib/db'
 import { auditAsync }                from '@/lib/audit'
+import { hasPermission }             from '@/lib/permissions'
 
 const log    = createLogger('/api/vehicles/[id]')
 const useMock = process.env.USE_MOCK_DATA !== 'false'
@@ -37,7 +38,10 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
-  const tenantId = getTenantId(req)
+  const { tenantId, userId, role } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_vehicles'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   let body: unknown
   try { body = await req.json() }
@@ -90,7 +94,10 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
-  const tenantId = getTenantId(req)
+  const { tenantId, userId, role } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_vehicles'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   if (useMock) {
     const store = getVehicleStore()

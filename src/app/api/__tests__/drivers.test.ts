@@ -8,6 +8,7 @@ vi.mock('@/lib/data/drivers', () => ({
 
 vi.mock('@/lib/data/context', () => ({
   getTenantId: vi.fn(() => 'tenant-test'),
+  getRequestContext: vi.fn(() => ({ tenantId: 'tenant-test', userId: 'user-1', role: 'admin', requestId: 'r1' })),
 }))
 
 vi.mock('@/lib/redisCache', () => ({
@@ -22,6 +23,7 @@ vi.mock('@/lib/db', () => ({
   default: {
     tenant: { findUnique: vi.fn(() => Promise.resolve(null)) },
     driver: { count: vi.fn(() => Promise.resolve(0)) },
+    userPermission: { findMany: vi.fn(() => Promise.resolve([])) },
   },
 }))
 
@@ -48,7 +50,8 @@ vi.mock('@/lib/metrics', () => ({
 
 import { GET, POST } from '@/app/api/drivers/route'
 import { getAllDrivers, createDriver } from '@/lib/data/drivers'
-import { getTenantId } from '@/lib/data/context'
+import { getTenantId, getRequestContext } from '@/lib/data/context'
+import db from '@/lib/db'
 
 function makeGetRequest(params: Record<string, string> = {}): NextRequest {
   const url = new URL('http://localhost:3000/api/drivers')
@@ -180,5 +183,33 @@ describe('POST /api/drivers', () => {
     })
     const res = await POST(req)
     expect(res.status).toBe(400)
+  })
+
+  // Regression A7: hasPermission('manage_drivers') — POST /api/drivers previously had NO role
+  // gate at all (any authenticated role could create drivers). Distinct userIds per test — the
+  // hasPermission() DB lookup is cached per userId for 60s within this file's module registry.
+  it('dispatcher with no custom UserPermission gets the role default (manage_drivers included, 201)', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-default', role: 'dispatcher', requestId: 'r1' } as never)
+    vi.mocked(createDriver).mockResolvedValue({ id: 'new-2', ...validBody })
+
+    const res = await POST(makePostRequest(validBody))
+    expect(res.status).toBe(201)
+  })
+
+  it('dispatcher with manage_drivers explicitly revoked gets 403', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-revoked', role: 'dispatcher', requestId: 'r1' } as never)
+    vi.mocked(db.userPermission.findMany).mockResolvedValueOnce([{ permission: 'manage_missions' }] as never)
+
+    const res = await POST(makePostRequest(validBody))
+    expect(res.status).toBe(403)
+    expect(createDriver).not.toHaveBeenCalled()
+  })
+
+  it('driver role (no default permissions) gets 403', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'driver-1', role: 'driver', requestId: 'r1' } as never)
+
+    const res = await POST(makePostRequest(validBody))
+    expect(res.status).toBe(403)
+    expect(createDriver).not.toHaveBeenCalled()
   })
 })

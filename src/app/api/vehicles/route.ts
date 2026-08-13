@@ -7,6 +7,7 @@ import { redisCache }                from '@/lib/redisCache'
 import { getVehicleStore }           from './_store'
 import prisma                        from '@/lib/db'
 import { auditAsync }                from '@/lib/audit'
+import { hasPermission }             from '@/lib/permissions'
 
 const log    = createLogger('/api/vehicles')
 const useMock = process.env.USE_MOCK_DATA !== 'false'
@@ -68,9 +69,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin' && role !== 'dispatcher') {
     return NextResponse.json({ error: 'Admin ou dispatcher requis' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'manage_vehicles'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let body: unknown

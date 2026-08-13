@@ -7,6 +7,7 @@ import { redisCache }                from '@/lib/redisCache'
 import prisma                        from '@/lib/db'
 import { TRADE_IDS }                 from '@/lib/trades'
 import { customTradeRowToConfig }    from '@/lib/data/customTrades'
+import { hasPermission }             from '@/lib/permissions'
 
 const log = createLogger('/api/settings')
 
@@ -92,9 +93,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function PUT(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'admin') {
     return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'manage_settings'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let body: unknown

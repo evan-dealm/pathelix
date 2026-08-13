@@ -5,6 +5,7 @@ import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getMission, updateMission, deleteMission } from '@/lib/data/missions'
 import { redisCache } from '@/lib/redisCache'
 import { auditAsync } from '@/lib/audit'
+import { hasPermission } from '@/lib/permissions'
 
 const log = createLogger('/api/missions/[id]')
 type Params = { params: Promise<{ id: string }> }
@@ -23,6 +24,10 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id } = await params
+  const { userId, role } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_missions'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   let body: unknown
   try { body = await req.json() }
@@ -55,8 +60,11 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id } = await params
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role === 'dispatcher') return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  if (!(await hasPermission(userId, role, 'manage_missions'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
   try {
 
     const existing = await getMission(tenantId, id)

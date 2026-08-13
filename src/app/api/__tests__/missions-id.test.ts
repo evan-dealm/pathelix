@@ -23,9 +23,14 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
+vi.mock('@/lib/db', () => ({
+  default: { userPermission: { findMany: vi.fn(() => Promise.resolve([])) } },
+}))
+
 import { GET, PUT, DELETE } from '@/app/api/missions/[id]/route'
 import { getMission, updateMission, deleteMission } from '@/lib/data/missions'
 import { getRequestContext } from '@/lib/data/context'
+import db from '@/lib/db'
 
 function makeGet(id: string): NextRequest {
   return new NextRequest(`http://localhost:3000/api/missions/${id}`)
@@ -136,6 +141,33 @@ describe('PUT /api/missions/[id]', () => {
 
     const res = await PUT(makePut('m-1', { type: 'POSER' }), makeParams('m-1'))
     expect(res.status).toBe(500)
+  })
+
+  // Regression A7: hasPermission('manage_missions') — PUT /api/missions/[id] previously had NO
+  // role gate at all. Distinct userIds per test to avoid hasPermission()'s 60s per-userId cache.
+  it('dispatcher with no custom UserPermission gets the role default (manage_missions included, 200)', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-default', role: 'dispatcher', requestId: 'r1' } as never)
+    vi.mocked(updateMission).mockResolvedValue(sampleMission as never)
+
+    const res = await PUT(makePut('m-1', { type: 'POSER' }), makeParams('m-1'))
+    expect(res.status).toBe(200)
+  })
+
+  it('dispatcher with manage_missions explicitly revoked gets 403', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-revoked', role: 'dispatcher', requestId: 'r1' } as never)
+    vi.mocked(db.userPermission.findMany).mockResolvedValueOnce([{ permission: 'manage_vehicles' }] as never)
+
+    const res = await PUT(makePut('m-1', { type: 'POSER' }), makeParams('m-1'))
+    expect(res.status).toBe(403)
+    expect(updateMission).not.toHaveBeenCalled()
+  })
+
+  it('driver role (no default permissions) gets 403', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'driver-perm-1', role: 'driver', requestId: 'r1' } as never)
+
+    const res = await PUT(makePut('m-1', { type: 'POSER' }), makeParams('m-1'))
+    expect(res.status).toBe(403)
+    expect(updateMission).not.toHaveBeenCalled()
   })
 })
 

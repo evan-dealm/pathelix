@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse }   from 'next/server'
 import { DriverSchema }                from '@/lib/schemas'
 import { createLogger }                from '@/lib/logger'
-import { getTenantId }                 from '@/lib/data/context'
+import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getAllDrivers, createDriver } from '@/lib/data/drivers'
 import { redisCache }                  from '@/lib/redisCache'
 import { auditAsync }                  from '@/lib/audit'
 import { metrics, METRIC }             from '@/lib/metrics'
+import { hasPermission }               from '@/lib/permissions'
 import prisma                          from '@/lib/db'
 
 const log = createLogger('/api/drivers')
@@ -43,6 +44,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const { userId, role } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_drivers'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
+
   let body: unknown
   try { body = await req.json() }
   catch { return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 }) }

@@ -47,6 +47,7 @@ vi.mock('@/lib/permissions', () => ({
   ALL_PERMISSIONS:        ['read:missions', 'write:missions', 'read:drivers'],
   DEFAULT_PERMISSIONS:    { admin: ['read:missions', 'write:missions'], dispatcher: ['read:missions'] },
   invalidatePermCache:    vi.fn(),
+  hasPermission:          vi.fn(() => Promise.resolve(true)),
 }))
 
 vi.mock('@/lib/featureFlags', () => ({

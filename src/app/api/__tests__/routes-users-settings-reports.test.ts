@@ -15,6 +15,7 @@ const { mockPrisma } = vi.hoisted(() => {
     driver: { count: vi.fn() },
     vehicle: { count: vi.fn() },
     exutoire: { count: vi.fn() },
+    userPermission: { findMany: vi.fn(() => Promise.resolve([])) },
   }
   return { mockPrisma }
 })
@@ -150,6 +151,24 @@ describe('POST /api/users', () => {
     const res = await postUser(req)
     expect(res.status).toBe(400)
   })
+
+  // A7 note: hasPermission('manage_users') is wired here for consistency with the other route
+  // families, but it's structurally a no-op on this specific route — manage_users is only
+  // reachable by admin/superadmin (the pre-existing role check above already excludes everyone
+  // else), and hasPermission() unconditionally returns true for admin/superadmin before ever
+  // consulting UserPermission (see src/lib/permissions.ts:35). A revoked UserPermission for
+  // manage_users cannot block an admin here — documented as accepted, not a bug.
+  it('admin still succeeds even with manage_users explicitly revoked (hasPermission bypasses admin unconditionally)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'admin-revoked', role: 'admin', requestId: 'r' } as never)
+    // No userPermission.findMany mock here: hasPermission() bypasses admin before ever querying
+    // it (see comment above), so queuing an unconsumed mockResolvedValueOnce would sit in the
+    // mock's call queue and get consumed by a LATER, unrelated findMany() call instead — vi.clearAllMocks()
+    // in beforeEach clears call history but not queued Once return values.
+    mockPrisma.user.create.mockResolvedValueOnce({ id: 'u-new', ...validBody })
+
+    const res = await postUser(makePost('/api/users', validBody))
+    expect(res.status).toBe(201)
+  })
 })
 
 describe('GET /api/settings', () => {
@@ -275,6 +294,31 @@ describe('GET /api/reports', () => {
 
   it('returns 403 for drivers', async () => {
     vi.mocked(getRequestContext).mockReturnValue({ tenantId: 't', userId: 'u', role: 'driver', requestId: 'r' } as never)
+
+    const res = await getReports(makeGet('/api/reports'))
+    expect(res.status).toBe(403)
+  })
+
+  // Regression A7: hasPermission('view_reports') wired on top of the existing role check.
+  // Distinct userIds per test — hasPermission()'s DB lookup is cached per userId for 60s.
+  it('dispatcher with no custom UserPermission gets the role default (view_reports included, 200)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'disp-default', role: 'dispatcher', requestId: 'r' } as never)
+    mockPrisma.userPermission.findMany.mockResolvedValueOnce([])
+    mockPrisma.mission.count.mockResolvedValue(0)
+    mockPrisma.plan.count.mockResolvedValue(0)
+    mockPrisma.driver.count.mockResolvedValue(0)
+    mockPrisma.vehicle.count.mockResolvedValue(0)
+    mockPrisma.exutoire.count.mockResolvedValue(0)
+    mockPrisma.mission.groupBy.mockResolvedValue([])
+    mockPrisma.plan.groupBy.mockResolvedValue([])
+
+    const res = await getReports(makeGet('/api/reports'))
+    expect(res.status).toBe(200)
+  })
+
+  it('dispatcher with view_reports explicitly revoked gets 403', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'disp-revoked', role: 'dispatcher', requestId: 'r' } as never)
+    mockPrisma.userPermission.findMany.mockResolvedValueOnce([{ permission: 'manage_missions' }] as never)
 
     const res = await getReports(makeGet('/api/reports'))
     expect(res.status).toBe(403)
