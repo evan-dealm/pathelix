@@ -1151,4 +1151,65 @@ en continu au fil de l'avancement.
   que la valeur du secret n'apparaît jamais dans les `changes` loggés) — chacun vérifie l'appel
   exact à `auditAsync`/`logSuperadminAction` avec les bons arguments, pas juste le status code.
 - Suite complète : 199 fichiers / 3536 tests (+7), lint et `tsc --noEmit` propres.
-- **Commit** : voir historique git (`fix(N24/0.1): audit trail on user/permission/integration mutations + audit-log purge`)
+- **Commit** : `f47bab6` (`fix(N24/0.1): audit trail on user/permission/integration mutations + audit-log purge`)
+
+### Phase 0.2 — Vérification par mutation testing des 20 points `hasPermission()` (CLOS)
+- **Méthode** : pour chacun des 20 appels `hasPermission()` câblés lors de N22/A7 (9 familles +
+  les 6 routes sans check + `POST /api/templates`), la ligne du check a été temporairement
+  remplacée par `if (false) {` (le check ne bloque plus jamais rien), le fichier de test associé
+  relancé, puis le fichier restauré via `git checkout`. Un test qui continue de passer malgré le
+  check désactivé prouve qu'aucun test n'exerce réellement cette ligne.
+- **Résultat** : 20 points testés → **9 correctement couverts** (le mutant est tué : au moins un
+  test échoue), **2 gaps réels trouvés et corrigés**, **9 "mutants survivants" qui ne sont PAS des
+  gaps de test mais du code mort confirmé** (détail ci-dessous).
+- **2 gaps réels (corrigés)** : `DELETE /api/drivers/[id]` et `DELETE /api/missions/[id]`. Les
+  deux ont un garde `if (role === 'dispatcher') return 403` **avant** `hasPermission()` — le seul
+  test 403 existant (`role: 'dispatcher'`) est bloqué par ce garde et n'atteint jamais
+  `hasPermission()`. Avec `hasPermission()` désactivé, tous les tests des deux blocs `describe`
+  restaient verts. Corrigé par l'ajout d'un test `role: 'driver'` (non bloqué par le garde
+  dispatcher-only, donc le seul chemin qui exerce réellement `hasPermission('manage_drivers'
+  /'manage_missions')`) dans `drivers-id.test.ts` et `missions-id.test.ts`.
+- **9 "mutants survivants" = code mort confirmé, PAS un gap de test** — nouvelle découverte non
+  prévue par la mission initiale, documentée ici plutôt que noyée dans la liste ci-dessus :
+  `POST /api/users` (:60), `PUT /api/users/[id]` (:46), `DELETE /api/users/[id]` (:98),
+  `PUT /api/settings` (:100), `POST /api/integrations` (:66), `POST /api/api-keys` (:51),
+  `POST /api/exutoires` (:33), `PUT /api/exutoires/[id]` (:30), `DELETE /api/exutoires/[id]`
+  (:58). Ces 9 routes ont **toutes** un garde `role !== 'admin' [&& role !== 'superadmin']` placé
+  **avant** `hasPermission()`. Combiné au court-circuit inconditionnel de
+  `hasPermission()` pour `admin`/`superadmin` (`src/lib/permissions.ts:35`, cf. point 2 de N24),
+  ceci rend `hasPermission()` **structurellement inatteignable en position de bloquer quoi que ce
+  soit** sur ces 9 routes : tout rôle qui pourrait se faire refuser par `hasPermission()`
+  (`dispatcher`, `driver`) est déjà rejeté par le garde `role !== 'admin'` avant d'y arriver, et
+  tout rôle qui atteint `hasPermission()` (`admin`/`superadmin`) le fait toujours réussir sans
+  jamais consulter `UserPermission`. **Pas un test manquant — le code lui-même ne peut jamais
+  emprunter la branche 403 de `hasPermission()` sur ces 9 endpoints, quel que soit le test écrit.**
+- **Impact réel** : *pas* un problème de sécurité (sens inverse d'une escalade — ces routes sont
+  **plus restrictives** que ce que le système de permissions granulaires suggère, pas moins). Mais
+  cela signifie concrètement que le système `UserPermission`/`/api/permissions` (censé permettre
+  de personnaliser les droits d'un `dispatcher` en dessous ou différemment de son rôle) est
+  **totalement inopérant** pour `manage_users`, `manage_settings`, `manage_integrations`,
+  `api_access`, et `manage_exutoires` — impossible d'accorder à un dispatcher spécifique l'accès à
+  ces 5 permissions via `PUT /api/permissions` (bloqué avant même d'atteindre `hasPermission`), et
+  impossible de retirer ces accès à un admin (bypass inconditionnel). Seuls `manage_drivers`,
+  `manage_vehicles`, `manage_missions`, `view_reports` (et `optimize`, hors de ce grep) sont de
+  vraies permissions granulaires fonctionnelles aujourd'hui.
+- **Non corrigé — arbitrage produit requis, pas un correctif technique autonome** : deux options
+  s'excluent mutuellement et changent le comportement de sécurité (élargir l'accès dispatcher pour
+  5 permissions, ou documenter/retirer le code mort) — décision volontairement non prise
+  unilatéralement dans cette session, cohérent avec la façon dont A2-A4 ont été traités
+  (arbitrages explicites, pas des corrections automatiques) :
+  - **Option 1** : retirer le garde `role !== 'admin'` de ces 9 endpoints et laisser
+    `hasPermission()` seul décider (comme `drivers`/`vehicles`/`missions`/`reports`) — ouvre la
+    possibilité qu'un dispatcher se voie accorder `manage_users`/`manage_settings`/
+    `manage_integrations`/`api_access`/`manage_exutoires` via `UserPermission`. Change le modèle
+    de sécurité : à valider explicitement (ces 5 permissions sont plus sensibles que
+    drivers/vehicles/missions/reports — `manage_users` en particulier touche à la gestion des
+    comptes).
+  - **Option 2** : retirer les appels `hasPermission()` désormais reconnus comme morts sur ces 9
+    endpoints (ou les commenter comme "intentionnellement inatteignable, admin-only strict") pour
+    ne pas laisser un futur développeur croire que la personnalisation par `UserPermission`
+    fonctionne pour ces 5 permissions alors qu'elle ne fonctionne pas.
+  - Statut : **documenté, non tranché**, flag levé explicitement dans le rapport final de cette
+    mission.
+- Suite complète après les 2 correctifs de gap réel : 199 fichiers / 3538 tests (+2), lint et
+  `tsc --noEmit` propres.

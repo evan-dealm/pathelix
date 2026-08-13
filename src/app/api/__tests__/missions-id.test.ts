@@ -192,6 +192,19 @@ describe('DELETE /api/missions/[id]', () => {
     expect(res.status).toBe(403)
   })
 
+  // Phase 0.2 (mutation-testing pass): the dispatcher test above is caught by the earlier
+  // `role === 'dispatcher'` check and never actually reaches hasPermission() — disabling
+  // hasPermission() entirely left every test in this describe block green. driver isn't
+  // caught by that earlier check, so this is the only test that actually exercises the
+  // hasPermission('manage_missions') branch.
+  it('returns 403 for driver role (only test that reaches hasPermission)', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'driver-del', role: 'driver', requestId: 'r' } as never)
+
+    const res = await DELETE(makeDelete('m-1'), makeParams('m-1'))
+    expect(res.status).toBe(403)
+    expect(deleteMission).not.toHaveBeenCalled()
+  })
+
   it('returns 404 when mission not found', async () => {
     vi.mocked(getMission).mockResolvedValue(null)
     vi.mocked(deleteMission).mockResolvedValue(false)
