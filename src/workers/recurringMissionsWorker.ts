@@ -12,14 +12,14 @@ const log = createLogger('recurringMissionsWorker')
 const QUEUE_NAME   = 'recurring-missions'
 const LOOKAHEAD_DAYS = 7
 
-interface RecurrenceRule {
+export interface RecurrenceRule {
   kind:       'daily' | 'weekly' | 'monthly'
   everyN?:    number
   weekDays?:  number[]
   dayOfMonth?: number
 }
 
-function toRRule(rule: RecurrenceRule, startDate: Date, endDate: Date | null): RRule {
+export function toRRule(rule: RecurrenceRule, startDate: Date, endDate: Date | null): RRule {
   const opts: ConstructorParameters<typeof RRule>[0] = {
     dtstart: startDate,
     until:   endDate ?? undefined,
@@ -73,13 +73,23 @@ export async function processRecurringMissions(_job: Job) {
       const dateStr = occ.toISOString().split('T')[0]
 
       try {
+        // A5 (AUDIT_BUGS.md N18): generatedFromTemplateId is the stable dedup key going forward.
+        // The old tenantId+date+address+type+clientName heuristic is kept as a fallback ONLY for
+        // missions created before this field existed (generatedFromTemplateId is null) — new
+        // missions are always linked, so they're deduped on the stable key from here on.
         const existing = await prisma.mission.findFirst({
           where: {
-            tenantId:   tpl.tenantId,
-            date:       dateStr,
-            address:    tpl.address,
-            type:       tpl.type as MissionType,
-            clientName: tpl.clientName || undefined,
+            tenantId: tpl.tenantId,
+            date:     dateStr,
+            OR: [
+              { generatedFromTemplateId: tpl.id },
+              {
+                generatedFromTemplateId: null,
+                address:    tpl.address,
+                type:       tpl.type as MissionType,
+                clientName: tpl.clientName || undefined,
+              },
+            ],
           },
           select: { id: true },
         })
@@ -105,6 +115,7 @@ export async function processRecurringMissions(_job: Job) {
             timeWindowOpenMin:   (tpl.timeWindow as { openMin?: number } | null)?.openMin,
             timeWindowCloseMin:  (tpl.timeWindow as { closeMin?: number } | null)?.closeMin,
             linkedExutoireId:    tpl.linkedExutoireId ?? undefined,
+            generatedFromTemplateId: tpl.id,
             notes:               `[Auto] Template: ${tpl.label}`,
           },
         })

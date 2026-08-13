@@ -122,4 +122,33 @@ describe('processRecurringMissions', () => {
 
     await expect(processRecurringMissions(FAKE_JOB)).resolves.toBeDefined()
   })
+
+  // Regression A5 (AUDIT_BUGS.md N18): new missions must carry a stable link to the template
+  // that generated them, so future runs can dedupe on that link instead of the fragile
+  // tenantId+date+address+type+clientName heuristic.
+  it('sets generatedFromTemplateId on newly created missions', async () => {
+    mockFindMany.mockResolvedValue([makeTemplate({ id: 'tpl-42' })])
+    mockFindFirst.mockResolvedValue(null)
+    mockCreate.mockResolvedValue({})
+
+    await processRecurringMissions(FAKE_JOB)
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ generatedFromTemplateId: 'tpl-42' }) }),
+    )
+  })
+
+  it('dedup query checks the stable link OR the legacy heuristic for unlinked missions', async () => {
+    mockFindMany.mockResolvedValue([makeTemplate({ id: 'tpl-42' })])
+    mockFindFirst.mockResolvedValue(null)
+    mockCreate.mockResolvedValue({})
+
+    await processRecurringMissions(FAKE_JOB)
+
+    const call = mockFindFirst.mock.calls[0][0]
+    expect(call.where.OR).toEqual([
+      { generatedFromTemplateId: 'tpl-42' },
+      expect.objectContaining({ generatedFromTemplateId: null, address: '1 rue Test', type: 'POSER', clientName: 'Client A' }),
+    ])
+  })
 })

@@ -241,6 +241,11 @@ model Mission {
   timeWindowOpenMin    Int?
   timeWindowCloseMin   Int?
   linkedExutoireId     String?
+  // A5 (AUDIT_BUGS.md N18): stable link to the MissionTemplate that generated this mission via
+  // recurringMissionsWorker.ts, replacing the old tenantId+date+address+type+clientName dedup
+  // heuristic. Null for manually-created missions and for missions generated before this field
+  // existed that couldn't be unambiguously backfilled.
+  generatedFromTemplateId String?
   archived             Boolean         @default(false)
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
@@ -277,6 +282,7 @@ model Mission {
   product              SiteProduct?    @relation(fields: [productId], references: [id], onDelete: SetNull)
   site                 Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
   tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  generatedFromTemplate MissionTemplate? @relation(fields: [generatedFromTemplateId], references: [id], onDelete: SetNull)
   comments             MissionComment[]
   proof                DeliveryProof?
   bsds                 Bsd[]
@@ -291,6 +297,7 @@ model Mission {
   @@index([siteId])
   @@index([tenantId, date, archived, priority])
   @@index([dependsOnId])
+  @@index([generatedFromTemplateId])
 }
 
 model MissionComment {
@@ -726,6 +733,7 @@ model MissionTemplate {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  generatedMissions    Mission[]
 
   @@index([tenantId])
   @@index([tenantId, enabled])
