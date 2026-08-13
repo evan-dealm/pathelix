@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { Driver, Mission, PlannedMission, MissionTemplate } from '@/lib/types'
+import type { Driver, Mission, PlannedMission } from '@/lib/types'
 import { idbStorage } from '@/lib/idbStorage'
 import { createLogger } from '@/lib/logger'
 
@@ -22,7 +22,6 @@ interface PlanningState {
   startTimes:  Record<string, string>
 
   speeds:      Record<string, number>
-  templates:   MissionTemplate[]
 
   unavailable: Record<string, boolean>
 
@@ -81,10 +80,6 @@ interface PlanningActions {
   togglePlanLock(_driverId: string, _date: string): void
   isPlanLocked(_driverId: string, _date: string): boolean
   copyPlansToDate(_fromDate: string, _toDate: string): void
-
-  addTemplate(_t: Omit<MissionTemplate, 'id'>): void
-  updateTemplate(_id: string, _changes: Partial<MissionTemplate>): void
-  removeTemplate(_id: string): void
 
   undo(): void
   redo(): void
@@ -225,7 +220,6 @@ export const usePlanningStore = create<PlanningStore>()(
       plans:       {},
       startTimes:  {},
       speeds:      {},
-      templates:   [],
       unavailable: {},
       lockedPlans: {},
       syncStatus:    'idle',
@@ -635,21 +629,6 @@ export const usePlanningStore = create<PlanningStore>()(
         })
       },
 
-      addTemplate(t) {
-        const id = genId()
-        set(state => ({ templates: [...state.templates, { ...t, id }] }))
-      },
-
-      updateTemplate(id, changes) {
-        set(state => ({
-          templates: state.templates.map(t => t.id === id ? { ...t, ...changes } : t),
-        }))
-      },
-
-      removeTemplate(id) {
-        set(state => ({ templates: state.templates.filter(t => t.id !== id) }))
-      },
-
       undo() {
         set(state => {
           if (state._historyIdx <= 0) return {}
@@ -758,7 +737,7 @@ export const usePlanningStore = create<PlanningStore>()(
 
       migrate: () => ({
         drivers: [], missions: [], plans: {}, startTimes: {},
-        speeds: {}, templates: [], unavailable: {}, lockedPlans: {},
+        speeds: {}, unavailable: {}, lockedPlans: {},
       }),
 
       partialize: (state) => {
@@ -793,7 +772,6 @@ export const usePlanningStore = create<PlanningStore>()(
           plans:       filteredPlans,
           startTimes:  filteredStartTimes,
           speeds:      state.speeds,
-          templates:   state.templates,
           unavailable: filteredUnavailable,
           lockedPlans: filteredLockedPlans,
         }
@@ -806,7 +784,6 @@ export const usePlanningStore = create<PlanningStore>()(
           ...p,
           drivers:     Array.isArray(p.drivers)     ? p.drivers     : [],
           missions:    Array.isArray(p.missions)    ? p.missions    : [],
-          templates:   Array.isArray(p.templates)   ? p.templates   : [],
           plans:       (p.plans       && typeof p.plans       === 'object') ? p.plans       : {},
           startTimes:  (p.startTimes  && typeof p.startTimes  === 'object') ? p.startTimes  : {},
           speeds:      (p.speeds      && typeof p.speeds      === 'object') ? p.speeds      : {},

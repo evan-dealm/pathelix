@@ -133,7 +133,6 @@ export function SettingsTab() {
   const storePlans = usePlanningStore(s => s.plans)
   const storeStartTimes = usePlanningStore(s => s.startTimes)
   const storeSpeeds = usePlanningStore(s => s.speeds)
-  const storeTemplates = usePlanningStore(s => s.templates)
   const storeUnavailable = usePlanningStore(s => s.unavailable)
   const storeLockedPlans = usePlanningStore(s => s.lockedPlans)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -236,7 +235,6 @@ export function SettingsTab() {
         plans:      storePlans,
         startTimes: storeStartTimes,
         speeds:     storeSpeeds,
-        templates:  storeTemplates,
         unavailable: storeUnavailable,
         lockedPlans: storeLockedPlans,
       }
@@ -279,7 +277,6 @@ export function SettingsTab() {
           plans:       data.plans       ?? {},
           startTimes:  data.startTimes  ?? {},
           speeds:      data.speeds      ?? {},
-          templates:   data.templates   ?? [],
           unavailable: data.unavailable ?? {},
           lockedPlans: data.lockedPlans ?? {},
         })

@@ -64,7 +64,6 @@ function resetStore() {
     plans:       {},
     startTimes:  {},
     speeds:      {},
-    templates:   [],
     unavailable: {},
     _history:    [],
     _historyIdx: -1,

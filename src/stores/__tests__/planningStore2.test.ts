@@ -1,6 +1,6 @@
 /**
  * Additional planningStore tests covering actions missing from planningStore.test.ts:
- * updateMission, addDriver family, bulk ops, lock, unavailable, templates, reorder,
+ * updateMission, addDriver family, bulk ops, lock, unavailable, reorder,
  * copyPlansToDate, updatePlannedMission, setManualStartMin, savePlansToDB.
  *
  * debouncedSyncPlan/debouncedSyncAllForDate are no-ops in Node (window undefined).
@@ -24,7 +24,7 @@ const DATE2 = '2026-03-19'
 function resetStore() {
   usePlanningStore.setState({
     drivers: [], missions: [], plans: {}, startTimes: {}, speeds: {},
-    templates: [], unavailable: {}, lockedPlans: {}, syncStatus: 'idle', lastSyncedAt: null,
+    unavailable: {}, lockedPlans: {}, syncStatus: 'idle', lastSyncedAt: null,
     _history: [], _historyIdx: -1,
   })
 }
@@ -215,37 +215,6 @@ describe('copyPlansToDate', () => {
     st().togglePlanLock('d-1', DATE2)
     st().copyPlansToDate(DATE, DATE2)
     expect(st().plans['d-1|2026-03-19']).toBeUndefined()
-  })
-})
-
-const BASE_TEMPLATE = {
-  label: 'Tournée A', enabled: true, type: 'POSER' as const,
-  recurrence: { kind: 'daily' as const, everyN: 1 },
-  address: '1 rue Test', latitude: 45.0, longitude: 5.0,
-  estimatedDurationMin: 30, maneuverTimeMin: 5,
-  startDate: '2026-01-01',
-}
-
-describe('addTemplate / updateTemplate / removeTemplate', () => {
-  it('addTemplate adds a template with generated id', () => {
-    st().addTemplate(BASE_TEMPLATE)
-    expect(st().templates).toHaveLength(1)
-    expect(st().templates[0].label).toBe('Tournée A')
-    expect(st().templates[0].id).toBeTruthy()
-  })
-
-  it('updateTemplate changes template fields', () => {
-    st().addTemplate(BASE_TEMPLATE)
-    const id = st().templates[0].id
-    st().updateTemplate(id, { label: 'Nouveau label' })
-    expect(st().templates[0].label).toBe('Nouveau label')
-  })
-
-  it('removeTemplate deletes the template', () => {
-    st().addTemplate(BASE_TEMPLATE)
-    const id = st().templates[0].id
-    st().removeTemplate(id)
-    expect(st().templates).toHaveLength(0)
   })
 })
 
