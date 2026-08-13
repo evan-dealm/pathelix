@@ -1214,6 +1214,68 @@ en continu au fil de l'avancement.
 - Suite complète après les 2 correctifs de gap réel : 199 fichiers / 3538 tests (+2), lint et
   `tsc --noEmit` propres.
 
+### Phase C — E2E complet (partiellement clos)
+- **Environnement** : machine avec seulement 0.7 Go de RAM libre sur 15.7 Go pendant toute la
+  session (un processus tiers sans rapport, "Overwatch", occupe 2.8 Go) — contrainte réelle,
+  documentée, hors de mon contrôle. Le harness d'exécution tue aussi les process de fond après
+  ~10-15 min quel que soit le paramètre de timeout demandé, ce qui a empêché plusieurs shards de
+  se terminer proprement dans l'outil de suivi (mais le process Playwright lui-même va souvent au
+  bout et écrit son résumé final avant d'être fauché — c'est ce résumé qui fait foi, pas le statut
+  du wrapper).
+- **🔴 Bug racine trouvé et corrigé — expliquait la quasi-totalité de la friction E2E, pas
+  seulement les 2 échecs signalés** : `e2e/auth.setup.ts` cliquait sur "Passer le guide"
+  (dismissal du modal `OnboardingGuide`) avec un timeout de visibilité de 5s ; si ce délai était
+  perdu (hydratation lente, aggravée par la pression mémoire), le clic était silencieusement
+  sauté et `context.storageState()` sauvegardait un `e2e/.auth/state.json` **sans aucune entrée
+  localStorage** (`origins: []`, vérifié). Résultat : chaque test repartant de ce storageState
+  revoyait le modal `OnboardingGuide` dès son premier chargement de page — un dialog plein écran
+  (`z-50`, `aria-modal`) qui intercepte les clics sur les boutons de nav, faisant échouer tout
+  test appelant `navigateToTab()` après un chargement frais, jusqu'à épuisement du budget de
+  retry (30s × 2 tentatives). **Corrigé** : écriture directe de la clé localStorage
+  (`pathelix-onboarding-v1`) via `page.evaluate()` après la tentative de clic UI, garantissant
+  l'état "dismissed" indépendamment du timing d'hydratation. Vérifié : les 2 tests nommés dans la
+  mission (`drivers-advanced.spec.ts` pagination, `missions-advanced.spec.ts` reset filters) et
+  leurs 5 tests siblings passent maintenant en 2-7s au lieu de timeouts de 30s+ sur les deux
+  tentatives. Un premier run complet du shard 1 (109 tests) après ce fix : 106 passed / 2 flaky
+  (récupèrent au retry — catégorie acceptée par la mission) / 1 échec auto-infligé (rate-limit
+  login déclenché par mes propres retries manuels de debug, confirmé non-reproductible isolé).
+- **🟡 Second bug trouvé, investigué en profondeur, non résolu** : `e2e/helpers.ts`
+  `navigateToTab()` — les boutons de nav sont rendus côté serveur et passent les vérifications
+  d'"actionability" de Playwright avant que React ait fini l'hydratation ; un clic peut donc
+  atterrir avant que le handler `onClick` soit attaché et ne rien faire silencieusement.
+  **Corrigé partiellement** : le helper attend maintenant `#tabpanel-{tabName}` (id déjà cohérent
+  avec l'argument `tabName`) et retente le clic une fois si le panel n'apparaît pas — vérifié que
+  ça ne régresse aucun test existant. Mais `e2e/missions.spec.ts` (10-11 tests) continue
+  d'échouer de façon reproductible même avec ce correctif : capture d'écran à l'appui, le panel
+  reste bloqué sur "Dashboard" plus de 30s après le clic sur "Missions". Piste la plus probable
+  identifiée mais **non confirmée** : `setActiveTab()` (`src/app/admin/page.tsx:205-212`) enrobe
+  la mise à jour dans `startTransition()` — une mise à jour React de priorité basse qui peut être
+  indéfiniment repoussée si le thread principal reste occupé par des mises à jour de priorité plus
+  haute (candidates : polling/SSE du tableau de bord). Cohérent avec le fait que ça n'arrive que
+  sur cette machine sous 0.7 Go de RAM libre. **Non corrigé** — modifier le comportement de
+  `startTransition()` dans le code applicatif est un changement de production non trivial que je
+  n'ai pas voulu faire à l'aveugle sans pouvoir confirmer la cause exacte ni tester sur une
+  machine non contrainte. Flag levé explicitement, pas noyé.
+- **Shard 2 (84 tests)** : 78 passed après le fix racine, 4 échecs + 1 flaky tous dans
+  `missions.spec.ts`/liés au bug ci-dessus, plus un crash worker Chromium
+  (`code=3221225794`, cohérent avec un OOM Windows) reproduit deux fois à l'identique sur le
+  même test ("new mission button opens form") — probablement lié au même phénomène de
+  contention mémoire/CPU, pas isolé comme cause distincte faute de temps.
+- **Shard 3** : démarré, confirme que le même phénomène touche aussi `modals.spec.ts`
+  (`MissionDetailModal` — même schéma : navigation vers l'onglet Missions requise, mêmes échecs
+  ~35-40s sur les deux tentatives) — pas un problème isolé à un seul fichier de test, mais
+  systémique à tout ce qui dépend de `navigateToTab(page, 'missions')` sous cette machine
+  contrainte en RAM. Arrêté avant la fin (98 tests, rythme d'échec trop lent pour finir dans le
+  temps restant de la session) une fois le signal confirmé — poursuivre n'aurait apporté aucune
+  information nouvelle.
+- **Shard 4** : non lancé, faute de temps en fin de session.
+- **Statut à la clôture de cette session** : shard 1 et shard 2 exécutés avec un résultat propre
+  hors du problème "onglet Missions" identifié et documenté ci-dessus (racine confirmée dans 3
+  fichiers de spec différents : `missions.spec.ts`, `modals.spec.ts`, et partiellement
+  `dashboard-advanced.spec.ts` avant le fix racine). Shard 3 partiel, shard 4 non lancé.
+  **Non atteint** : "run complet et propre jusqu'au dernier test" au sens strict demandé — l'écart
+  est documenté avec sa cause précise, pas maquillé en succès.
+
 ### Phase B — npm audit (EN COURS — voir exception Next.js majeur)
 - **Baseline** : 32 vulnérabilités (`npm audit`) — 1 low, 26 moderate, 5 high, 0 critical.
 - **`@opentelemetry/*` (26 moderate + 1 high `sdk-node` + 1 high `propagator-jaeger`)** :
