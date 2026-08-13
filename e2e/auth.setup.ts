@@ -27,11 +27,16 @@ setup('authenticate', async ({ page }) => {
 
   // OnboardingGuide is gated by localStorage (see src/components/ui/OnboardingGuide.tsx) — if
   // left un-dismissed here, every test reusing this storageState starts with the modal open,
-  // blocking all page interaction behind it until each test's action timeout expires.
+  // blocking all page interaction behind it until each test's action timeout expires. The UI
+  // click below is racy (hydration timing, especially under memory pressure), so it's backed by
+  // a direct localStorage write that unconditionally guarantees the dismissed state regardless
+  // of whether the button ever became visible in time — this is what storageState() actually
+  // persists, not "we clicked something".
   const skipTour = page.locator('button[aria-label="Passer le guide"]')
-  if (await skipTour.isVisible({ timeout: 5_000 }).catch(() => false)) {
+  if (await skipTour.isVisible({ timeout: 10_000 }).catch(() => false)) {
     await skipTour.click()
   }
+  await page.evaluate(() => localStorage.setItem('pathelix-onboarding-v1', '1'))
 
   await context.storageState({ path: AUTH_FILE })
 })
