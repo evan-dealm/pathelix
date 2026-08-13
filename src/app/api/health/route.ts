@@ -7,15 +7,17 @@ import { verifySession, SESSION_COOKIE } from '@/lib/session'
 const START_TIME = Date.now()
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const useMock     = process.env.USE_MOCK_DATA !== 'false'
-  const nessySecret = process.env.NESSY_WEBHOOK_SECRET ?? ''
-  const nessyOk     = Boolean(nessySecret) && nessySecret.length >= 16
+  const useMock = process.env.USE_MOCK_DATA !== 'false'
 
   let dbStatus: 'ok' | 'mock' | 'error' = useMock ? 'mock' : 'ok'
+  // A1 (AUDIT_BUGS.md M12): Nessy secrets are now per-tenant (Integration table), not a single
+  // global env var — "configured" means at least one tenant has an enabled Nessy integration.
+  let nessyOk = false
 
   if (!useMock) {
     try {
       await prisma.$queryRaw`SELECT 1`
+      nessyOk = (await prisma.integration.count({ where: { type: 'nessy', enabled: true } })) > 0
     } catch {
       dbStatus = 'error'
     }

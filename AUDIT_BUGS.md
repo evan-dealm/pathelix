@@ -131,15 +131,17 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
     appliquée : `prisma.driver.findMany({id:{in:[...]}, tenantId})`, lectures avec un `driverId`
     non résolu ignorées + `log.warn`. Ce n'était donc pas un choix de conception à trancher, juste
     le même bug que N19 sous une autre forme.
-  - **OBD générique** (`src/app/api/webhooks/obd/route.ts`) : **reste non corrigé, intentionnellement**
-    — cas structurellement différent. Il n'y a AUCUNE résolution de tenant du tout : un seul secret
-    global (`OBD_WEBHOOK_TOKEN`) pour tous les tenants, donc même en validant `driverId` contre un
-    tenant on ne saurait pas CONTRE QUEL tenant le valider. Corriger ça nécessite une vraie décision
-    produit (un secret par tenant ? un `tenantId` dans le payload signé côté device ? le matériel
-    OBD visé est-il par nature mono-tenant, auquel cas le risque est peut-être déjà acceptable ?)
-    — décision non prise unilatéralement, laissée pour validation utilisateur.
-  - Tests ajoutés (`integrations.test.ts`, +4 : 2 par webhook — un cas rejeté, un cas accepté —
-    vérifiés en échouant sans le correctif pour les 2 cas "rejeté").
+  - **OBD générique** (`src/app/api/webhooks/obd/route.ts`) : ✅ **corrigé + testé (A1)** — décision
+    tranchée par l'utilisateur : secret partagé est un vrai risque d'isolation, point final. Même
+    architecture que Geotab/Samsara/Nessy : le webhook résout maintenant le tenant en trouvant
+    quelle intégration `type:"obd"` activée possède le secret (`config.webhookSecret`) fourni en
+    Bearer, puis valide chaque `driverId` contre CE tenant avant d'enregistrer (même pattern que
+    N19/Geotab/Samsara). Nouveau type `obd` ajouté au catalogue `/api/integrations` +
+    `/api/integrations/test`. `OBD_WEBHOOK_TOKEN` (variable globale) n'est plus lu du tout —
+    breaking change documenté dans `docs/04_API_INTEGRATIONS.md` et `CLAUDE.md`.
+  - Tests ajoutés (`integrations.test.ts` +4 pour Geotab/Samsara déjà en place ; `superadmin-trades-
+    obd.test.ts` réécrit pour OBD — secret par tenant + driverId hors-tenant rejeté, tous vérifiés
+    en échouant contre l'ancien code).
 
 ### M4 — Aucune isolation par tentative/template dans le worker de missions récurrentes
 - **Fichier** : `src/workers/recurringMissionsWorker.ts:57-111`
@@ -396,7 +398,23 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   défendable. **Je ne peux pas trancher sans confirmation humaine.**
 - **Correction proposée (si secret partagé confirmé problématique)** : secret HMAC par tenant
   (`NessyIntegration.webhookSecret` chiffré, pattern déjà utilisé pour Geotab/Samsara).
-- **Statut** : à valider par l'utilisateur avant toute correction (question produit, pas bug pur)
+- **Statut** : ✅ **corrigé + testé (A1)** — décision tranchée par l'utilisateur : secret partagé +
+  tenant auto-déclaré est un vrai risque d'isolation sur un SaaS multi-tenant, point final, pas un
+  compromis acceptable. Aucune migration de schéma nécessaire — `Integration` (déjà utilisé par
+  Geotab/Samsara) supportait déjà `type:"nessy"` dans le catalogue `/api/integrations` et son
+  validateur `/api/integrations/test`, juste jamais branché côté webhook. Le tenant est maintenant
+  résolu en cherchant quelle intégration Nessy activée vérifie la signature HMAC de la requête —
+  plus jamais depuis `x-tenant-id`. `NESSY_WEBHOOK_SECRET` (variable globale) déclenche seulement
+  un `log.warn` de dépréciation si encore définie, ne participe plus à l'authentification.
+  `/api/health` : le check `nessySecret` reflète maintenant "au moins un tenant a une intégration
+  Nessy activée" (compte DB) au lieu de "la variable d'env globale est définie".
+  **Breaking change documenté** dans `docs/04_API_INTEGRATIONS.md` (procédure : chaque tenant
+  utilisant Nessy doit configurer son propre secret via l'onglet Intégrations puis reconfigurer
+  son ERP pour signer avec ce nouveau secret — sans cette migration, `401 Signature invalide`).
+  Tests : `webhooks-nessy-obd.test.ts` réécrit en profondeur (résolution multi-tenant, config
+  indéchiffrable d'un tenant n'empêche pas les autres, aucune intégration configurée → 401),
+  `nessy.test.ts` mis à jour pour le nouveau warning de dépréciation. Tous vérifiés en échouant
+  contre l'ancien code (23 échecs sur les 2 fichiers webhook avant restauration du correctif).
 
 ---
 
@@ -629,13 +647,31 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
   silencieusement ignoré ; une mission manuelle avec la même signature supprime la génération
   auto du jour.
 - **Correction proposée** : ajouter un champ `generatedFromTemplateId` sur `Mission`.
-- **Statut** : **reporté, non corrigé dans cette session** — nécessite une migration de schéma
-  (`prisma migrate dev`) sur un modèle en production (`Mission`), ce qui dépasse le périmètre d'un
-  correctif ponctuel de Phase 2 : la correction "propre" change la forme des données existantes et
-  mérite sa propre revue (impact sur les migrations déjà appliquées, backfill des missions
-  récurrentes déjà générées). Le risque réel reste modéré — dédup silencieuse uniquement en cas de
-  collision exacte `tenantId+date+address+type+clientName`, un scénario rare en usage normal — donc
-  pas un bloquant pour le pilote. À traiter comme un chantier dédié, pas glissé dans Phase 4.
+- **Statut** : ✅ **corrigé + testé (A5)** — décision tranchée par l'utilisateur en session de
+  clôture d'audit : traiter maintenant plutôt que reporter indéfiniment.
+  - **Migration** : `generatedFromTemplateId String?` ajouté sur `Mission`, relation optionnelle
+    vers `MissionTemplate` (`onDelete: SetNull`), index dédié. Migration additive pure (colonne
+    nullable, pas de `NOT NULL`, pas de drop) — appliquée en dev, vérifiée sans perte de données
+    (1706 lignes `Mission` avant/après, `SELECT count(*)` identique).
+  - **Backfill** (`prisma/backfill-generatedFromTemplateId.ts`, `npm run
+    db:backfill-template-links`) : pour chaque `Mission` sans lien, calcule les occurrences
+    RRule historiques de chaque `MissionTemplate` (même logique `toRRule` que le worker, exportée
+    depuis `recurringMissionsWorker.ts`) et cherche un match tenantId+date+address+type+
+    clientName. Ne lie QUE si le match est non-ambigu (exactement un template candidat) — laisse
+    `null` sinon plutôt que deviner. Logique pure testée isolément
+    (`src/lib/recurringTemplateBackfill.ts` + test, 6 cas dont l'ambiguïté et le cross-tenant).
+    Exécuté en dev : 0 template existant → 0 lien créé, 1706 lignes intactes (comportement
+    attendu, pas un échec).
+  - **Worker** : `recurringMissionsWorker.ts` écrit désormais `generatedFromTemplateId` sur
+    chaque mission créée, et déduplique sur `generatedFromTemplateId = tpl.id` en priorité, avec
+    repli sur l'ancienne heuristique UNIQUEMENT pour les missions dont `generatedFromTemplateId`
+    est encore `null` (créées avant la migration/backfill). Les nouvelles missions ne peuvent donc
+    plus jamais retomber dans le cas ambigu d'origine.
+  - Tests : `recurringMissionsWorker.test.ts` +2 (generatedFromTemplateId posé à la création,
+    requête de dédup contient bien le OR stable/heuristique), `recurringTemplateBackfill.test.ts`
+    +6 (match non-ambigu, hors-fenêtre RRule, signature différente, ambiguïté explicite,
+    cross-tenant, règle de récurrence invalide). Les 2 tests worker vérifiés en échouant contre le
+    code d'avant le correctif.
 
 ### N19 — Modèles avec `driverId` sans relation Prisma (pas de FK)
 - **Fichier** : `prisma/schema.prisma` — `FuelRecord.driverId`, `DeliveryProof.driverId`,

@@ -8,6 +8,9 @@ const { mockPrisma } = vi.hoisted(() => {
   process.env.NESSY_WEBHOOK_SECRET = 'test-secret-health-ok'
   const mockPrisma = {
     $queryRaw: vi.fn(),
+    // Default to "at least one tenant has a Nessy integration configured" so these unrelated
+    // tests get a healthy baseline (matches the old env-var-based workaround this replaced).
+    integration: { count: vi.fn(() => Promise.resolve(1)) },
     vehicle: {
       findMany:   vi.fn(),
       findFirst:  vi.fn(),

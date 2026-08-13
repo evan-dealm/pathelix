@@ -10,19 +10,26 @@ const NESSY_BASE_URL    = process.env.NESSY_BASE_URL ?? ''
 const NESSY_API_KEY     = process.env.NESSY_API_KEY  ?? ''
 const NESSY_BREAKER     = 'nessy'
 
+// A1 (AUDIT_BUGS.md M12): deprecated — /api/webhooks/nessy no longer reads a single global
+// secret. Each tenant configures its own Nessy webhook secret via the Integration table
+// (POST /api/integrations, type "nessy"), and the webhook resolves the tenant by finding which
+// integration's secret verifies the request signature. Kept only so an operator's NESSY_WEBHOOK_SECRET
+// env var doesn't silently vanish without an explanation of what replaced it.
 const DEFAULT_NESSY_SECRET = 'dev-secret-change-me-in-production'
 
+/** @deprecated no longer used for webhook auth — see per-tenant Integration config above */
 export const NESSY_WEBHOOK_SECRET =
   process.env.NESSY_WEBHOOK_SECRET ?? DEFAULT_NESSY_SECRET
 
+/** @deprecated no longer used for webhook auth — see per-tenant Integration config above */
 export const IS_DEV_SECRET =
   NESSY_WEBHOOK_SECRET === DEFAULT_NESSY_SECRET
 
-if (process.env.NODE_ENV === 'production' && IS_DEV_SECRET) {
-  log.error(
-    'NESSY_WEBHOOK_SECRET est le secret par défaut en production ! ' +
-    'Le webhook Nessy sera désactivé (HTTP 503). ' +
-    'Définissez NESSY_WEBHOOK_SECRET dans vos variables d\'environnement.',
+if (process.env.NESSY_WEBHOOK_SECRET) {
+  log.warn(
+    'NESSY_WEBHOOK_SECRET est défini mais n\'est plus utilisé — le webhook Nessy authentifie ' +
+    'désormais chaque tenant via son propre secret configuré dans Intégrations (type "nessy"). ' +
+    'Cette variable d\'environnement peut être retirée.',
   )
 }
 

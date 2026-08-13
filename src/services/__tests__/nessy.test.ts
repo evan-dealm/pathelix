@@ -156,35 +156,58 @@ describe('nessyPayloadToMission', () => {
   })
 })
 
-describe('module-level production warning', () => {
+describe('module-level deprecated env var warning', () => {
   afterEach(async () => {
     vi.doUnmock('@/lib/logger')
     vi.resetModules()
   })
 
-  it('logs error when NODE_ENV is production and default webhook secret is used', async () => {
-    const capturedErrors: string[] = []
+  // A1 (AUDIT_BUGS.md M12): NESSY_WEBHOOK_SECRET no longer gates webhook auth (that's per-tenant
+  // via Integration now) — it just warns if still set, since it's a no-op that can be removed.
+  it('warns when NESSY_WEBHOOK_SECRET is still set (deprecated, no longer used for auth)', async () => {
+    const capturedWarnings: string[] = []
     vi.doMock('@/lib/logger', () => ({
       createLogger: () => ({
-        error: (...args: unknown[]) => capturedErrors.push(String(args[0])),
+        error: vi.fn(),
         info:  vi.fn(),
-        warn:  vi.fn(),
+        warn:  (...args: unknown[]) => capturedWarnings.push(String(args[0])),
         debug: vi.fn(),
       }),
     }))
 
     const env = process.env as Record<string, string | undefined>
-    const origKey     = env.NESSY_WEBHOOK_SECRET
-    const origNodeEnv = env.NODE_ENV
-    delete env.NESSY_WEBHOOK_SECRET
-    env.NODE_ENV = 'production'
+    const origKey = env.NESSY_WEBHOOK_SECRET
+    env.NESSY_WEBHOOK_SECRET = 'some-secret-still-set'
 
     vi.resetModules()
     await import('@/services/nessy')
 
-    env.NODE_ENV = origNodeEnv
+    if (origKey !== undefined) env.NESSY_WEBHOOK_SECRET = origKey
+    else delete env.NESSY_WEBHOOK_SECRET
+
+    expect(capturedWarnings.some(e => e.includes('NESSY_WEBHOOK_SECRET'))).toBe(true)
+  })
+
+  it('does not warn when NESSY_WEBHOOK_SECRET is unset', async () => {
+    const capturedWarnings: string[] = []
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({
+        error: vi.fn(),
+        info:  vi.fn(),
+        warn:  (...args: unknown[]) => capturedWarnings.push(String(args[0])),
+        debug: vi.fn(),
+      }),
+    }))
+
+    const env = process.env as Record<string, string | undefined>
+    const origKey = env.NESSY_WEBHOOK_SECRET
+    delete env.NESSY_WEBHOOK_SECRET
+
+    vi.resetModules()
+    await import('@/services/nessy')
+
     if (origKey !== undefined) env.NESSY_WEBHOOK_SECRET = origKey
 
-    expect(capturedErrors.some(e => e.includes('NESSY_WEBHOOK_SECRET'))).toBe(true)
+    expect(capturedWarnings.some(e => e.includes('NESSY_WEBHOOK_SECRET'))).toBe(false)
   })
 })

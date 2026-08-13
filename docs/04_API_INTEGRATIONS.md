@@ -341,12 +341,24 @@ POST /api/webhooks/nessy
 ```
 
 - **Auth** : HMAC-SHA256 sur le body. Header : `x-nessy-signature: sha256=<hex>`
-- **Tenant** : identifié par `x-tenant-id` (exempt du strip middleware)
-- **Secret** : `NESSY_WEBHOOK_SECRET`
+- **Secret** : par tenant, configuré via `/api/integrations` (type `nessy`, champ `webhookSecret`,
+  chiffré en base — voir `configCrypto.ts`), **pas** une variable d'environnement globale
+- **Tenant** : résolu automatiquement en trouvant quelle intégration Nessy activée vérifie la
+  signature de la requête — **jamais** déduit d'un header `x-tenant-id` fourni par l'appelant
+  (correctif A1/M12, voir `AUDIT_BUGS.md` — l'ancien design faisait confiance à un secret unique
+  partagé entre tous les tenants + un tenant auto-déclaré par l'appelant, ce qui permettait à
+  n'importe qui connaissant le secret global d'usurper n'importe quel tenant)
 - **Idempotence** : déduplication SHA-256 + Redis (évite le re-traitement des replays)
 - **Payload** : `{ missions: [...], sentAt: ISO8601 }`
 - **Validation** : timestamp `sentAt` ≤ 5 min, batch ≤ 500 missions
 - **Réponse** : `200 { received: N }` ou `200 { deduplicated: true }`
+
+**⚠️ Breaking change (A1)** : `NESSY_WEBHOOK_SECRET` (variable d'environnement globale) n'est
+plus utilisée pour l'authentification du webhook. Chaque tenant utilisant Nessy doit configurer
+son propre secret via l'onglet Intégrations de l'admin (ou `POST /api/integrations` avec
+`{type:"nessy", config:{webhookSecret:"..."}}`), puis reconfigurer son côté Nessy/ERP pour signer
+avec ce nouveau secret propre au tenant. Sans cette migration, le webhook Nessy de ce tenant
+renverra `401 Signature invalide` pour toute requête.
 
 ### OBD (télématique)
 
@@ -354,10 +366,22 @@ POST /api/webhooks/nessy
 POST /api/webhooks/obd
 ```
 
-- **Auth** : Bearer token. Header : `Authorization: Bearer <OBD_WEBHOOK_TOKEN>`
+- **Auth** : Bearer token. Header : `Authorization: Bearer <secret>`
+- **Secret** : par tenant, configuré via `/api/integrations` (type `obd`, champ `webhookSecret`,
+  chiffré en base), **pas** une variable d'environnement globale — même pattern que Nessy/Geotab/
+  Samsara
+- **Tenant** : résolu en trouvant quelle intégration OBD activée possède le secret fourni ; chaque
+  `driverId` du payload est ensuite vérifié comme appartenant à ce tenant avant tout enregistrement
+  (correctif A1/M3 — avant cela, n'importe quel `driverId` de n'importe quel tenant pouvait être
+  écrit par quiconque connaissait le token global unique)
 - **Payload** : `{ driverId, lat, lng, speedKmh, timestamp? }`
 - **Stockage** : in-memory `obdStore` (pruné automatiquement après 500 lectures par driver)
 - **Rate limit** : appliqué via `createRateLimiter`
+
+**⚠️ Breaking change (A1)** : `OBD_WEBHOOK_TOKEN` (variable d'environnement globale) n'est plus
+utilisée. Chaque tenant utilisant l'intégration OBD générique doit configurer son propre secret via
+l'onglet Intégrations, puis reconfigurer son boîtier/passerelle OBD pour envoyer ce token propre au
+tenant en header `Authorization: Bearer <secret>`.
 
 ### Geotab
 
@@ -408,13 +432,13 @@ POST /api/ai/callback
 |-------------|-----------|--------|
 | **Geotab** | Webhook entrant + API key | Via `/api/integrations` + `GEOTAB_API_KEY` |
 | **Samsara** | Webhook entrant + API key | Via `/api/integrations` + `SAMSARA_API_KEY` |
-| **OBD générique** | Webhook entrant Bearer | `OBD_WEBHOOK_TOKEN` |
+| **OBD générique** | Webhook entrant Bearer | Via `/api/integrations` (type `obd`, secret par tenant) |
 
 ### ERP / Métier
 
 | Intégration | Mécanisme | Config |
 |-------------|-----------|--------|
-| **Nessy** | Webhook entrant HMAC | `NESSY_WEBHOOK_SECRET` |
+| **Nessy** | Webhook entrant HMAC | Via `/api/integrations` (type `nessy`, secret par tenant) |
 | **Trackdéchets** | API GraphQL + webhooks | `TRACKDECHETS_API_URL` + token chiffré par tenant |
 
 ### IA / ML
@@ -478,8 +502,8 @@ POST /api/ai/callback
 
 | Variable | Description |
 |----------|-------------|
-| `NESSY_WEBHOOK_SECRET` | Secret HMAC-SHA256 pour webhook Nessy |
-| `OBD_WEBHOOK_TOKEN` | Bearer token pour webhook OBD |
+| `NESSY_WEBHOOK_SECRET` | **Dépréciée (A1)** — n'authentifie plus le webhook, secret désormais par tenant via `/api/integrations` |
+| `OBD_WEBHOOK_TOKEN` | **Dépréciée (A1)** — n'authentifie plus le webhook, secret désormais par tenant via `/api/integrations` |
 | `AI_CALLBACK_SECRET` | Secret HMAC pour callback AI Engine |
 | `TRACKDECHETS_API_URL` | URL API Trackdéchets (`sandbox.` ou `api.` — défaut sandbox) |
 

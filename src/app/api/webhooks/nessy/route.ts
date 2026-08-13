@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { enqueueMission } from '@/lib/missionQueue'
-import {
-  verifyNessySignature,
-  nessyPayloadToMission,
-  NESSY_WEBHOOK_SECRET,
-  IS_DEV_SECRET,
-} from '@/services/nessy'
+import { verifyNessySignature, nessyPayloadToMission } from '@/services/nessy'
 import type { NessyWebhookBody } from '@/services/nessy'
 import { createLogger } from '@/lib/logger'
 import { redisCache } from '@/lib/redisCache'
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
+import { decryptConfig } from '@/lib/configCrypto'
+import prisma from '@/lib/db'
 
 const DEDUP_TTL_MS = 10 * 60 * 1000
 
@@ -24,13 +21,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Trop de requêtes' }, { status: 429 })
   }
 
-  if (process.env.NODE_ENV === 'production' && IS_DEV_SECRET) {
-    return NextResponse.json(
-      { error: 'Webhook non configuré — secret par défaut détecté en production' },
-      { status: 503 },
-    )
-  }
-
   let rawBody: string
   try {
     rawBody = await req.text()
@@ -39,8 +29,37 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const signature = req.headers.get('x-nessy-signature') ?? ''
-  const valid = await verifyNessySignature(rawBody, signature, NESSY_WEBHOOK_SECRET)
-  if (!valid) {
+
+  // M12/A1 (AUDIT_BUGS.md): the tenant is now resolved by finding which tenant's own secret
+  // verifies this signature — never trusted from a client-supplied x-tenant-id header anymore.
+  // Mirrors the Geotab/Samsara per-tenant integration secret pattern (see N15 fix). Each
+  // candidate is checked sequentially (verifyNessySignature is async, unlike Geotab's
+  // synchronous apiKeyMatches, so this can't be a plain Array.find()).
+  const integrations = await prisma.integration.findMany({
+    where: { type: 'nessy', enabled: true },
+    select: { tenantId: true, config: true },
+  })
+
+  let tenantId: string | null = null
+  for (const integration of integrations) {
+    try {
+      const cfg = decryptConfig(integration.config)
+      const secret = String(cfg.webhookSecret ?? cfg.secret ?? '')
+      if (!secret) continue
+      if (await verifyNessySignature(rawBody, signature, secret)) {
+        tenantId = integration.tenantId
+        break
+      }
+    } catch (err) {
+      // A single tenant's corrupted/undecryptable config must not crash auth for every other
+      // tenant's valid Nessy integration — skip it and keep looking.
+      log.warn('Failed to decrypt integration config — skipping', {
+        tenantId: integration.tenantId, err: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  if (!tenantId) {
     return NextResponse.json({ error: 'Signature invalide' }, { status: 401 })
   }
 
@@ -68,25 +87,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { error: `Trop de missions (max ${MAX_WEBHOOK_BATCH} par requête)` },
       { status: 400 },
     )
-  }
-
-  const tenantId = req.headers.get('x-tenant-id')
-  if (!tenantId) {
-    return NextResponse.json(
-      { error: 'En-tête X-Tenant-Id requis pour identifier le tenant' },
-      { status: 400 },
-    )
-  }
-
-  try {
-    const { default: prisma } = await import('@/lib/db')
-    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } })
-    if (!tenant) {
-      return NextResponse.json({ error: 'Tenant inconnu' }, { status: 403 })
-    }
-  } catch (err) {
-    log.error('Tenant validation failed', { tenantId, err: err instanceof Error ? err.message : String(err) })
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 
   const payloadHash = createHash('sha256').update(rawBody).digest('hex')

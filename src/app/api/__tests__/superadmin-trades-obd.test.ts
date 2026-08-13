@@ -28,6 +28,8 @@ const mockTradeUpdate     = vi.hoisted(() => vi.fn())
 const mockTradeFindUnique = vi.hoisted(() => vi.fn())
 const mockTenantCount     = vi.hoisted(() => vi.fn())
 const mockTradeDelete     = vi.hoisted(() => vi.fn())
+const mockIntegrationFindMany = vi.hoisted(() => vi.fn())
+const mockDriverFindMany      = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/db', () => ({
   default: {
     customTrade: {
@@ -35,7 +37,9 @@ vi.mock('@/lib/db', () => ({
       findUnique: mockTradeFindUnique,
       delete:     mockTradeDelete,
     },
-    tenant: { count: mockTenantCount },
+    tenant:      { count: mockTenantCount },
+    integration: { findMany: mockIntegrationFindMany },
+    driver:      { findMany: mockDriverFindMany },
   },
 }))
 
@@ -198,28 +202,35 @@ describe('DELETE /api/superadmin/trades/[id]', () => {
 })
 
 // ─── POST /api/webhooks/obd ───────────────────────────────────────────────────
+// A1 (AUDIT_BUGS.md M3/M12): OBD auth moved from a single global OBD_WEBHOOK_TOKEN env var to a
+// per-tenant secret configured via Integration (type "obd"), matched the same way as
+// Geotab/Samsara/Nessy. driverId is also now checked against the resolved tenant (mockDriverFindMany).
+
+const OBD_INTEGRATION = { tenantId: 'tenant-obd-1', config: { webhookSecret: 'secret-obd-token' } }
 
 describe('POST /api/webhooks/obd', () => {
-  it('returns 503 when OBD_WEBHOOK_TOKEN not configured', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', '')
+  beforeEach(() => {
+    mockIntegrationFindMany.mockResolvedValue([OBD_INTEGRATION])
+    mockDriverFindMany.mockResolvedValue([{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }, { id: 'd5' }])
+  })
+
+  it('returns 401 when no integration secret matches the Bearer token', async () => {
+    mockIntegrationFindMany.mockResolvedValue([])
     const res = await obdPOST(makeOBD({ driverId: 'd1', lat: 48.85, lng: 2.35, speedKmh: 50 }, ''))
-    expect(res.status).toBe(503)
+    expect(res.status).toBe(401)
   })
 
   it('returns 401 when Bearer token is wrong', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     const res = await obdPOST(makeOBD({ driverId: 'd1', lat: 48.85, lng: 2.35, speedKmh: 50 }, 'wrong'))
     expect(res.status).toBe(401)
   })
 
   it('returns 422 on invalid payload (lat out of range)', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     const res = await obdPOST(makeOBD({ driverId: 'd1', lat: 200, lng: 2.35, speedKmh: 50 }))
     expect(res.status).toBe(422)
   })
 
   it('records single OBD reading and returns 200', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     const res = await obdPOST(makeOBD({ driverId: 'd1', lat: 48.85, lng: 2.35, speedKmh: 45, ignition: true }))
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -230,7 +241,6 @@ describe('POST /api/webhooks/obd', () => {
   })
 
   it('records batch OBD readings', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     const batch = [
       { driverId: 'd1', lat: 48.85, lng: 2.35, speedKmh: 50 },
       { driverId: 'd2', lat: 48.86, lng: 2.36, speedKmh: 30 },
@@ -242,9 +252,23 @@ describe('POST /api/webhooks/obd', () => {
     expect(body.count).toBe(3)
     expect(mockRecordOBD).toHaveBeenCalledTimes(3)
   })
+
+  it('skips a reading whose driverId does not belong to the resolved tenant', async () => {
+    mockDriverFindMany.mockResolvedValue([]) // d1 doesn't resolve for tenant-obd-1
+    const res = await obdPOST(makeOBD({ driverId: 'd1', lat: 48.85, lng: 2.35, speedKmh: 50 }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.count).toBe(0)
+    expect(mockRecordOBD).not.toHaveBeenCalled()
+  })
 })
 
 describe('POST /api/webhooks/obd — additional branches', () => {
+  beforeEach(() => {
+    mockIntegrationFindMany.mockResolvedValue([OBD_INTEGRATION])
+    mockDriverFindMany.mockResolvedValue([{ id: 'd1' }, { id: 'd5' }])
+  })
+
   afterEach(() => {
     // Restore default rate limiter mock after any doMock overrides
     vi.doMock('@/lib/rateLimit', () => ({
@@ -255,7 +279,6 @@ describe('POST /api/webhooks/obd — additional branches', () => {
   })
 
   it('returns 429 when rate limiter rejects request', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     vi.doMock('@/lib/rateLimit', () => ({
       createRateLimiter: () => ({ check: vi.fn(async () => false) }),
       getClientIp: vi.fn(() => '127.0.0.1'),
@@ -267,7 +290,6 @@ describe('POST /api/webhooks/obd — additional branches', () => {
   })
 
   it('returns 400 when body is invalid JSON (catch branch)', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     vi.resetModules()
     const { POST: freshPost } = await import('@/app/api/webhooks/obd/route')
     const req = new NextRequest('http://localhost/api/webhooks/obd', {
@@ -280,7 +302,6 @@ describe('POST /api/webhooks/obd — additional branches', () => {
   })
 
   it('records reading with explicit timestamp (r.timestamp ?? now — truthy branch)', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     vi.resetModules()
     const { POST: freshPost } = await import('@/app/api/webhooks/obd/route')
     const ts = 1_700_000_000
@@ -290,7 +311,6 @@ describe('POST /api/webhooks/obd — additional branches', () => {
   })
 
   it('calls pruneOldOBDData after 500 readings (_pruneCounter branch)', async () => {
-    vi.stubEnv('OBD_WEBHOOK_TOKEN', 'secret-obd-token')
     vi.resetModules()
     const { POST: freshPost } = await import('@/app/api/webhooks/obd/route')
     const reading = { driverId: 'd1', lat: 48.85, lng: 2.35, speedKmh: 50 }

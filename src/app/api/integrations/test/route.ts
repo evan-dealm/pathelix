@@ -83,6 +83,7 @@ async function testIntegration(type: string, config: Record<string, unknown>): P
     case 'sage':        return testAPIKey(config, 'Sage')
     case 'sap':         return testSAP(config)
     case 'nessy':       return testSecret(config, 'Nessy')
+    case 'obd':         return testSecret(config, 'OBD')
     case 'slack':       return testWebhook(config, 'Slack')
     case 'teams':       return testWebhook(config, 'Teams')
     case 'twilio_sms':  return testTwilio(config)

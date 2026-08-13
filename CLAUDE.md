@@ -97,12 +97,15 @@ if (!parsed.success) return NextResponse.json({ error: parsed.error.format() }, 
 
 | Webhook | Auth mechanism |
 |---------|----------------|
-| Nessy | HMAC-SHA256 (`NESSY_WEBHOOK_SECRET`) |
-| OBD | Bearer token (`OBD_WEBHOOK_TOKEN`) |
-| Geotab | API key in header |
-| Samsara | API key in header |
+| Nessy | HMAC-SHA256, secret per tenant via `/api/integrations` (type `nessy`) |
+| OBD | Bearer token, secret per tenant via `/api/integrations` (type `obd`) |
+| Geotab | API key per tenant via `/api/integrations` (type `geotab`) |
+| Samsara | API key per tenant via `/api/integrations` (type `samsara`) |
 
-Nessy webhook preserves `x-tenant-id` from caller (exempt from middleware header strip).
+All four resolve the tenant by finding which enabled integration's own secret/key matches the
+request — never from a client-supplied header. `NESSY_WEBHOOK_SECRET` / `OBD_WEBHOOK_TOKEN` env
+vars are deprecated (A1 fix, see `AUDIT_BUGS.md` M12/M3) — a single shared secret + a
+client-asserted tenant is a real cross-tenant risk, not an acceptable tradeoff.
 
 ## Dev commands
 

@@ -15,6 +15,7 @@ const INTEGRATION_TYPES = [
 
   { type: 'geotab',          name: 'Geotab',               description: 'Telematique universelle — positions GPS et donnees moteur via boitier OBD', category: 'telemetry' },
   { type: 'samsara',         name: 'Samsara',              description: 'GPS + cameras embarquees + suivi temperature', category: 'telemetry' },
+  { type: 'obd',             name: 'OBD generique',        description: 'Positions GPS/vitesse depuis un boitier OBD generique, un token webhook par tenant', category: 'telemetry' },
 
   { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Reception automatique des missions depuis Nessy via webhook HMAC-SHA256', category: 'erp' },
   { type: 'sage',            name: 'Sage Comptabilite',    description: 'Export automatique des tournees vers la comptabilite', category: 'erp' },
