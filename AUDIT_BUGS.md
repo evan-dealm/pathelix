@@ -1261,3 +1261,38 @@ en continu au fil de l'avancement.
 - **Résultat après cette phase (hors branche Next.js majeur)** : 32 → 6 vulnérabilités restantes
   (1 low accepté non-exploitable, 2 moderate acceptés non-exploitables, 3 high bloquées par le
   bump Next.js majeur). `npm audit` critique : 0 avant et après.
+- **Commit** : `7b20305`
+
+#### Exception Next.js majeur (branche `next-16-major-bump`, NON MERGÉE — BLOQUÉE)
+- Bump tenté : `next@15.5.23` → `16.3.0` (dernière stable), ferme les 3 vulnérabilités high
+  restantes (`next`, `postcss` via next, la copie `sharp` imbriquée dans
+  `node_modules/next/node_modules/sharp` qui restait à 0.34.5 malgré le bump direct de la Phase B
+  — `next` pinne `sharp: ^0.34.3` en interne, indépendant de la version racine).
+- **`tsc --noEmit`** : propre. **Suite de tests** : 199 fichiers / 3538 tests, tous verts sans
+  modification. **`next build`** : compile et build avec succès (97 pages statiques générées).
+- **Casse trouvée et corrigée sur la branche** : `npm run lint` (`next lint`) est **totalement
+  supprimé** dans Next 16 (pas juste déprécié — la commande casse avec "Invalid project directory
+  provided, no such directory: lint"). Script `package.json` `"lint"` changé de `"next lint"` vers
+  `"eslint src"` (portée identique à l'ancien comportement par défaut de `next lint`, vérifié :
+  sortie identique, 0 erreur/warning). Ce correctif est sûr et indépendant du reste — mais reste
+  sur la branche bloquée puisqu'il n'a de sens qu'accompagné du bump `next`.
+- **🛑 BLOQUANT trouvé, NON contourné (conforme à l'instruction explicite de m'arrêter plutôt que
+  de router autour d'un breaking change touchant middleware/App Router)** : le build émet
+  `⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.` —
+  `src/middleware.ts` est le fichier **le plus sensible en sécurité** du projet (invariant #2 de
+  CLAUDE.md : garde de route, strip des headers spoofés `x-user-id`/`x-user-role`/`x-tenant-id`,
+  vérification JWT, ré-injection). Il continue de fonctionner aujourd'hui via la couche de
+  compatibilité de Next 16 (la suite de 27 tests `middleware.test.ts` passe sans modification), et
+  un codemod existe (`npx @next/codemod@canary middleware-to-proxy .`) — mais migrer le fichier de
+  garde d'accès le plus critique du projet vers une nouvelle convention de fichier mérite une revue
+  humaine explicite, pas un renommage autonome, même si les tests actuels ne détecteraient rien de
+  cassé aujourd'hui.
+- **Secondaire, non bloquant** : `next.config.mjs` contient `eslint: { ignoreDuringBuilds: true }`
+  — clé non reconnue par Next 16 (`⚠ Unrecognized key(s) in object: 'eslint'`), warning seul, build
+  toujours réussi. **Sans rapport avec les headers CSP/sécurité** du même fichier (définis via la
+  fonction `headers()`, distincte, non affectée — CLAUDE.md invariant #3 reste intact sur cette
+  branche).
+- **Statut** : branche `next-16-major-bump` conservée avec 3 commits (`d28e184`, `2ab0c56`), **non
+  mergée dans `master`**. `master` reste sur `next@15.5.23` avec les 6 vulnérabilités résiduelles
+  documentées ci-dessus (3 dépendantes de ce bump). **Décision explicitement laissée à
+  l'utilisateur** — voir rapport final.
