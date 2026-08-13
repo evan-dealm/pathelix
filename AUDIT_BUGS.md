@@ -1213,3 +1213,51 @@ en continu au fil de l'avancement.
     mission.
 - Suite complète après les 2 correctifs de gap réel : 199 fichiers / 3538 tests (+2), lint et
   `tsc --noEmit` propres.
+
+### Phase B — npm audit (EN COURS — voir exception Next.js majeur)
+- **Baseline** : 32 vulnérabilités (`npm audit`) — 1 low, 26 moderate, 5 high, 0 critical.
+- **`@opentelemetry/*` (26 moderate + 1 high `sdk-node` + 1 high `propagator-jaeger`)** :
+  dépendances directes (tracing custom instrumentation.ts, pas juste transitives). CVE la plus
+  significative : allocation mémoire non bornée dans la propagation de baggage W3C
+  (`@opentelemetry/core`, GHSA-8988-4f7v-96qf) et DoS via header `Jaeger` malformé
+  (`propagator-jaeger`, GHSA-45rx-2jwx-cxfr) — **exploitable en pratique** si
+  l'auto-instrumentation HTTP entrante est active (elle l'est, `auto-instrumentations-node`),
+  puisque ce sont des headers HTTP contrôlables par un client externe. **Corrigé** : bump vers
+  `sdk-node@0.221.0`, `auto-instrumentations-node@0.79.0`, `exporter-trace-otlp-http@0.221.0`,
+  `resources@2.8.0` — 32 → 6 vulnérabilités. Suite complète (3538 tests, lint, `tsc --noEmit`)
+  repassée verte après le bump.
+- **`sharp` <0.35.0 (high, CVE-2026-33327/33328/35590/35591 dans libvips)** : dépendance directe,
+  pas d'import direct dans le code applicatif (pas de traitement des photos de preuve de livraison
+  via `sharp` explicitement — `delivery-proof/route.ts` écrit les fichiers bruts sur disque sans
+  passer par `sharp`), mais **`next/image`** (utilisé sur `admin/page.tsx`, `login/page.tsx`,
+  `DataProvider.tsx`) l'utilise en interne pour l'optimisation d'images côté serveur — surface
+  d'attaque réelle si une image de preuve de livraison est un jour rendue via `next/image`.
+  **Bump direct appliqué** (`sharp@0.34.5` → `0.35.3`) : neutralise le risque pour tout usage
+  direct futur, mais **`next@15.5.23` embarque sa PROPRE copie de `sharp` pinnée en interne à
+  `^0.34.3`** (`node_modules/next/node_modules/sharp`), donc le chemin réellement emprunté par
+  `next/image` reste vulnérable tant que Next.js lui-même n'est pas mis à jour — **bloqué par le
+  bump majeur Next.js, voir ci-dessous**.
+- **`next` <16.3.0 (high) / `postcss` <=8.5.10-8.5.22 (high, via next) / `sharp` (via next,
+  ci-dessus)** : les 3 convergent sur le même correctif — bump Next.js 15.5 → 16.3.0 (majeur).
+  Traité séparément sur une branche dédiée, voir sous-section "Exception Next.js majeur" ci-dessous.
+- **`uuid` <11.1.1 (moderate, GHSA-w5hq-g745-h8pq — absence de vérification de bornes sur un
+  buffer fourni en paramètre à `v3`/`v5`/`v6`)** : vérifié **non exploitable** dans ce projet.
+  `uuid` n'est jamais un import direct de Pathélix (`grep` négatif sur `src/`) — uniquement
+  transitif via `exceljs@4.4.0` → `uuid@8.3.2`. Le seul call site d'`exceljs` qui utilise `uuid`
+  (`node_modules/exceljs/lib/xlsx/xform/sheet/cf-ext/cf-rule-ext-xform.js`) appelle `uuidv4()`
+  **sans aucun argument** — jamais de `buf` fourni, donc la faille (qui exige explicitement un
+  buffer en paramètre) ne peut pas être déclenchée par ce chemin de code. Le correctif suggéré par
+  `npm audit fix --force` (**downgrade `exceljs` 4.4.0 → 3.4.0**, un abaissement de version
+  majeure) aurait introduit un risque de régression réel sur l'export Excel pour neutraliser une
+  faille déjà inatteignable — **non appliqué, accepté en l'état, documenté**.
+- **`esbuild` 0.27.3-0.28.0 (low, GHSA-g7r4-m6w7-qqqr — lecture de fichier arbitraire sur le
+  serveur de dev Vite sous Windows)** : dépendance de dev uniquement, transitive via
+  `vitest → vite@7.3.5` (range interne `^0.27.0`, incompatible avec le correctif `>=0.28.1` sans
+  bump majeur de `vite` 7→8). **Non exploitable dans ce projet** : la faille ne s'active que si le
+  serveur de dev **Vite** tourne et accepte des requêtes ; Pathélix utilise le serveur de dev
+  **Next.js** (`npm run dev`), Vite n'est utilisé que comme moteur de transform interne à
+  `vitest run` (mode `node`, jamais de serveur HTTP exposé). Bump `vite` 7→8 non tenté (risque
+  d'instabilité de la suite de tests pour une faille non applicable) — accepté, documenté.
+- **Résultat après cette phase (hors branche Next.js majeur)** : 32 → 6 vulnérabilités restantes
+  (1 low accepté non-exploitable, 2 moderate acceptés non-exploitables, 3 high bloquées par le
+  bump Next.js majeur). `npm audit` critique : 0 avant et après.
