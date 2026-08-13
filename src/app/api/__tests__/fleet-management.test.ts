@@ -13,6 +13,9 @@ const mockPrisma = vi.hoisted(() => ({
   vehicle: {
     findFirst: vi.fn(),
   },
+  driver: {
+    findFirst: vi.fn(),
+  },
   holiday: {
     findMany: vi.fn(),
     count:    vi.fn(),
@@ -166,6 +169,36 @@ describe('POST /api/fuel-records', () => {
 
     const res = await fuelPOST(makePost('http://localhost:3000/api/fuel-records', validBody))
     expect(res.status).toBe(500)
+  })
+
+  // Regression N19 (A6): FuelRecord.driverId has no DB-level FK — must be checked against
+  // tenantId, same as DeliveryProof, or a driverId from another tenant could be written.
+  it('returns 404 when driverId does not belong to this tenant', async () => {
+    mockPrisma.vehicle.findFirst.mockResolvedValue({ id: 'v-1' })
+    mockPrisma.driver.findFirst.mockResolvedValue(null)
+
+    const res = await fuelPOST(makePost('http://localhost:3000/api/fuel-records', { ...validBody, driverId: 'd-other-tenant' }))
+    expect(res.status).toBe(404)
+    expect(mockPrisma.fuelRecord.create).not.toHaveBeenCalled()
+  })
+
+  it('creates fuel record when driverId belongs to this tenant', async () => {
+    mockPrisma.vehicle.findFirst.mockResolvedValue({ id: 'v-1' })
+    mockPrisma.driver.findFirst.mockResolvedValue({ id: 'd-1' })
+    mockPrisma.fuelRecord.create.mockResolvedValue({ id: 'f-1', ...validBody, driverId: 'd-1' })
+
+    const res = await fuelPOST(makePost('http://localhost:3000/api/fuel-records', { ...validBody, driverId: 'd-1' }))
+    expect(res.status).toBe(201)
+    expect(mockPrisma.driver.findFirst).toHaveBeenCalledWith({ where: { id: 'd-1', tenantId: 'tenant-test' }, select: { id: true } })
+  })
+
+  it('skips driver check when driverId is not provided', async () => {
+    mockPrisma.vehicle.findFirst.mockResolvedValue({ id: 'v-1' })
+    mockPrisma.fuelRecord.create.mockResolvedValue({ id: 'f-1', ...validBody })
+
+    const res = await fuelPOST(makePost('http://localhost:3000/api/fuel-records', validBody))
+    expect(res.status).toBe(201)
+    expect(mockPrisma.driver.findFirst).not.toHaveBeenCalled()
   })
 })
 

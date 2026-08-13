@@ -12,6 +12,7 @@ import { NextRequest } from 'next/server'
 const mockPrisma = vi.hoisted(() => ({
   pushSubscription: { upsert: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
   plan:             { findMany: vi.fn() },
+  driver:           { findFirst: vi.fn() },
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
@@ -112,6 +113,41 @@ describe('POST /api/push/subscribe', () => {
       keys: { p256dh: 'key1', auth: 'auth1' },
     }))
     expect(res.status).toBe(500)
+  })
+
+  // Regression N19 (A6): PushSubscription.driverId has no DB-level FK — must be checked against
+  // tenantId, same as DeliveryProof/FuelRecord.
+  it('returns 404 when driverId does not belong to this tenant', async () => {
+    mockPrisma.driver.findFirst.mockResolvedValue(null)
+    const res = await pushSubPOST(makePost('http://localhost/api/push/subscribe', {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/test',
+      keys: { p256dh: 'key1', auth: 'auth1' },
+      driverId: 'd-other-tenant',
+    }))
+    expect(res.status).toBe(404)
+    expect(mockPrisma.pushSubscription.upsert).not.toHaveBeenCalled()
+  })
+
+  it('saves subscription when driverId belongs to this tenant', async () => {
+    mockPrisma.driver.findFirst.mockResolvedValue({ id: 'd-1' })
+    mockPrisma.pushSubscription.upsert.mockResolvedValue({})
+    const res = await pushSubPOST(makePost('http://localhost/api/push/subscribe', {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/test',
+      keys: { p256dh: 'key1', auth: 'auth1' },
+      driverId: 'd-1',
+    }))
+    expect(res.status).toBe(200)
+    expect(mockPrisma.driver.findFirst).toHaveBeenCalledWith({ where: { id: 'd-1', tenantId: 'tenant-1' }, select: { id: true } })
+  })
+
+  it('skips driver check when driverId is not provided', async () => {
+    mockPrisma.pushSubscription.upsert.mockResolvedValue({})
+    const res = await pushSubPOST(makePost('http://localhost/api/push/subscribe', {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/test',
+      keys: { p256dh: 'key1', auth: 'auth1' },
+    }))
+    expect(res.status).toBe(200)
+    expect(mockPrisma.driver.findFirst).not.toHaveBeenCalled()
   })
 })
 

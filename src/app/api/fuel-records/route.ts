@@ -82,6 +82,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
     if (!vehicle) return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
 
+    // FuelRecord.driverId has no DB-level FK (see AUDIT_BUGS.md N19) — same pattern as
+    // DeliveryProof: must be checked against tenantId here or a record could reference a
+    // driver belonging to a different tenant.
+    if (parsed.data.driverId) {
+      const driver = await prisma.driver.findFirst({
+        where:  { id: parsed.data.driverId, tenantId },
+        select: { id: true },
+      })
+      if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
+    }
+
     const record = await prisma.fuelRecord.create({
       data:   { tenantId, ...parsed.data },
       select: FUEL_SELECT,
