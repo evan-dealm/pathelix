@@ -62,17 +62,31 @@ export async function navigateToTab(page: Page, tabName: string) {
   const label = labelMap[tabName] || tabName
 
   const tab = page.locator(`nav[aria-label="Navigation principale"] button[title="${label}"]`).first()
+  const fallback = page.locator(`nav button:has-text("${label}")`).first()
 
-  if (await tab.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await tab.click()
-    await page.waitForTimeout(500)
-  } else {
-    const fallback = page.locator(`nav button:has-text("${label}")`).first()
-    if (await fallback.isVisible({ timeout: 2000 }).catch(() => false)) {
+  // Each tab's content div carries id="tabpanel-{tabName}" (see src/app/admin/page.tsx) — the
+  // same key already used in labelMap above. The click can silently no-op if it lands before
+  // React finishes hydrating (the button is server-rendered and "visible"/"clickable" per
+  // Playwright's actionability checks well before its onClick handler is attached), which
+  // leaves activeTab unchanged with no error — every subsequent assertion in the test then times
+  // out waiting for content that will never appear on the wrong panel. Retrying the click once
+  // against a fresh locator recovers from that race without slowing down the common case where
+  // it worked the first time.
+  const targetPanel = page.locator(`#tabpanel-${tabName}`)
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (await tab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await tab.click()
+    } else if (await fallback.isVisible({ timeout: 2000 }).catch(() => false)) {
       await fallback.click()
-      await page.waitForTimeout(500)
+    } else {
+      break
+    }
+    if (await targetPanel.waitFor({ state: 'attached', timeout: 5_000 }).then(() => true).catch(() => false)) {
+      break
     }
   }
+  await page.waitForTimeout(500)
 }
 
 export async function waitForAdminReady(page: Page) {
