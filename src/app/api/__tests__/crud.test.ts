@@ -31,6 +31,9 @@ const { mockPrisma } = vi.hoisted(() => {
     tenant: {
       findUnique: vi.fn(() => Promise.resolve(null)),
     },
+    userPermission: {
+      findMany: vi.fn(() => Promise.resolve([])),
+    },
   }
   return { mockPrisma }
 })
@@ -446,5 +449,24 @@ describe('POST /api/missions', () => {
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
     expect(json.archived).toBe(5)
+  })
+
+  // Regression A7: hasPermission('manage_missions') — POST /api/missions (ordinary creation,
+  // not the archive-all sub-action) previously had NO role gate at all; any authenticated role
+  // including driver could create missions. Distinct userId to avoid hasPermission()'s 60s cache.
+  it('driver role (no default permissions) gets 403 on ordinary mission creation, no DB write', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-mission-1', role: 'driver', requestId: 'r', trade: null })
+
+    const req = makeRequest('http://localhost:3000/api/missions', {
+      method: 'POST',
+      body: {
+        type: 'POSER', date: '2026-03-20', address: '10 rue de Lyon',
+        latitude: 45.764, longitude: 4.836,
+        estimatedDurationMin: 30, maneuverTimeMin: 5,
+      },
+    })
+    const res = await missionsPost(req)
+    expect(res.status).toBe(403)
+    expect(createMission).not.toHaveBeenCalled()
   })
 })

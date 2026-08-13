@@ -22,6 +22,12 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/lib/audit', () => ({ auditAsync: vi.fn() }))
 
+vi.mock('@/lib/db', () => ({
+  default: {
+    userPermission: { findMany: vi.fn(() => Promise.resolve([])) },
+  },
+}))
+
 import { GET, PUT, DELETE } from '@/app/api/drivers/[id]/route'
 import { getDriver, updateDriver, deleteDriver } from '@/lib/data/drivers'
 import { getRequestContext } from '@/lib/data/context'
@@ -129,6 +135,17 @@ describe('PUT /api/drivers/[id]', () => {
 
     const res = await PUT(makePut('d-1', { firstName: 'Jean' }), makeParams('d-1'))
     expect(res.status).toBe(500)
+  })
+
+  // Found during the A7/N22 follow-up privilege-escalation review: PUT /api/drivers/[id] had
+  // NO role gate at all before this session's fix — any authenticated role, including driver,
+  // could modify any driver on the tenant.
+  it('driver role (no default permissions) gets 403, driver not updated', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'driver-attacker', role: 'driver', requestId: 'r1' } as never)
+
+    const res = await PUT(makePut('d-1', { firstName: 'Pierre' }), makeParams('d-1'))
+    expect(res.status).toBe(403)
+    expect(updateDriver).not.toHaveBeenCalled()
   })
 })
 

@@ -5,6 +5,7 @@ import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { hasPermission }             from '@/lib/permissions'
+import { auditAsync }                from '@/lib/audit'
 import prisma                        from '@/lib/db'
 
 const log = createLogger('/api/users/[id]')
@@ -71,6 +72,11 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       select: selectWithoutPassword,
     })
 
+    auditAsync(req, 'user.update', 'User', id, {
+      ...(rest.role && rest.role !== existing.role ? { roleBefore: existing.role, roleAfter: rest.role } : {}),
+      fieldsChanged: Object.keys(rest),
+      passwordChanged: Boolean(password),
+    })
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/users/[id]', method: 'PUT', status: '200' })
     return NextResponse.json(user)
   } catch (err) {
@@ -98,7 +104,8 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     if (!existing) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
 
     await prisma.user.delete({ where: { id, tenantId } })
-    log.warn('User deleted', { deletedUserId: id, deletedEmail: existing.email, deletedBy: getRequestContext(req).userId, tenantId })
+    log.warn('User deleted', { deletedUserId: id, deletedEmail: existing.email, deletedBy: userId, tenantId })
+    auditAsync(req, 'user.delete', 'User', id, { email: existing.email, role: existing.role })
 
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/users/[id]', method: 'DELETE', status: '200' })
     return NextResponse.json({ ok: true })

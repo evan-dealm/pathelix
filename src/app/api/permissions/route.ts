@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db'
 import { getRequestContext } from '@/lib/data/context'
 import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, invalidatePermCache } from '@/lib/permissions'
+import { auditAsync } from '@/lib/audit'
 
 const UpdatePermsSchema = z.object({
   userId:      z.string().min(1),
@@ -63,6 +64,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   ])
 
   invalidatePermCache(userId)
+  auditAsync(req, 'user.permissions_update', 'User', userId, { permissions })
 
   return NextResponse.json({ ok: true, userId, permissions })
 }

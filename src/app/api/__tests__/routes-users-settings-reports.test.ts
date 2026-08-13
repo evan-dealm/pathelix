@@ -48,7 +48,10 @@ vi.mock('bcryptjs', () => ({
   default: { hash: vi.fn(() => Promise.resolve('$2a$12$hashed')), compare: vi.fn() },
 }))
 
+vi.mock('@/lib/audit', () => ({ auditAsync: vi.fn() }))
+
 import { GET as getUsers, POST as postUser } from '@/app/api/users/route'
+import { auditAsync } from '@/lib/audit'
 import { GET as getSettings, PUT as putSettings } from '@/app/api/settings/route'
 import { GET as getReports } from '@/app/api/reports/route'
 import { getRequestContext } from '@/lib/data/context'
@@ -130,6 +133,19 @@ describe('POST /api/users', () => {
     expect(res.status).toBe(201)
   })
 
+  // Phase 0.1: POST /api/users never wrote to AuditLog — a new admin/dispatcher account had no
+  // durable trace of who created it. Fixed by wiring auditAsync() in.
+  it('logs the user creation to the audit trail with the assigned role', async () => {
+    mockPrisma.user.create.mockResolvedValue({ id: 'u-new', ...validBody })
+
+    await postUser(makePost('/api/users', validBody))
+
+    expect(auditAsync).toHaveBeenCalledWith(
+      expect.anything(), 'user.create', 'User', 'u-new',
+      expect.objectContaining({ email: validBody.email, role: validBody.role }),
+    )
+  })
+
   it('rejects missing fields (422)', async () => {
     const res = await postUser(makePost('/api/users', { email: 'a@b.c' }))
     expect(res.status).toBe(422)
@@ -168,6 +184,24 @@ describe('POST /api/users', () => {
 
     const res = await postUser(makePost('/api/users', validBody))
     expect(res.status).toBe(201)
+  })
+
+  // Dedicated regression for the exact privilege-escalation scenario found in this session's
+  // audit: before the A7/N22 fix, POST /api/users had NO role check at all, and UserCreateSchema
+  // accepts role:"ADMIN" in the payload — so an authenticated driver could self-issue an admin
+  // account on their own tenant by simply POSTing {role:"ADMIN",...}. Must be 403, not 201, and
+  // the DB write must never be attempted.
+  it('driver self-escalation attempt (role:"ADMIN" in payload) gets 403, no user created', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-attacker', role: 'driver', requestId: 'r' } as never)
+
+    const res = await postUser(makePost('/api/users', {
+      email: 'driver-escalation@attacker.test',
+      password: 'Str0ngP@ss!2024xx',
+      firstName: 'Evil', lastName: 'Driver', role: 'ADMIN',
+    }))
+
+    expect(res.status).toBe(403)
+    expect(mockPrisma.user.create).not.toHaveBeenCalled()
   })
 })
 

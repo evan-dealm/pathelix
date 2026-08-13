@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
+import { logSuperadminAction }       from '@/lib/superadminAudit'
 import prisma                        from '@/lib/db'
 
 const log = createLogger('/api/audit')
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
   const params  = req.nextUrl.searchParams
@@ -91,6 +92,15 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       },
     })
     log.info('Audit logs purged', { tenantId, after, before, count: result.count })
+    logSuperadminAction({
+      superadminId:    userId,
+      targetTenantId:  tenantId,
+      isImpersonation: userId.startsWith('sa:'),
+      method:          'DELETE',
+      path:            '/api/audit',
+      action:          'audit_log_purge',
+      details:         { after, before, deletedCount: result.count },
+    })
     return NextResponse.json({ ok: true, deleted: result.count })
   } catch (err) {
     log.error('DELETE failed', { err: err instanceof Error ? err.message.slice(0, 200) : 'unknown error' })

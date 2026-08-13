@@ -5,6 +5,7 @@ import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { hasPermission }             from '@/lib/permissions'
+import { auditAsync }                from '@/lib/audit'
 import prisma                        from '@/lib/db'
 
 const log = createLogger('/api/users')
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     })
 
+    auditAsync(req, 'user.create', 'User', user.id, { email: user.email, role: user.role })
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/users', method: 'POST', status: '201' })
     return NextResponse.json(user, { status: 201 })
   } catch (err) {

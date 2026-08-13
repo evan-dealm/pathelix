@@ -493,12 +493,29 @@ describe('PUT /api/vehicles/[id]', () => {
 
     expect(res.status).toBe(500)
   })
+
+  // Found during the A7/N22 follow-up privilege-escalation review: PUT /api/vehicles/[id] had
+  // NO role gate at all before this session's fix — any authenticated role, including driver,
+  // could modify any vehicle on the tenant. Distinct userId to avoid hasPermission()'s 60s cache.
+  it('driver role (no default permissions) gets 403, vehicle not updated', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-veh-put', role: 'driver', requestId: 'r', trade: null })
+
+    const req = makeRequest('http://localhost:3000/api/vehicles/v-1', {
+      method: 'PUT',
+      body:   { type: 'Grue' },
+    })
+    const res = await vehiclePut(req, makeIdParams('v-1'))
+
+    expect(res.status).toBe(403)
+    expect(mockPrisma.vehicle.update).not.toHaveBeenCalled()
+  })
 })
 
 describe('DELETE /api/vehicles/[id]', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
   it('soft-deletes a vehicle (archived=true)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
     mockPrisma.vehicle.updateMany.mockResolvedValue({ count: 1 })
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', { method: 'DELETE' })
@@ -531,6 +548,20 @@ describe('DELETE /api/vehicles/[id]', () => {
     const res = await vehicleDelete(req, makeIdParams('v-1'))
 
     expect(res.status).toBe(500)
+  })
+
+  // Found during the A7/N22 follow-up privilege-escalation review: DELETE /api/vehicles/[id]
+  // had NO role gate at all before this session's fix — any authenticated role, including
+  // driver, could delete (archive) any vehicle on the tenant. Distinct userId to avoid
+  // hasPermission()'s 60s cache.
+  it('driver role (no default permissions) gets 403, vehicle not deleted', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-veh-del', role: 'driver', requestId: 'r', trade: null })
+
+    const req = makeRequest('http://localhost:3000/api/vehicles/v-1', { method: 'DELETE' })
+    const res = await vehicleDelete(req, makeIdParams('v-1'))
+
+    expect(res.status).toBe(403)
+    expect(mockPrisma.vehicle.updateMany).not.toHaveBeenCalled()
   })
 })
 

@@ -865,6 +865,70 @@ Trackdéchets HALT ou nécessite un arbitrage architecture que je ne peux pas tr
 
 ---
 
+### N24 — Vérification dédiée post-A7/N22 : audit AuditLog, fail-closed hasPermission(), grep exhaustif
+- **Fichiers** : `src/lib/permissions.ts`, `src/lib/audit.ts`, `src/app/api/users/route.ts`,
+  `src/app/api/templates/route.ts`
+- **Catégorie** : vérification de sécurité dédiée demandée après le fix A7/N22 (escalade de
+  privilèges via `POST /api/users` sans check de rôle) — 4 points distincts
+- **Confiance** : CONFIRMÉ pour tous les points
+- **1. AuditLog en base (dev)** : **aucune preuve d'exploitation**. `SELECT * FROM "AuditLog"
+  WHERE "entityType" = 'User'` retourne **0 ligne** — `POST /api/users` n'a **jamais** appelé
+  `writeAudit()`/`auditAsync()` (`src/lib/audit.ts`), avant ou après le fix A7. Impossible de
+  savoir depuis les logs si l'escalade a été exploitée avant le correctif ; ce n'est pas "pas
+  d'exploitation détectée", c'est "aucune télémétrie n'existe pour le détecter". Les 2 seuls
+  comptes `ADMIN` en base (`admin@pathelix-massive.test`, `admin@excoffier.fr`, créés
+  2026-07-03) proviennent de `prisma.user.create()` direct dans `prisma/seed.ts`/
+  `seed-massive.ts`, pas de l'API — pas liés à la faille. Les 700 lignes `AuditLog` existantes
+  sont à 500/700 des données synthétiques générées par `seed-massive.ts:704-720` (action/entité
+  aléatoires, `userId` piochés dans `driverIds`) et à 200/700 de vrais appels
+  `mission.create`/`Mission` (trafic dev réel). **Staging/prod non vérifiables** — aucun accès
+  configuré dans cette session, seule `DATABASE_URL` locale (`localhost:5432`) était disponible.
+  **Gap corollaire non corrigé** : `POST /api/users` (création ou changement de rôle) ne journalise
+  toujours rien dans `AuditLog` — même avec le rôle maintenant vérifié, une création de compte
+  admin par un admin légitime mais compromis resterait invisible. Recommandé pour un chantier
+  séparé (`writeAudit(req, 'user.create', 'User', user.id, { role })`).
+- **2. `hasPermission()` fail-closed confirmé** — `src/lib/permissions.ts:29-59`. Le seul
+  court-circuit est `role === 'admin' || role === 'superadmin'` (ligne 35). Pour tout autre rôle
+  sans `UserPermission` personnalisée, le fallback est `DEFAULT_PERMISSIONS[role] ?? []`
+  (ligne 54) — `driver` vaut `[]`, et un rôle inconnu/absent de la table tombe aussi sur `[]` via
+  le `?? []`. **Déjà fail-closed, aucun correctif nécessaire.**
+- **3. Grep exhaustif des routes d'écriture** (`src/app/api/**/route.ts` avec `POST/PUT/DELETE/
+  PATCH` + écriture Prisma directe ou via `src/lib/data/*`, 87 fichiers passés en revue) — **1
+  route supplémentaire trouvée sans aucune protection**, hors des 9 familles déjà couvertes par
+  A7 : **`POST /api/templates`** (création de `MissionTemplate`, missions récurrentes) n'utilisait
+  que `getTenantId(req)`, sans `getRequestContext`/`hasPermission` — n'importe quel rôle
+  authentifié, y compris `driver`, pouvait créer des templates de missions récurrentes pour le
+  tenant. Isolation tenant déjà correcte (pas de fuite cross-tenant), mais pas de garde de rôle.
+  **Corrigé** : `hasPermission(userId, role, 'manage_missions')` ajouté, même pattern que
+  `POST /api/missions`. Les autres routes `rolecheck=0` identifiées par le grep
+  (`ai/callback`, `auth/change-password`, `auth/logout`, `delivery-proof`, `driver-photos`,
+  `history[/[id]]`, `incidents`, `mission-comments`, `missions/parse-natural` (ne fait aucune
+  écriture — faux positif du grep), `push/subscribe`, `tracking`, webhooks `geotab/nessy/obd/
+  samsara/trackdechets`) ont été lues individuellement : auth HMAC/API-key pour les webhooks et
+  `ai/callback`, self-service scope par tenant/driver pour les autres (aucune ne touche à un champ
+  `role`/permission, aucune n'écrit pour un tenant ou utilisateur autre que l'appelant) — acceptées
+  comme design intentionnel, pas des trous d'escalade.
+- **4. Tests dédiés ajoutés** (scénario exact : rôle bloqué → 403, DB write jamais tenté) pour
+  les 6 routes visées :
+  - `POST /api/users` — driver + `role:"ADMIN"` dans le payload → 403
+    (`routes-users-settings-reports.test.ts`)
+  - `POST /api/drivers` — déjà couvert (`drivers.test.ts`, test pré-existant A7)
+  - `POST /api/missions` (création ordinaire, pas `action=archive-all`) — nouveau test driver → 403
+    (`crud.test.ts`)
+  - `PUT /api/missions/[id]` — déjà couvert (`missions-id.test.ts`, test pré-existant A7)
+  - `PUT /api/vehicles/[id]` et `DELETE /api/vehicles/[id]` — nouveaux tests driver → 403
+    (`routes-health-vehicles-exutoires-missions.test.ts`) ; ces deux endpoints n'avaient
+    **aucun** test de rôle avant cette session malgré le fix A7 appliqué au code
+  - `PUT /api/drivers/[id]` — nouveau test driver → 403 (`drivers-id.test.ts`), plus mock
+    `@/lib/db`/`userPermission` ajouté (absent du fichier, `hasPermission()` n'était donc jamais
+    exercé en dehors du chemin admin-bypass)
+  - `POST /api/templates` — nouveau test driver → 403 pour le gap trouvé au point 3
+    (`templates.test.ts`)
+  - Suite complète repassée verte après ajout : 199 fichiers / 3529 tests (+7 vs baseline A7 de
+    3522), lint et `tsc --noEmit` propres.
+
+---
+
 ## Vérifié conforme — pas de bug trouvé
 
 - Auth HMAC Nessy/Trackdéchets, Bearer OBD, API-key Geotab/Samsara : toutes constant-time.
@@ -1048,3 +1112,43 @@ eux-mêmes sont déjà couverts par la suite unitaire/intégration existante) :
 Tests : 3491 vs baseline Phase 0 (nombre exact non re-cité ici, disponible dans l'historique de
 conversation — delta net = +tests ajoutés par chaque correctif de Phase 2, 0 test supprimé/désactivé
 conformément à la règle absolue de la mission). `npm audit` critique : 0 dans les deux cas.
+
+---
+
+## Phase 4 — Mission de clôture finale (en cours)
+
+Suite du travail après N24 (vérification dédiée de l'escalade de privilèges). Statuts mis à jour
+en continu au fil de l'avancement.
+
+### Phase 0.1 — Audit trail sur les mutations sensibles (CLOS)
+- **Trouvé** : `POST /api/users` n'écrivait jamais dans `AuditLog`, ni avant ni après le fix
+  A7/N22 — une création de compte (y compris une tentative d'auto-promotion admin bloquée par le
+  fix, ou une création légitime avec un rôle sensible) ne laissait aucune trace interrogeable.
+  Même constat sur `PUT`/`DELETE /api/users/[id]` (changement de rôle silencieux), `PUT
+  /api/permissions` (octroi/retrait de permission granulaire), `POST /api/integrations`
+  (rotation de secret/clé API), et `DELETE /api/audit` (un superadmin purgeant l'historique
+  d'audit ne laissait qu'une ligne de log applicatif, pas de trace durable interrogeable).
+- **Corrigé** :
+  - `POST /api/users` → `auditAsync(req, 'user.create', 'User', id, { email, role })`
+  - `PUT /api/users/[id]` → `auditAsync(..., 'user.update', ..., { roleBefore, roleAfter,
+    fieldsChanged, passwordChanged })` — le changement de rôle est explicitement isolé dans les
+    `changes` pour être recherchable
+  - `DELETE /api/users/[id]` → `auditAsync(..., 'user.delete', ..., { email, role })`
+  - `PUT /api/permissions` → `auditAsync(..., 'user.permissions_update', ..., { permissions })`
+  - `POST /api/integrations` → `auditAsync(..., 'integration.configure', ..., { type, enabled,
+    configChanged })` — **jamais** la valeur du secret/config, uniquement le fait qu'il a changé
+  - `DELETE /api/audit` → `logSuperadminAction({..., action: 'audit_log_purge', details: {
+    after, before, deletedCount }})`, même mécanisme que les autres actions superadmin
+    (`src/lib/superadminAudit.ts`), donc la purge elle-même reste tracée dans `AuditLog`
+- **Passage exhaustif sur les 87 routes de mutation déjà grepées (N24)** : aucune autre route
+  sensible (création/rôle/permission/intégration/secret) sans trace trouvée. `drivers`,
+  `missions`, `vehicles` étaient déjà couverts par `auditAsync` avant cette session. Les autres
+  routes de mutation (exutoires, settings, templates, sites, clients...) ne manipulent ni rôle ni
+  secret — laissées telles quelles, cohérent avec le périmètre demandé (mutation *sensible*, pas
+  CRUD générique).
+- **Tests** : 7 nouveaux tests dédiés (`users-audit-permissions-features.test.ts` ×4,
+  `routes-users-settings-reports.test.ts` ×1, `integrations.test.ts` ×1 avec assertion explicite
+  que la valeur du secret n'apparaît jamais dans les `changes` loggés) — chacun vérifie l'appel
+  exact à `auditAsync`/`logSuperadminAction` avec les bons arguments, pas juste le status code.
+- Suite complète : 199 fichiers / 3536 tests (+7), lint et `tsc --noEmit` propres.
+- **Commit** : voir historique git (`fix(N24/0.1): audit trail on user/permission/integration mutations + audit-log purge`)

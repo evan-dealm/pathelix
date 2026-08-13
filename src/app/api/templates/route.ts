@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
-import { getTenantId }               from '@/lib/data/context'
+import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import prisma                        from '@/lib/db'
 import { redisCache }                from '@/lib/redisCache'
+import { hasPermission }             from '@/lib/permissions'
 import type { Prisma }               from '@/generated/prisma'
 
 const log = createLogger('/api/templates')
@@ -71,7 +72,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const tenantId = getTenantId(req)
+  const { tenantId, userId, role } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_missions'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   let body: unknown
   try { body = await req.json() }

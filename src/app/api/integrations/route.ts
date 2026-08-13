@@ -5,6 +5,7 @@ import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { encryptConfig } from '@/lib/configCrypto'
 import { hasPermission } from '@/lib/permissions'
+import { auditAsync } from '@/lib/audit'
 
 const log = createLogger('/api/integrations')
 
@@ -96,6 +97,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
 
     log.info('Integration configured', { tenantId, type: parsed.data.type })
+    auditAsync(req, 'integration.configure', 'Integration', integration.id, {
+      type: parsed.data.type,
+      enabled: integration.enabled,
+      configChanged: Boolean(parsed.data.config),
+    })
     return NextResponse.json(integration, { status: 201 })
   } catch (err) {
     log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })

@@ -35,6 +35,8 @@ vi.mock('@/lib/logger', () => ({
   }),
 }))
 
+vi.mock('@/lib/audit', () => ({ auditAsync: vi.fn() }))
+
 function makeRequest(url: string, opts?: { method?: string; body?: unknown; headers?: Record<string, string> }) {
   const init: Record<string, unknown> = { method: opts?.method ?? 'GET' }
   if (opts?.body) {
@@ -125,6 +127,28 @@ describe('POST /api/integrations', () => {
     })
     const res = await POST(req)
     expect(res.status).toBe(403)
+  })
+
+  // Phase 0.1: configuring an integration (which can mean rotating a webhook secret / API key)
+  // previously left no AuditLog trace. The secret/config VALUE must never be logged — only that
+  // a config change happened.
+  it('logs the integration change to the audit trail without leaking the secret value', async () => {
+    mockPrisma.integration.upsert.mockResolvedValue({ id: 'int-1', type: 'here', name: 'HERE Truck Routing', enabled: true })
+
+    const { POST } = await import('@/app/api/integrations/route')
+    const { auditAsync } = await import('@/lib/audit')
+    const req = makeRequest('http://localhost:3000/api/integrations', {
+      method: 'POST',
+      body: { type: 'here', config: { apiKey: 'supersecret-api-key-123' } },
+    })
+    await POST(req)
+
+    expect(auditAsync).toHaveBeenCalledWith(
+      expect.anything(), 'integration.configure', 'Integration', 'int-1',
+      expect.objectContaining({ type: 'here', configChanged: true }),
+    )
+    const loggedDetails = JSON.stringify(vi.mocked(auditAsync).mock.calls[0])
+    expect(loggedDetails).not.toContain('supersecret-api-key-123')
   })
 })
 

@@ -9,6 +9,7 @@ const { mockPrisma } = vi.hoisted(() => {
       update:   vi.fn(),
       delete:   vi.fn(),
     },
+    userPermission: { findMany: vi.fn(() => Promise.resolve([])) },
   }
   return { mockPrisma }
 })
@@ -106,7 +107,10 @@ describe('GET /api/templates', () => {
 })
 
 describe('POST /api/templates', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'user-1', role: 'admin', requestId: 'r1' } as never)
+  })
 
   it('creates a template with valid body (201)', async () => {
     const created = { id: 't-new', ...validTemplate, tenantId: 'tenant-test', enabled: true, createdAt: new Date() }
@@ -160,6 +164,26 @@ describe('POST /api/templates', () => {
 
     const res = await POST(makePost('/api/templates', validTemplate))
     expect(res.status).toBe(500)
+  })
+
+  // Found during the A7/N22 follow-up privilege-escalation review: POST /api/templates had
+  // NO role/permission gate at all (getTenantId-only) — any authenticated role, including
+  // driver, could create recurring mission templates for the tenant. Fixed with the same
+  // hasPermission('manage_missions') pattern used by POST /api/missions.
+  it('driver role (no default permissions) gets 403, template not created', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-1', role: 'driver', requestId: 'r1' } as never)
+
+    const res = await POST(makePost('/api/templates', validTemplate))
+    expect(res.status).toBe(403)
+    expect(mockPrisma.missionTemplate.create).not.toHaveBeenCalled()
+  })
+
+  it('dispatcher with no custom UserPermission gets the role default (manage_missions included, 201)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'disp-default', role: 'dispatcher', requestId: 'r1' } as never)
+    mockPrisma.missionTemplate.create.mockResolvedValue({ id: 't-new', ...validTemplate, tenantId: 'tenant-test' })
+
+    const res = await POST(makePost('/api/templates', validTemplate))
+    expect(res.status).toBe(201)
   })
 })
 

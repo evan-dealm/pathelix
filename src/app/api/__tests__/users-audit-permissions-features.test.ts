@@ -65,6 +65,9 @@ vi.mock('bcryptjs', () => ({
   default: { hash: vi.fn().mockResolvedValue('$hashed$') },
 }))
 
+vi.mock('@/lib/audit', () => ({ auditAsync: vi.fn() }))
+vi.mock('@/lib/superadminAudit', () => ({ logSuperadminAction: vi.fn() }))
+
 import { GET as userGET, PUT as userPUT, DELETE as userDELETE } from '@/app/api/users/[id]/route'
 import { GET as auditGET, DELETE as auditDELETE } from '@/app/api/audit/route'
 import { GET as permsGET, PUT as permsPUT }        from '@/app/api/permissions/route'
@@ -72,6 +75,8 @@ import { GET as keysGET, POST as keysPOST }        from '@/app/api/api-keys/rout
 import { GET as featGET, PUT as featPUT }           from '@/app/api/features/route'
 import { GET as predictGET }                        from '@/app/api/predictions/route'
 import { getRequestContext }                        from '@/lib/data/context'
+import { auditAsync }                               from '@/lib/audit'
+import { logSuperadminAction }                      from '@/lib/superadminAudit'
 
 function makeGet(url: string): NextRequest { return new NextRequest(url) }
 
@@ -148,6 +153,32 @@ describe('PUT /api/users/[id]', () => {
     expect(json.firstName).toBe('Pierre')
   })
 
+  // Phase 0.1 (this session's follow-up mission): POST/PUT/DELETE /api/users never wrote to
+  // AuditLog, before or after the A7/N22 privilege-escalation fix — a role change (or a user
+  // creation) left no queryable trace of who did it. Fixed by wiring auditAsync() in, same
+  // pattern as drivers/missions/vehicles.
+  it('logs a role change to the audit trail with before/after values', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue(sampleUser) // role: 'admin'
+    mockPrisma.user.update.mockResolvedValue({ ...sampleUser, role: 'DISPATCHER' })
+
+    await userPUT(makePut('http://localhost:3000/api/users/u-1', { role: 'DISPATCHER' }), makeParams('u-1'))
+
+    expect(auditAsync).toHaveBeenCalledWith(
+      expect.anything(), 'user.update', 'User', 'u-1',
+      expect.objectContaining({ roleBefore: 'admin', roleAfter: 'DISPATCHER' }),
+    )
+  })
+
+  it('does not claim a role change when role is unchanged', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue(sampleUser)
+    mockPrisma.user.update.mockResolvedValue({ ...sampleUser, firstName: 'Pierre' })
+
+    await userPUT(makePut('http://localhost:3000/api/users/u-1', { firstName: 'Pierre' }), makeParams('u-1'))
+
+    const call = vi.mocked(auditAsync).mock.calls[0]
+    expect(call[4]).not.toHaveProperty('roleBefore')
+  })
+
   it('returns 403 for dispatcher', async () => {
     vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
 
@@ -219,6 +250,18 @@ describe('DELETE /api/users/[id]', () => {
 
     const res = await userDELETE(makeDeleteReq('http://localhost:3000/api/users/u-1'), makeParams('u-1'))
     expect(res.status).toBe(500)
+  })
+
+  it('logs the deletion to the audit trail', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue(sampleUser)
+    mockPrisma.user.delete.mockResolvedValue(sampleUser)
+
+    await userDELETE(makeDeleteReq('http://localhost:3000/api/users/u-1'), makeParams('u-1'))
+
+    expect(auditAsync).toHaveBeenCalledWith(
+      expect.anything(), 'user.delete', 'User', 'u-1',
+      expect.objectContaining({ email: sampleUser.email, role: sampleUser.role }),
+    )
   })
 })
 
@@ -312,6 +355,25 @@ describe('DELETE /api/audit', () => {
     const res = await auditDELETE(makeDeleteReq('http://localhost:3000/api/audit?after=2026-01-01T00:00:00Z&before=2026-03-01T00:00:00Z&confirm=true'))
     expect(res.status).toBe(500)
   })
+
+  // Phase 0.1: a superadmin purging the audit trail (DELETE /api/audit) previously left no
+  // trace of the purge itself anywhere durable — only an app-level log line. Now recorded via
+  // the same logSuperadminAction() path used by other superadmin actions.
+  it('records the purge itself via logSuperadminAction', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'sa', role: 'superadmin', requestId: 'r' } as never)
+    mockPrisma.auditLog.deleteMany.mockResolvedValue({ count: 5 })
+
+    await auditDELETE(makeDeleteReq('http://localhost:3000/api/audit?after=2026-01-01T00:00:00Z&before=2026-03-01T00:00:00Z&confirm=true'))
+
+    expect(logSuperadminAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        superadminId: 'sa',
+        targetTenantId: 'tenant-test',
+        action: 'audit_log_purge',
+        details: expect.objectContaining({ deletedCount: 5 }),
+      }),
+    )
+  })
 })
 
 describe('GET /api/permissions', () => {
@@ -392,6 +454,20 @@ describe('PUT /api/permissions', () => {
   it('returns 400 for invalid JSON', async () => {
     const res = await permsPUT(makeBadJson('http://localhost:3000/api/permissions', 'PUT'))
     expect(res.status).toBe(400)
+  })
+
+  it('logs the permission change to the audit trail', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue({ id: 'u-2', role: 'dispatcher' })
+    mockPrisma.userPermission.deleteMany.mockResolvedValue({ count: 1 })
+    mockPrisma.userPermission.create.mockResolvedValue({ permission: 'read:missions' })
+    mockPrisma.$transaction.mockResolvedValue([])
+
+    await permsPUT(makePut('http://localhost:3000/api/permissions', { userId: 'u-2', permissions: ['read:missions'] }))
+
+    expect(auditAsync).toHaveBeenCalledWith(
+      expect.anything(), 'user.permissions_update', 'User', 'u-2',
+      expect.objectContaining({ permissions: ['read:missions'] }),
+    )
   })
 })
 
