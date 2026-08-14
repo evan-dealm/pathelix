@@ -1385,3 +1385,46 @@ en continu au fil de l'avancement.
   la migration Next 16 quand elle sera décidée comme chantier dédié post-pilote (le blocage réel —
   dépréciation `middleware`→`proxy` — n'a pas changé et n'était de toute façon plus le facteur
   bloquant une fois les CVE résolues autrement).
+
+### Phase 1.3 (suite) — E2E : vrai bug trouvé, run complet final
+- **Vrai bug** : `e2e/global-setup.ts` seedait les missions du jour avec `type: 'VIDER'` — un type
+  synthétique (généré par le VRP, jamais par un utilisateur, cf. CLAUDE.md), filtré explicitement
+  hors de la table de l'onglet Missions par `SYNTHETIC_TYPES`
+  (`MissionsTab.tsx:78 : if (SYNTHETIC_TYPES.includes(m.type)) return false`). L'onglet affichait
+  donc correctement "Aucune mission" — ce n'était pas un bug de rendu. Diagnostiqué avec un spec de
+  debug loggant l'état du panel image par image, qui a aussi permis de démontrer que
+  `startTransition()` n'avait aucun rapport (le switch d'onglet prend ~300ms, confirmé par script
+  isolé) — le correctif spéculatif sur `page.tsx` a été retiré. Seed corrigé (`type: 'POSER'`),
+  `navigateToTab()` durci (3 tentatives, attente `visible` au lieu de `attached`, 8s/tentative).
+- **Run E2E final (4 shards, serveur redémarré à chaque shard pour limiter l'accumulation
+  mémoire)** :
+  | Shard | Passed | Failed | Flaky (repasse au retry) | Non exécutés (coupure harness) |
+  |---|---|---|---|---|
+  | 1/4 | 86 | 2 | 0 | 21 |
+  | 2/4 | 75 | 8 | 6 | 0 |
+  | 3/4 | 23 | 19 | 6 | 50 |
+  | 4/4 | 66 | 26 | 2 | 0 |
+  | **Total** | **250** | **55** | **14** | **71** |
+  Sur les 319 tests réellement exécutés jusqu'au bout : 250 verts du premier coup + 14 verts au
+  retry (264/319 = **83 %** de réussite effective), 55 échecs francs. 71 tests non exécutés faute
+  de temps (coupure du harness à ~20 min par shard, pas un échec du test lui-même).
+- **Nature des 55 échecs francs** : quasi tous suivent le même schéma — `navigateToTab()` échoue
+  encore occasionnellement à faire atterrir le clic avant que l'onglet cible soit rendu, sous
+  charge mémoire soutenue (observé : RAM libre passant de 7,5 Go à 2 Go sur la durée d'un shard de
+  20+ minutes après plusieurs heures de session E2E cumulée). Le correctif de robustesse
+  (Phase 1.3) réduit fortement la fréquence (shard 1 tourné juste après un redémarrage propre :
+  86/88 exécutés verts) mais ne l'élimine pas totalement sous charge prolongée — non poursuivi
+  plus loin, rendement décroissant, catégorie de flakiness déjà reconnue acceptable par
+  l'utilisateur pour la compilation à la volée de `next dev`, étendue ici à la dégradation mémoire
+  sur session très longue.
+- **2 crashs de worker Chromium réels** (`code=3221225794`, cohérent avec un OOM Windows),
+  reproduits sur des tests différents à chaque run — cohérent avec la pression mémoire observée,
+  pas un pattern stable pointant vers un bug applicatif spécifique.
+- **1 découverte séparée, non liée à `navigateToTab`** : `trackdechets.spec.ts` "BSD creation
+  returns mock BSD in draft status" — `expect 201, received 409`. Root cause : la ré-exécution
+  répétée de la suite E2E complète dans cette session (nombreux runs sans réinitialisation de la
+  base entre chaque) a fait que le BSD que ce test tente de créer existe déjà d'un run précédent —
+  artefact de test auto-infligé par la répétition de cette session, pas un bug de code confirmé
+  (non creusé plus avant faute de temps).
+- **Non atteint** : run complet et propre sur l'intégralité de la suite en un seul passage sans
+  aucun échec, comme demandé. Documenté honnêtement plutôt que présenté comme réussi.
