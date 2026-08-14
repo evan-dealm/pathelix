@@ -54,9 +54,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { userId, role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'superadmin') {
-    return NextResponse.json({ error: 'Accès réservé aux administrateurs' }, { status: 403 })
-  }
   if (!(await hasPermission(userId, role, 'manage_users'))) {
     return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }

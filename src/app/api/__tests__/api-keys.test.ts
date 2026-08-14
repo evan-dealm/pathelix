@@ -6,6 +6,9 @@ const mockPrisma = vi.hoisted(() => ({
     findMany: vi.fn(),
     create:   vi.fn(),
   },
+  userPermission: {
+    findMany: vi.fn(() => Promise.resolve([])),
+  },
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))

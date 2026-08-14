@@ -60,9 +60,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tenantId, userId, role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'superadmin') {
-    return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
-  }
   if (!(await hasPermission(userId, role, 'manage_integrations'))) {
     return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }

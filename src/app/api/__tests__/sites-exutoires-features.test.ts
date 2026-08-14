@@ -14,6 +14,7 @@ const mockPrisma = vi.hoisted(() => ({
   clientSite:      { findMany: vi.fn() },
   tenantSettings:  { upsert: vi.fn() },
   user:            { findFirst: vi.fn(), update: vi.fn() },
+  userPermission:  { findMany: vi.fn(() => Promise.resolve([])) },
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))

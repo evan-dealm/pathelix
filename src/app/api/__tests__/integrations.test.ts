@@ -15,6 +15,9 @@ const { mockPrisma } = vi.hoisted(() => {
     driver: {
       findMany: vi.fn((): Promise<{ id: string }[]> => Promise.resolve([])),
     },
+    userPermission: {
+      findMany: vi.fn(() => Promise.resolve([])),
+    },
   }
   return { mockPrisma }
 })

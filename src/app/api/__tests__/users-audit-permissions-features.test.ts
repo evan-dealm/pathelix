@@ -77,6 +77,7 @@ import { GET as predictGET }                        from '@/app/api/predictions/
 import { getRequestContext }                        from '@/lib/data/context'
 import { auditAsync }                               from '@/lib/audit'
 import { logSuperadminAction }                      from '@/lib/superadminAudit'
+import { hasPermission }                            from '@/lib/permissions'
 
 function makeGet(url: string): NextRequest { return new NextRequest(url) }
 
@@ -179,8 +180,13 @@ describe('PUT /api/users/[id]', () => {
     expect(call[4]).not.toHaveProperty('roleBefore')
   })
 
+  // N24 follow-up: the redundant role!=='admin' guard was removed — hasPermission('manage_users')
+  // is now the sole gate, same as the other 8 sites already using this pattern. Real
+  // DEFAULT_PERMISSIONS.dispatcher never includes manage_users, but this file mocks the whole
+  // permissions module to unconditionally return true, so the false case has to be forced here.
   it('returns 403 for dispatcher', async () => {
     vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
+    vi.mocked(hasPermission).mockResolvedValueOnce(false)
 
     const res = await userPUT(makePut('http://localhost:3000/api/users/u-1', { firstName: 'X' }), makeParams('u-1'))
     expect(res.status).toBe(403)
@@ -232,6 +238,7 @@ describe('DELETE /api/users/[id]', () => {
 
   it('returns 403 for dispatcher', async () => {
     vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
+    vi.mocked(hasPermission).mockResolvedValueOnce(false)
 
     const res = await userDELETE(makeDeleteReq('http://localhost:3000/api/users/u-1'), makeParams('u-1'))
     expect(res.status).toBe(403)
@@ -515,6 +522,7 @@ describe('POST /api/api-keys', () => {
 
   it('returns 403 for dispatcher', async () => {
     vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
+    vi.mocked(hasPermission).mockResolvedValueOnce(false)
 
     const res = await keysPOST(makePost('http://localhost:3000/api/api-keys', validBody))
     expect(res.status).toBe(403)

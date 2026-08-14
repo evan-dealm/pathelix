@@ -40,9 +40,6 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
   const { tenantId, userId, role } = getRequestContext(req)
-  if (role !== 'admin') {
-    return NextResponse.json({ error: 'Réservé aux administrateurs' }, { status: 403 })
-  }
   if (!(await hasPermission(userId, role, 'manage_users'))) {
     return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
@@ -92,9 +89,6 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id }   = await params
   const { tenantId, userId, role } = getRequestContext(req)
-  if (role !== 'admin') {
-    return NextResponse.json({ error: 'Réservé aux administrateurs' }, { status: 403 })
-  }
   if (!(await hasPermission(userId, role, 'manage_users'))) {
     return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
