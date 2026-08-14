@@ -74,7 +74,7 @@ export async function navigateToTab(page: Page, tabName: string) {
   // it worked the first time.
   const targetPanel = page.locator(`#tabpanel-${tabName}`)
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     if (await tab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await tab.click()
     } else if (await fallback.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -82,7 +82,7 @@ export async function navigateToTab(page: Page, tabName: string) {
     } else {
       break
     }
-    if (await targetPanel.waitFor({ state: 'attached', timeout: 5_000 }).then(() => true).catch(() => false)) {
+    if (await targetPanel.waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false)) {
       break
     }
   }

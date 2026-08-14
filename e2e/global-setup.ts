@@ -88,9 +88,13 @@ export default async function globalSetup() {
     }
 
     // ── Missions for today (requis par modals + missions tab) ─────────────────
+    // type must be a real, user-facing MissionType — VIDER/PAUSE are synthetic
+    // (VRP-generated only, see CLAUDE.md) and are filtered out of the Missions tab
+    // table by SYNTHETIC_TYPES, so seeding with 'VIDER' left the table permanently
+    // empty ("Aucune mission") no matter how many rows existed for today in the DB.
     const today = new Date().toISOString().split('T')[0]
     const existingMissions = await prisma.mission.findMany({
-      where: { tenantId: tenant.id, date: today },
+      where: { tenantId: tenant.id, date: today, type: { not: { in: ['VIDER', 'PAUSE'] } } },
     })
     if (existingMissions.length < 2) {
       const needed = 2 - existingMissions.length
@@ -98,7 +102,7 @@ export default async function globalSetup() {
         await prisma.mission.create({
           data: {
             tenantId:             tenant.id,
-            type:                 'VIDER',
+            type:                 'POSER',
             date:                 today,
             address:              `${i + 1} Avenue de la Gare, 75002 Paris`,
             latitude:             48.87 + i * 0.01,
