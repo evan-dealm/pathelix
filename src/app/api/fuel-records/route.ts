@@ -82,7 +82,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
     if (!vehicle) return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
 
-    // FuelRecord.driverId has no DB-level FK (see AUDIT_BUGS.md N19) — same pattern as
+    // FuelRecord.driverId has no DB-level FK — same pattern as
     // DeliveryProof: must be checked against tenantId here or a record could reference a
     // driver belonging to a different tenant.
     if (parsed.data.driverId) {

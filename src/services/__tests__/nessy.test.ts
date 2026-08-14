@@ -162,7 +162,7 @@ describe('module-level deprecated env var warning', () => {
     vi.resetModules()
   })
 
-  // A1 (AUDIT_BUGS.md M12): NESSY_WEBHOOK_SECRET no longer gates webhook auth (that's per-tenant
+  // NESSY_WEBHOOK_SECRET no longer gates webhook auth (that's per-tenant
   // via Integration now) — it just warns if still set, since it's a no-op that can be removed.
   it('warns when NESSY_WEBHOOK_SECRET is still set (deprecated, no longer used for auth)', async () => {
     const capturedWarnings: string[] = []

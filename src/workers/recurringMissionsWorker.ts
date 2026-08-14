@@ -73,7 +73,7 @@ export async function processRecurringMissions(_job: Job) {
       const dateStr = occ.toISOString().split('T')[0]
 
       try {
-        // A5 (AUDIT_BUGS.md N18): generatedFromTemplateId is the stable dedup key going forward.
+        // generatedFromTemplateId is the stable dedup key going forward.
         // The old tenantId+date+address+type+clientName heuristic is kept as a fallback ONLY for
         // missions created before this field existed (generatedFromTemplateId is null) — new
         // missions are always linked, so they're deduped on the stable key from here on.

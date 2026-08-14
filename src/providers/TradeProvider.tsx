@@ -26,7 +26,7 @@ const TradeContext = createContext<TradeContextValue | null>(null)
 
 interface TradeProviderProps {
   tradeId: string | null | undefined
-  // A9 (AUDIT_BUGS.md M5): custom trades are registered in a server-only, per-process registry
+  // Custom trades are registered in a server-only, per-process registry
   // (instrumentation.ts) that the browser's own JS bundle never sees. When `tradeId` is a custom
   // trade, the caller (DataProvider) fetches its resolved config from /api/settings and passes
   // it here directly, bypassing the client's empty registry lookup in getTradeConfig().

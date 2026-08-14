@@ -1,4 +1,4 @@
-// ─── Backfill runner — Mission.generatedFromTemplateId (A5, AUDIT_BUGS.md N18) ─
+// ─── Backfill runner — Mission.generatedFromTemplateId ──────────────────────────
 // Thin DB-wiring layer around the pure matching logic in src/lib/recurringTemplateBackfill.ts.
 // Run: npm run db:backfill-template-links
 

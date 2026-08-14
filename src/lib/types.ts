@@ -252,8 +252,9 @@ export interface SettingsApiResponse {
   maxOptimizationsPerDay?: number
   trade?:                  string
   routingSource?:          string
-  // Resolved custom-trade config, sent when `trade` is not a built-in TradeId — see A9 in
-  // AUDIT_BUGS.md (M5's client-side hydration gap). null when `trade` is a built-in trade.
+  // Resolved custom-trade config, sent when `trade` is not a built-in TradeId (custom trades
+  // are registered server-side only, this closes the client-side hydration gap). null when
+  // `trade` is a built-in trade.
   customTradeConfig?:      TradeConfig | null
 }
 

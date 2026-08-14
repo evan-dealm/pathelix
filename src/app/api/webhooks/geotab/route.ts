@@ -56,7 +56,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     where: { type: 'geotab', enabled: true },
     select: { tenantId: true, config: true },
   })
-  // N16 (AUDIT_BUGS.md): each individual comparison in apiKeyMatches() is timingSafeEqual, but
+  // Each individual comparison in apiKeyMatches() is timingSafeEqual, but
   // .find() short-circuits on first match — a theoretical timing leak on WHICH POSITION in the
   // list matches, not on the secret's contents itself. Accepted risk (negligible in practice,
   // requires many timed requests + integration ordering knowledge to exploit for zero gain).

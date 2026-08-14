@@ -123,7 +123,7 @@ describe('processRecurringMissions', () => {
     await expect(processRecurringMissions(FAKE_JOB)).resolves.toBeDefined()
   })
 
-  // Regression A5 (AUDIT_BUGS.md N18): new missions must carry a stable link to the template
+  // Regression: new missions must carry a stable link to the template
   // that generated them, so future runs can dedupe on that link instead of the fragile
   // tenantId+date+address+type+clientName heuristic.
   it('sets generatedFromTemplateId on newly created missions', async () => {

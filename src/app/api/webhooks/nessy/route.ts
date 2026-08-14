@@ -30,7 +30,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const signature = req.headers.get('x-nessy-signature') ?? ''
 
-  // M12/A1 (AUDIT_BUGS.md): the tenant is now resolved by finding which tenant's own secret
+  // The tenant is resolved by finding which tenant's own secret
   // verifies this signature — never trusted from a client-supplied x-tenant-id header anymore.
   // Mirrors the Geotab/Samsara per-tenant integration secret pattern (see N15 fix). Each
   // candidate is checked sequentially (verifyNessySignature is async, unlike Geotab's

@@ -202,7 +202,7 @@ describe('DELETE /api/superadmin/trades/[id]', () => {
 })
 
 // ─── POST /api/webhooks/obd ───────────────────────────────────────────────────
-// A1 (AUDIT_BUGS.md M3/M12): OBD auth moved from a single global OBD_WEBHOOK_TOKEN env var to a
+// OBD auth moved from a single global OBD_WEBHOOK_TOKEN env var to a
 // per-tenant secret configured via Integration (type "obd"), matched the same way as
 // Geotab/Samsara/Nessy. driverId is also now checked against the resolved tenant (mockDriverFindMany).
 

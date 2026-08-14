@@ -258,8 +258,8 @@ describe('POST /api/delivery-proof', () => {
     expect(json.proof.id).toBe('p-1')
   })
 
-  // Regression N19: driverId came straight from client form data with no check that it belongs
-  // to the request's tenant — DeliveryProof.driverId has no DB-level FK (see AUDIT_BUGS.md N19),
+  // Regression: driverId came straight from client form data with no check that it belongs
+  // to the request's tenant — DeliveryProof.driverId has no DB-level FK,
   // so a proof could get written referencing a driver from a different tenant entirely.
   it('returns 404 when driverId does not belong to the request tenant', async () => {
     mockPrisma.mission.findFirst.mockResolvedValue({ id: 'm-1' })

@@ -44,10 +44,10 @@ export function getTenantId(req: NextRequest): string {
 }
 
 // In-memory, per-process cache — relies on the documented single-instance deployment topology
-// (docs/01_OVERVIEW.md, docs/INFRASTRUCTURE.md: "serveur cloud dédié unique"). If Pathélix ever
-// moves to multiple app instances, this cache needs a shared invalidation mechanism (e.g. Redis
-// pub/sub) or a suspended tenant could keep working for up to SUSPENSION_CACHE_TTL on instances
-// that haven't seen the suspension yet. Tracked as AUDIT_BUGS.md N4.
+// (see OPERATIONS.md §8: "serveur cloud dédié unique"). If Pathélix ever moves to multiple app
+// instances, this cache needs a shared invalidation mechanism (e.g. Redis pub/sub) or a
+// suspended tenant could keep working for up to SUSPENSION_CACHE_TTL on instances that haven't
+// seen the suspension yet.
 const _suspensionCache = new Map<string, { suspended: boolean; checkedAt: number }>()
 const SUSPENSION_CACHE_TTL = 60_000
 const SUSPENSION_CACHE_MAX = 500

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { endpoint, keys, driverId } = parsed.data
 
-  // PushSubscription.driverId has no DB-level FK (see AUDIT_BUGS.md N19) — same pattern as
+  // PushSubscription.driverId has no DB-level FK — same pattern as
   // DeliveryProof/FuelRecord: must be checked against tenantId here or a subscription could
   // reference a driver belonging to a different tenant.
   if (driverId) {

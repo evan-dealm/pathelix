@@ -10,8 +10,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const useMock = process.env.USE_MOCK_DATA !== 'false'
 
   let dbStatus: 'ok' | 'mock' | 'error' = useMock ? 'mock' : 'ok'
-  // A1 (AUDIT_BUGS.md M12): Nessy secrets are now per-tenant (Integration table), not a single
-  // global env var — "configured" means at least one tenant has an enabled Nessy integration.
+  // Nessy secrets are per-tenant (Integration table), not a single global env var —
+  // "configured" means at least one tenant has an enabled Nessy integration.
   let nessyOk = false
 
   if (!useMock) {

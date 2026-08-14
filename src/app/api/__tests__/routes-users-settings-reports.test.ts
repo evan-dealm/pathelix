@@ -240,7 +240,7 @@ describe('GET /api/settings', () => {
     expect(res.status).toBe(500)
   })
 
-  // Regression A9 (AUDIT_BUGS.md M5): custom trade config must be resolved and included in the
+  // Regression: custom trade config must be resolved and included in the
   // response so the client can hydrate TradeProvider — the server-side registry never reaches
   // the browser's own JS bundle.
   it('includes resolved customTradeConfig when trade is not a built-in TradeId', async () => {

@@ -1,4 +1,4 @@
-// ─── Backfill matching logic — Mission.generatedFromTemplateId (A5, AUDIT_BUGS.md N18) ────
+// ─── Backfill matching logic — Mission.generatedFromTemplateId ────────────────────────────
 // Best-effort match of existing missions (created before this field existed) to the
 // MissionTemplate that most likely generated them, using the exact recurrence occurrences
 // each template ever produced. Only links a mission when the match is UNAMBIGUOUS — no

@@ -65,7 +65,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     where: { type: 'samsara', enabled: true },
     select: { tenantId: true, config: true },
   })
-  // N16 (AUDIT_BUGS.md): same accepted theoretical timing leak as the Geotab route — each
+  // Same accepted theoretical timing leak as the Geotab route — each
   // comparison is timingSafeEqual but .find() short-circuits on first match, leaking position
   // in the list, not the secret's contents. Negligible in practice.
   const integration = integrations.find(i => {

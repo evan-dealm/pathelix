@@ -45,7 +45,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const trade = tenant?.trade ?? null
         const routingSource = detectRoutingSource()
 
-        // A9 (AUDIT_BUGS.md M5): custom (superadmin-created) trades are registered server-side
+        // Custom (superadmin-created) trades are registered server-side
         // via instrumentation.ts, but that registry lives in this process's memory only — the
         // browser's own JS bundle never sees it. Ship the resolved config down to the client so
         // TradeProvider can use it directly instead of an empty client-side registry.

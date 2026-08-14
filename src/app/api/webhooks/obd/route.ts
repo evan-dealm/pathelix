@@ -44,7 +44,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer /, '')
   if (!token) return NextResponse.json({ error: 'Token requis' }, { status: 401 })
 
-  // M3/A1 (AUDIT_BUGS.md): the OBD webhook used to trust a single global OBD_WEBHOOK_TOKEN with
+  // The OBD webhook used to trust a single global OBD_WEBHOOK_TOKEN with
   // no tenant resolution at all — anyone holding the token could write GPS readings for any
   // driverId in the entire system, across every tenant. Now each tenant configures its own OBD
   // secret via Integration (type "obd"), mirroring the Geotab/Samsara/Nessy pattern, and the

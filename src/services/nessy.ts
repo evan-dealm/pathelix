@@ -10,7 +10,7 @@ const NESSY_BASE_URL    = process.env.NESSY_BASE_URL ?? ''
 const NESSY_API_KEY     = process.env.NESSY_API_KEY  ?? ''
 const NESSY_BREAKER     = 'nessy'
 
-// A1 (AUDIT_BUGS.md M12): deprecated — /api/webhooks/nessy no longer reads a single global
+// Deprecated — /api/webhooks/nessy no longer reads a single global
 // secret. Each tenant configures its own Nessy webhook secret via the Integration table
 // (POST /api/integrations, type "nessy"), and the webhook resolves the tenant by finding which
 // integration's secret verifies the request signature. Kept only so an operator's NESSY_WEBHOOK_SECRET
