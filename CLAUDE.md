@@ -104,8 +104,8 @@ if (!parsed.success) return NextResponse.json({ error: parsed.error.format() }, 
 
 All four resolve the tenant by finding which enabled integration's own secret/key matches the
 request — never from a client-supplied header. `NESSY_WEBHOOK_SECRET` / `OBD_WEBHOOK_TOKEN` env
-vars are deprecated (A1 fix, see `AUDIT_BUGS.md` M12/M3) — a single shared secret + a
-client-asserted tenant is a real cross-tenant risk, not an acceptable tradeoff.
+vars are deprecated (see `API.md`) — a single shared secret + a client-asserted tenant is a real
+cross-tenant risk, not an acceptable tradeoff.
 
 ## Dev commands
 

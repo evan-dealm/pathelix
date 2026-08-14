@@ -91,10 +91,10 @@ async function flushQueue() {
       if (res.ok || res.status === 422) {
         await deleteItem(db, key)
       } else if (res.status >= 500) {
-        // N17 (AUDIT_BUGS.md): intentional head-of-line blocking, mirrors src/lib/syncQueue.ts —
+        // Intentional head-of-line blocking, mirrors src/lib/syncQueue.ts —
         // a 5xx usually means the server is down/degraded, not that this action is bad. `break`
         // avoids spamming a struggling server with the rest of the queue this cycle. Deliberate,
-        // not a bug — don't turn this into `continue` without reading AUDIT_BUGS.md N17 first.
+        // not a bug — don't turn this into `continue`.
         await putItem(db, key, { ...action, retryCount: (action.retryCount || 0) + 1 })
         break
       } else {

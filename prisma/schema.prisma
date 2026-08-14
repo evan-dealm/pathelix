@@ -241,7 +241,7 @@ model Mission {
   timeWindowOpenMin    Int?
   timeWindowCloseMin   Int?
   linkedExutoireId     String?
-  // A5 (AUDIT_BUGS.md N18): stable link to the MissionTemplate that generated this mission via
+  // Stable link to the MissionTemplate that generated this mission via
   // recurringMissionsWorker.ts, replacing the old tenantId+date+address+type+clientName dedup
   // heuristic. Null for manually-created missions and for missions generated before this field
   // existed that couldn't be unambiguously backfilled.
