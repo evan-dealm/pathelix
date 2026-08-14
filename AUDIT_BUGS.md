@@ -1354,7 +1354,34 @@ en continu au fil de l'avancement.
   toujours réussi. **Sans rapport avec les headers CSP/sécurité** du même fichier (définis via la
   fonction `headers()`, distincte, non affectée — CLAUDE.md invariant #3 reste intact sur cette
   branche).
-- **Statut** : branche `next-16-major-bump` conservée avec 3 commits (`d28e184`, `2ab0c56`), **non
-  mergée dans `master`**. `master` reste sur `next@15.5.23` avec les 6 vulnérabilités résiduelles
-  documentées ci-dessus (3 dépendantes de ce bump). **Décision explicitement laissée à
-  l'utilisateur** — voir rapport final.
+- **Statut initial** : branche `next-16-major-bump` conservée avec 3 commits (`d28e184`,
+  `2ab0c56`), **non mergée dans `master`**.
+
+#### Résolution finale (Phase 1.2, mission suivante) — 3 CVE high fermées SANS bump majeur
+- **Décision utilisateur** : ne pas forcer le bump majeur maintenant (pilote pas encore en prod à
+  pleine échelle, risque middleware pas justifié pour 3 CVE). Demande : chercher un backport 15.x,
+  sinon documenter et traiter Next 16 comme chantier séparé post-pilote.
+- **Aucun backport 15.x n'existe** — `next@15.5.23` (installé) est la dernière version publiée de
+  la ligne 15.5.x (`npm view next versions` : rien après `15.5.23`), et elle est déjà celle testée
+  par `npm audit`.
+- **Mais aucun backport n'était nécessaire** : les 3 vulnérabilités "high" ne sont pas des CVE
+  contre `next` lui-même — `npm audit` les attribue à `next` uniquement parce qu'il **embarque ses
+  propres copies internes, non-dédupliquées** de `postcss` (`node_modules/next/node_modules/
+  postcss`) et de `sharp` (`node_modules/next/node_modules/sharp`), figées à des versions
+  vulnérables (postcss ≤8.5.22 : XSS + path traversal sur `sourceMappingURL`, 4 CVE distincts ;
+  sharp <0.35.0 : CVE-2026-33327/33328/35590/35591 dans libvips). **Résolu en forçant ces deux
+  dépendances imbriquées via `overrides` dans `package.json`** (`postcss` bump direct
+  `^8`→`^8.5.26` + entrée `overrides`, `sharp` déjà à `^0.35.3` en racine + entrée `overrides`) —
+  npm déduplique alors TOUTES les copies, y compris celles que `next` pinne en interne, sans
+  toucher à la version de `next` elle-même (reste `15.5.23`, middleware inchangé, aucun risque sur
+  l'isolation tenant/permissions/sessions). Vérifié : `next ls` confirme `postcss@8.5.26 deduped`
+  et `sharp@0.35.3 deduped` sous `node_modules/next`, `npm audit` : 6 → 3 (0 high restant), suite
+  complète (199/3535 tests, lint, `tsc`, build) verte, page `/login` vérifiée servir le CSS
+  Tailwind généré normalement (pipeline PostCSS fonctionnel avec la version forcée).
+- **Reste après cette résolution** : `esbuild` (low, non exploitable — cf. Phase B), `exceljs`/
+  `uuid` (moderate, non exploitable — cf. Phase B). **0 vulnérabilité high, aucune bloquée par un
+  bump majeur.**
+- **Branche `next-16-major-bump`** : conservée telle quelle, non mergée, comme point de départ pour
+  la migration Next 16 quand elle sera décidée comme chantier dédié post-pilote (le blocage réel —
+  dépréciation `middleware`→`proxy` — n'a pas changé et n'était de toute façon plus le facteur
+  bloquant une fois les CVE résolues autrement).
