@@ -59,7 +59,22 @@ export async function navigateToTab(page: Page, tabName: string) {
     settings: 'Parametres',
   }
 
-  const label = labelMap[tabName] || tabName
+  // Several spec files call this with the capitalized display label (e.g. 'Dashboard',
+  // 'Chauffeurs') instead of the lowercase AppTab key ('dashboard', 'drivers') the id selector
+  // below actually needs. The button click still worked by accident in those cases (label
+  // resolution falls back to the raw string, which happens to match the visible button text),
+  // but #tabpanel-{tabName} is a case-sensitive CSS id and every real tabpanel id is lowercase
+  // (see src/app/admin/page.tsx) — so the panel-visibility wait always failed for those calls,
+  // independent of any timing/environment factor. Resolve to the canonical lowercase key
+  // regardless of which convention the caller used.
+  const reverseLabelMap = Object.fromEntries(
+    Object.entries(labelMap).map(([key, value]) => [value.toLowerCase(), key]),
+  )
+  const key = labelMap[tabName.toLowerCase()]
+    ? tabName.toLowerCase()
+    : (reverseLabelMap[tabName.toLowerCase()] ?? tabName.toLowerCase())
+
+  const label = labelMap[key] || tabName
 
   const tab = page.locator(`nav[aria-label="Navigation principale"] button[title="${label}"]`).first()
   const fallback = page.locator(`nav button:has-text("${label}")`).first()
@@ -72,7 +87,7 @@ export async function navigateToTab(page: Page, tabName: string) {
   // out waiting for content that will never appear on the wrong panel. Retrying the click once
   // against a fresh locator recovers from that race without slowing down the common case where
   // it worked the first time.
-  const targetPanel = page.locator(`#tabpanel-${tabName}`)
+  const targetPanel = page.locator(`#tabpanel-${key}`)
 
   // Each tab is a client-only dynamic import (see NAV_ITEMS / dynamic(..., {ssr:false}) in
   // src/app/admin/page.tsx) compiled on demand by Next.js dev mode — under real-world Windows
@@ -110,7 +125,7 @@ export async function navigateToTab(page: Page, tabName: string) {
   // the tab switch itself never landing (found via e2e investigation: the previous silent
   // fallthrough masked this exact failure mode behind an unrelated-looking timeout downstream).
   if (!landed) {
-    throw new Error(`navigateToTab('${tabName}'): #tabpanel-${tabName} never became visible after 3 click attempts`)
+    throw new Error(`navigateToTab('${tabName}'): #tabpanel-${key} never became visible after 3 click attempts`)
   }
 }
 
