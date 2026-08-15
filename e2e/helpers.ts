@@ -74,7 +74,22 @@ export async function navigateToTab(page: Page, tabName: string) {
   // it worked the first time.
   const targetPanel = page.locator(`#tabpanel-${tabName}`)
 
+  // Each tab is a client-only dynamic import (see NAV_ITEMS / dynamic(..., {ssr:false}) in
+  // src/app/admin/page.tsx) compiled on demand by Next.js dev mode — under real-world Windows
+  // dev-machine conditions (antivirus real-time scanning of node_modules/.next during webpack
+  // compilation) this can legitimately take well over 10s. The old loop re-clicked the tab on
+  // every attempt with no check for "did the previous click already land and is just slow to
+  // render" — a click that succeeded but was still compiling got a redundant second click layered
+  // on top on the next attempt, and the wait restarted from zero instead of just needing more
+  // time. Checking targetPanel first avoids re-clicking (and therefore avoids ever needing to
+  // find out whether a second click on an already-active tab restarts anything) and widening the
+  // per-attempt wait gives slow compiles room to finish on their own.
+  let landed = false
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (await targetPanel.isVisible({ timeout: 500 }).catch(() => false)) {
+      landed = true
+      break
+    }
     if (await tab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await tab.click()
     } else if (await fallback.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -82,11 +97,21 @@ export async function navigateToTab(page: Page, tabName: string) {
     } else {
       break
     }
-    if (await targetPanel.waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false)) {
+    if (await targetPanel.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false)) {
+      landed = true
       break
     }
   }
   await page.waitForTimeout(500)
+
+  // Fail loudly and specifically here rather than silently returning — every caller's next
+  // assertion would otherwise time out waiting for content on a panel that will never appear,
+  // producing a confusing "waiting for tbody tr" error with no hint that the actual problem was
+  // the tab switch itself never landing (found via e2e investigation: the previous silent
+  // fallthrough masked this exact failure mode behind an unrelated-looking timeout downstream).
+  if (!landed) {
+    throw new Error(`navigateToTab('${tabName}'): #tabpanel-${tabName} never became visible after 3 click attempts`)
+  }
 }
 
 export async function waitForAdminReady(page: Page) {

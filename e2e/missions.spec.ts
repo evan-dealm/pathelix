@@ -6,7 +6,11 @@ test.describe('Missions Tab', () => {
     await login(page)
     await waitForAdminReady(page)
     await navigateToTab(page, 'missions')
-    await page.locator('[role="tabpanel"] tbody tr').first().waitFor({ state: 'visible', timeout: 30_000 })
+    // The empty-table timeouts once blamed on render/data timing here were actually
+    // DataProvider fetching the wrong day's missions near local midnight (UTC vs local "today"
+    // mismatch, see src/providers/DataProvider.tsx) — fixed at the source, so this is back to a
+    // plain render-completion wait.
+    await page.locator('[role="tabpanel"] tbody tr').first().waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForTimeout(300)
   })
 

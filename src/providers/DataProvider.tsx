@@ -19,9 +19,12 @@ async function fetchPage<T>(url: string): Promise<T[]> {
   return Array.isArray(json) ? json : (json.data ?? [])
 }
 
+// UTC-based to match src/lib/dateUtils.ts's today() (used for mission creation, driver pages,
+// e2e/global-setup.ts seeding) — this used to read local Date components instead, which silently
+// disagreed with every other "today" in the app for the ~1-2h window each night where local and
+// UTC calendar dates differ, fetching the wrong day's missions/plans with no error.
 function todayStr(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return new Date().toISOString().split('T')[0]
 }
 
 export function DataProvider({ children }: { children: React.ReactNode }) {

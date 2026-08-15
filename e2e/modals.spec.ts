@@ -7,7 +7,8 @@ function modalDialog(page: import('@playwright/test').Page) {
 
 async function goToMissions(page: import('@playwright/test').Page) {
   await navigateToTab(page, 'missions')
-  await page.locator('[role="tabpanel"] tbody tr').first().waitFor({ state: 'visible', timeout: 30_000 })
+  // See missions.spec.ts beforeEach — the real fix was DataProvider's UTC/local date mismatch.
+  await page.locator('[role="tabpanel"] tbody tr').first().waitFor({ state: 'visible', timeout: 20_000 })
   await page.waitForTimeout(300)
 }
 
