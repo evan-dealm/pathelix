@@ -1,8 +1,17 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { login, waitForAdminReady, navigateToTab } from './helpers'
 
-// Trackdéchets E2E — all tests run in mock mode (USE_MOCK_DATA default ON)
-// No real TD API calls. HALT in force before switching to prod.
+// Trackdéchets E2E — USE_MOCK_DATA is project-default ON (see CLAUDE.md) but this repo's
+// committed .env pins it to 'false' for real-DB E2E testing (matches global-setup.ts's Prisma
+// seeding and OPERATIONS.md §9's HALT validation checklist, which itself runs with
+// USE_MOCK_DATA=false). The 3 tests below that exercise the mock-only success short-circuit
+// (fake "any-id" placeholders that only resolve without a DB lookup) are mode-aware so they
+// assert the correct behavior either way instead of assuming mock is always active.
+async function isMockMode(page: Page): Promise<boolean> {
+  const res = await page.request.get('/api/health')
+  const body = await res.json().catch(() => ({}))
+  return body.useMock !== false
+}
 
 test.describe('Trackdéchets — mock mode', () => {
   test.beforeEach(async ({ page }) => {
@@ -25,7 +34,8 @@ test.describe('Trackdéchets — mock mode', () => {
     expect(typeof body.total).toBe('number')
   })
 
-  test('BSD creation returns mock BSD in draft status', async ({ page }) => {
+  test('BSD creation returns mock BSD in draft status, or a safe 409 when Trackdéchets is unconfigured', async ({ page }) => {
+    const mock = await isMockMode(page)
     const res = await page.request.post('/api/bsds', {
       data: {
         emitter: {
@@ -46,10 +56,16 @@ test.describe('Trackdéchets — mock mode', () => {
         wasteDetails: { code: '17 09 04' },
       },
     })
-    expect(res.status()).toBe(201)
-    const body = await res.json()
-    expect(body.bsdId).toBeDefined()
-    expect(body.tdId).toBeDefined()
+    if (mock) {
+      expect(res.status()).toBe(201)
+      const body = await res.json()
+      expect(body.bsdId).toBeDefined()
+      expect(body.tdId).toBeDefined()
+    } else {
+      // Real (non-mock) mode with no TrackdechetsAccount configured for the E2E tenant — the
+      // route safely refuses rather than attempting a real sandbox call (see OPERATIONS.md §9).
+      expect(res.status()).toBe(409)
+    }
   })
 
   test('BSD creation rejects missing emitter SIRET', async ({ page }) => {
@@ -74,14 +90,20 @@ test.describe('Trackdéchets — mock mode', () => {
     expect(res.status()).toBe(422)
   })
 
-  test('BSD sign returns mock SIGNED_BY_PRODUCER in mock mode', async ({ page }) => {
+  test('BSD sign returns mock SIGNED_BY_PRODUCER in mock mode, or 404 for a nonexistent BSD in real mode', async ({ page }) => {
+    const mock = await isMockMode(page)
     const res = await page.request.post('/api/bsds/any-id/sign', {
       data: { signatureType: 'PRODUCER', signatureAuthor: 'Jean Test E2E' },
     })
-    expect(res.status()).toBe(200)
-    const body = await res.json()
-    expect(body.ok).toBe(true)
-    expect(body.status).toBe('SIGNED_BY_PRODUCER')
+    if (mock) {
+      expect(res.status()).toBe(200)
+      const body = await res.json()
+      expect(body.ok).toBe(true)
+      expect(body.status).toBe('SIGNED_BY_PRODUCER')
+    } else {
+      // 'any-id' is a placeholder, not a real BSD id — real mode correctly looks it up in DB.
+      expect(res.status()).toBe(404)
+    }
   })
 
   test('BSD sign rejects empty signatureAuthor', async ({ page }) => {
@@ -108,10 +130,16 @@ test.describe('Trackdéchets — mock mode', () => {
     expect(res.status()).toBe(200)
   })
 
-  test('account configuration DELETE returns ok in mock mode', async ({ page }) => {
+  test('account configuration DELETE returns ok in mock mode, or 404 for a nonexistent account in real mode', async ({ page }) => {
+    const mock = await isMockMode(page)
     const res = await page.request.delete('/api/trackdechets/accounts/any-id')
-    expect(res.status()).toBe(200)
-    const body = await res.json()
-    expect(body.ok).toBe(true)
+    if (mock) {
+      expect(res.status()).toBe(200)
+      const body = await res.json()
+      expect(body.ok).toBe(true)
+    } else {
+      // 'any-id' is a placeholder, not a real account id — real mode correctly looks it up in DB.
+      expect(res.status()).toBe(404)
+    }
   })
 })
