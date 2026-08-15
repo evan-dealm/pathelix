@@ -109,18 +109,35 @@ npx playwright test    # E2E (serveur :3000 requis)
 - Ne jamais baisser un seuil de couverture
 - `src/lib/vrp/` jamais modifié sans validation complète de sa suite de tests existante
 
-### E2E — état réel du dernier run complet (4 shards)
+### E2E — root causes réelles des échecs historiques (résolu, 15 août 2026)
 
-| Shard | Passed | Failed | Flaky (repasse au retry) |
-|---|---|---|---|
-| 1/4 | 86 | 2 | 0 |
-| 2/4 | 75 | 8 | 6 |
-| 3/4 | 23 | 19 | 6 |
-| 4/4 | 66 | 26 | 2 |
+Les échecs `navigateToTab()` observés sur plusieurs sessions et longtemps attribués à de la
+"pression mémoire" avaient en réalité deux causes de code distinctes, aucune des deux liée à la
+mémoire :
 
-83 % de réussite effective (verts du premier coup + verts au retry) sur les tests exécutés jusqu'au bout. Cause dominante des échecs restants : une race de timing occasionnelle entre le clic de changement d'onglet et la fin d'hydratation React (`e2e/helpers.ts` → `navigateToTab()`), qui s'aggrave sous charge mémoire soutenue en session de test très longue — mitigée (retry + attente `visible`) mais pas éliminée à 100 %. Deux root causes distinctes déjà identifiées et corrigées avant ce chiffre : le seed E2E utilisait un type de mission synthétique filtré par l'UI (`e2e/global-setup.ts`, corrigé), et `e2e/auth.setup.ts` perdait occasionnellement le dismiss du modal d'onboarding avant de sauvegarder l'état de session partagé entre tests (corrigé).
+1. **`src/providers/DataProvider.tsx`** calculait la date du jour avec les composants **locaux**
+   de `Date` (`getFullYear/getMonth/getDate`), alors que tout le reste de l'app
+   (`src/lib/dateUtils.ts`, `e2e/global-setup.ts`) utilise **UTC** (`toISOString()`). Près de
+   minuit local, les deux dates divergent d'un jour entier : l'app allait chercher les missions
+   du mauvais jour, l'onglet Missions s'affichait normalement mais montrait "Aucune mission" —
+   pas un bug de clic, un bug de date. Corrigé (DataProvider passé en UTC).
+2. **15 sites d'appel** dans `accessibility.spec.ts`, `dashboard-advanced.spec.ts`,
+   `error-handling.spec.ts` et `responsive.spec.ts` appelaient `navigateToTab()` avec le libellé
+   affiché à l'écran (`'Dashboard'`, `'Chauffeurs'`) au lieu de la clé `AppTab` en minuscules
+   attendue. Le clic sur le bouton fonctionnait par accident, mais le sélecteur CSS
+   `#tabpanel-{tabName}` est sensible à la casse et tous les id réels sont en minuscules — la
+   vérification de panel échouait donc systématiquement, indépendamment de toute charge machine.
+   `navigateToTab()` résout maintenant la clé canonique quelle que soit la casse utilisée par
+   l'appelant.
 
-Relancer un run complet propre sur une machine avec de la RAM disponible (le run ci-dessus a été exécuté sur une machine tombée à ~2 Go de RAM libre en cours de session) devrait significativement améliorer ce taux.
+**Caractéristique machine réelle et distincte, confirmée** : sur cette machine de développement
+Windows, `next dev` (mode dev, compilation à la demande) voit son processus grossir à 5+ Go de
+heap au bout de ~50-60 tests E2E séquentiels dans une même durée de vie de serveur, ce qui peut
+dégrader/bloquer le serveur. **Confirmé spécifique au mode dev** : la même charge de test (72
+tests, incluant le point de blocage observé en mode dev) exécutée contre un build de production
+(`next build && next start`) a gardé le processus serveur à ~365 Mo, sans dégradation — aucun
+rapport avec le comportement en production. Mitigation en mode dev : redémarrer le serveur entre
+petits lots de fichiers plutôt qu'un run complet en une seule vie de serveur.
 
 ---
 
