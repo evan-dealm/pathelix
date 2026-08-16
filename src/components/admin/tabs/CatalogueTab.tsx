@@ -99,7 +99,7 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
               onImport={async (items) => {
                 let failed = 0
                 for (const [i, c] of items.entries()) {
-                  if (i > 0) await sleep(120)
+                  if (i > 0) await sleep(250)
                   const res = await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c) })
                   if (!res.ok) failed++
                 }
@@ -322,7 +322,7 @@ function SitesPanel({ readOnly = false }: { readOnly?: boolean }) {
               onImport={async (items) => {
                 let failed = 0
                 for (const [i, s] of items.entries()) {
-                  if (i > 0) await sleep(120)
+                  if (i > 0) await sleep(250)
                   const res = await fetch('/api/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) })
                   if (!res.ok) failed++
                 }

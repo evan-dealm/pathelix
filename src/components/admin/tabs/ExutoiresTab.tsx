@@ -131,7 +131,7 @@ export function ExutoiresTab() {
             onImport={async (items) => {
               let failed = 0
               for (const [i, e] of items.entries()) {
-                if (i > 0) await sleep(120)
+                if (i > 0) await sleep(250)
                 const res = await fetch('/api/exutoires', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(e) })
                 if (!res.ok) failed++
               }

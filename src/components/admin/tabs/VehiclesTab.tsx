@@ -519,7 +519,7 @@ export function VehiclesTab() {
             onImport={async (items) => {
               let failed = 0
               for (const [i, v] of items.entries()) {
-                if (i > 0) await sleep(120)
+                if (i > 0) await sleep(250)
                 const res = await fetch('/api/vehicles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) })
                 if (!res.ok) failed++
               }
