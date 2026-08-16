@@ -532,6 +532,23 @@ describe('parseVehicleRows', () => {
     expect(result[0].status).toBe('active')
   })
 
+  // Regression: the Statut column showed the app's own French labels (Actif/Maintenance/
+  // Hors service — same as the create/edit form and status badges), but the raw value was
+  // sent straight to POST /api/vehicles, whose Zod schema only accepts
+  // 'active'|'maintenance'|'decommissioned'. Every CSV filled in with what the UI displays
+  // 422'd, on every single row.
+  it('normalizes French status labels to the backend enum', () => {
+    expect(parseVehicleRows([{ immatriculation: 'AB-1', statut: 'Actif' }])[0].status).toBe('active')
+    expect(parseVehicleRows([{ immatriculation: 'AB-2', statut: 'Maintenance' }])[0].status).toBe('maintenance')
+    expect(parseVehicleRows([{ immatriculation: 'AB-3', statut: 'Hors service' }])[0].status).toBe('decommissioned')
+    expect(parseVehicleRows([{ immatriculation: 'AB-4', statut: 'Inactif' }])[0].status).toBe('decommissioned')
+  })
+
+  it('still accepts the raw backend enum values directly (round-trip of an exported CSV)', () => {
+    expect(parseVehicleRows([{ immatriculation: 'AB-1', statut: 'active' }])[0].status).toBe('active')
+    expect(parseVehicleRows([{ immatriculation: 'AB-2', statut: 'decommissioned' }])[0].status).toBe('decommissioned')
+  })
+
   it('parses hazmat boolean (oui/true/1)', () => {
     const rows1 = [{ immatriculation: 'AB-1', hazmat: 'Oui' }]
     const rows2 = [{ immatriculation: 'AB-2', hazmat: 'true' }]

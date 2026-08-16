@@ -99,6 +99,20 @@ function parseBool(s: string): boolean {
   return ['oui', 'true', '1', 'yes', 'vrai'].includes(s.toLowerCase())
 }
 
+const VEHICLE_STATUS_MAP: Record<string, string> = {
+  active: 'active', actif: 'active',
+  maintenance: 'maintenance', 'en maintenance': 'maintenance',
+  decommissioned: 'decommissioned', 'hors service': 'decommissioned', inactif: 'decommissioned', inactive: 'decommissioned',
+}
+
+// The Statut column shows the same French labels as the app's own filters and forms
+// (Actif/Maintenance/Hors service), but Vehicle.status is validated against the English
+// enum ['active','maintenance','decommissioned'] — normalize so a CSV filled in with what
+// the UI displays doesn't 422 on every row.
+function normalizeVehicleStatus(s: string): string {
+  return VEHICLE_STATUS_MAP[s.trim().toLowerCase()] || 'active'
+}
+
 function minToHHMM(m: number): string {
   const h = Math.floor(m / 60)
   const min = m % 60
@@ -243,7 +257,7 @@ export function parseVehicleRows(rows: Record<string, string>[]): ParsedVehicle[
         capacityM3:   parseNum(col(r, 'capacite', 'capacity', 'capacitym3', 'capacite_m3', 'volume')),
         maxBins:      parseInt(col(r, 'bennes', 'maxbins', 'max_bins', 'nb_bennes', 'max_bennes')) || undefined,
         mileageKm:    parseNum(col(r, 'kilometrage', 'mileage', 'km', 'mileagekm')),
-        status:       col(r, 'statut', 'status') || 'active',
+        status:       normalizeVehicleStatus(col(r, 'statut', 'status')),
         weightTon:    parseNum(col(r, 'poids', 'poids_tonnes', 'weightton', 'weight')),
         heightM:      parseNum(col(r, 'hauteur', 'hauteur_m', 'heightm', 'height')),
         widthM:       parseNum(col(r, 'largeur', 'largeur_m', 'widthm', 'width')),

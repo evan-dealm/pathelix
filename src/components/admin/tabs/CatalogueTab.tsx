@@ -97,11 +97,14 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
               filename="clients"
               parseRows={parseClientRows}
               onImport={async (items) => {
+                let failed = 0
                 for (const c of items) {
-                  await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c) })
+                  const res = await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c) })
+                  if (!res.ok) failed++
                 }
                 invalidateClientCache('/api/clients')
                 load()
+                if (failed > 0) throw new Error(`${failed} sur ${items.length} client(s) n'ont pas pu être importés.`)
               }}
             />
             <Btn onClick={() => setModal({ kind: 'new' })} variant="primary" size="sm">+ Nouveau client</Btn>
@@ -316,10 +319,13 @@ function SitesPanel({ readOnly = false }: { readOnly?: boolean }) {
               parseRows={parseSiteRows}
               needsGeocode
               onImport={async (items) => {
+                let failed = 0
                 for (const s of items) {
-                  await fetch('/api/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) })
+                  const res = await fetch('/api/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) })
+                  if (!res.ok) failed++
                 }
                 load()
+                if (failed > 0) throw new Error(`${failed} sur ${items.length} site(s) n'ont pas pu être importés.`)
               }}
             />
             <Btn onClick={() => setModal({ kind: 'new' })} variant="primary" size="sm">+ Nouveau site</Btn>

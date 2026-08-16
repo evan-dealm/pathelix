@@ -129,11 +129,14 @@ export function ExutoiresTab() {
             parseRows={parseExutoireRows}
             needsGeocode
             onImport={async (items) => {
+              let failed = 0
               for (const e of items) {
-                await fetch('/api/exutoires', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(e) })
+                const res = await fetch('/api/exutoires', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(e) })
+                if (!res.ok) failed++
               }
               invalidateClientCache('/api/exutoires')
               load()
+              if (failed > 0) throw new Error(`${failed} sur ${items.length} exutoire(s) n'ont pas pu être importés.`)
             }}
           />
           <Btn onClick={() => setModal({ kind: 'new' })} variant="primary" size="sm"><span className="hidden sm:inline">+ Nouvel exutoire</span><span className="sm:hidden">+</span></Btn>

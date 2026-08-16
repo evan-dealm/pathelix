@@ -508,7 +508,7 @@ export function VehiclesTab() {
           <option value="all">Tous statuts</option>
           <option value="active">Actif</option>
           <option value="maintenance">Maintenance</option>
-          <option value="inactive">Inactif</option>
+          <option value="decommissioned">Hors service</option>
         </select>
         <div className="ml-auto flex items-center gap-2">
           <ImportExportBar
@@ -517,11 +517,14 @@ export function VehiclesTab() {
             filename="vehicules"
             parseRows={parseVehicleRows}
             onImport={async (items) => {
+              let failed = 0
               for (const v of items) {
-                await fetch('/api/vehicles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) })
+                const res = await fetch('/api/vehicles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) })
+                if (!res.ok) failed++
               }
               invalidateClientCache('/api/vehicles')
               load()
+              if (failed > 0) throw new Error(`${failed} sur ${items.length} véhicule(s) n'ont pas pu être importés.`)
             }}
           />
           <Btn onClick={openNew} variant="primary" size="sm">
