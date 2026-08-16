@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { MissionType } from '@/lib/types'
 import { useTrade } from '@/providers/TradeProvider'
 import { formatDuration } from '@/lib/algorithm'
@@ -39,9 +39,38 @@ export function Input({ value, onChange, placeholder, type = 'text', min, max, s
   value: string; onChange: (_v: string) => void; placeholder?: string
   type?: string; min?: string; max?: string; step?: string
 }) {
+  // Native <input type="number"> reports an empty value to onChange while the raw text is a
+  // transient invalid float (e.g. "45." mid-typing a decimal). Callers here almost always do
+  // `parseFloat(v) || 0`, so that empty tick sets state to 0 and the very next render forces
+  // the DOM value back to "0" — permanently erasing whatever integer part was typed before the
+  // decimal point, on every keystroke. Rendering as text (inputMode keeps the numeric keyboard
+  // on mobile) keeps the raw string faithful; the local buffer, only re-synced from `value` on
+  // externally-driven changes (not our own onChange echo), stops the parent's re-derived
+  // "45.8992" -> 45 -> "45" round-trip from clobbering what the user is still typing.
+  const isNumeric = type === 'number'
+  const [local, setLocal] = useState(value)
+  const skipNextSync = useRef(false)
+  useEffect(() => {
+    if (skipNextSync.current) { skipNextSync.current = false; return }
+    setLocal(value)
+  }, [value])
+  if (!isNumeric) {
+    return (
+      <input type={type} value={value} min={min} max={max} step={step}
+        onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        className="w-full bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900 transition-all duration-200" />
+    )
+  }
   return (
-    <input type={type} value={value} min={min} max={max} step={step}
-      onChange={e => onChange(e.target.value)} placeholder={placeholder}
+    <input type="text" inputMode="decimal" value={local} min={min} max={max} step={step}
+      onChange={e => {
+        const v = e.target.value
+        if (v !== '' && !/^-?\d*[.,]?\d*$/.test(v)) return
+        skipNextSync.current = true
+        setLocal(v)
+        onChange(v.replace(',', '.'))
+      }}
+      placeholder={placeholder}
       className="w-full bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900 transition-all duration-200" />
   )
 }
