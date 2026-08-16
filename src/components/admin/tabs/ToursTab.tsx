@@ -18,6 +18,7 @@ import { computeRouteCostBreakdown, type RouteCostBreakdown } from '@/lib/tollDa
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ParetoSelector } from '@/components/admin/ParetoSelector'
 import type { OptimizationResult } from '@/lib/types'
+import { usePermissions, hasPerm } from '@/hooks/usePermissions'
 import { cachedFetch } from '@/lib/clientCache'
 import type { SettingsApiResponse } from '@/lib/types'
 
@@ -60,6 +61,8 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
 }) {
   const { missionIcon, missionLabel } = useTrade()
   const { success: toastSuccess, error: toastError } = useToast()
+  const { permissions } = usePermissions()
+  const canOptimize = hasPerm(permissions, 'optimize')
   const storeDrivers = usePlanningStore(s => s.drivers)
   const storePlans = usePlanningStore(s => s.plans)
   const storeStartTimes = usePlanningStore(s => s.startTimes)
@@ -780,8 +783,9 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
                   )}
                 </button>
               )}
-              <button onClick={handleOptimize}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white shadow-soft hover:shadow-elevated active:scale-95 transition-all">
+              <button onClick={handleOptimize} disabled={!canOptimize}
+                title={canOptimize ? undefined : 'Permission "Lancer une optimisation VRP" requise'}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white shadow-soft hover:shadow-elevated active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-brand-500">
                 Optimiser
               </button>
               {showWeights && (
