@@ -246,13 +246,17 @@ describe('GET /api/vehicles — select and TTL 60s', () => {
     expect(sel.assignedDriverId).toBe(true)
   })
 
-  it('select does NOT include brand or model', async () => {
+  // This used to assert the opposite (brand/model excluded) — that pinned a real bug: the
+  // Camions table's Marque/Modele/Type/Capacite/Kilometrage columns, and the edit modal
+  // (which seeds its form from this same list row, not a fresh per-vehicle fetch), all read
+  // these fields and got nothing. Found via manual QA, fixed by widening the select.
+  it('select includes brand and model (the Camions table displays them)', async () => {
     const { GET } = await import('@/app/api/vehicles/route')
     await GET(makeGet('/api/vehicles'))
     const arg = (mockPrisma.vehicle.findMany.mock.calls[0] as unknown[])[0] as Record<string, unknown>
     const sel = arg.select as Record<string, unknown>
-    expect(sel.brand).toBeUndefined()
-    expect(sel.model).toBeUndefined()
+    expect(sel.brand).toBe(true)
+    expect(sel.model).toBe(true)
   })
 
   it('Cache-Control header is max-age=60', async () => {

@@ -244,6 +244,25 @@ describe('GET /api/vehicles', () => {
     expect(json.pagination.total).toBe(0)
   })
 
+  // Regression: found via manual QA — the list select only covered the physical-gabarit
+  // fields, so the Camions table's Type/Marque/Modele/Capacite/Kilometrage columns were
+  // always blank and Statut always showed "Actif" regardless of the real value, for every
+  // vehicle, always. Worse: the edit modal seeds its form straight from this same list row
+  // (no separate per-vehicle fetch), so saving an edit would silently blank out or reset
+  // those fields on the real record.
+  it('requests every field the Camions table and edit form read', async () => {
+    mockPrisma.vehicle.findMany.mockResolvedValue([])
+    mockPrisma.vehicle.count.mockResolvedValue(0)
+
+    await vehiclesGet(makeRequest('http://localhost:3000/api/vehicles'))
+
+    const select = mockPrisma.vehicle.findMany.mock.calls[0][0].select
+    expect(select).toMatchObject({
+      type: true, brand: true, model: true, capacityM3: true, maxBins: true,
+      mileageKm: true, nextInspection: true, status: true, notes: true,
+    })
+  })
+
   it('supports pagination parameters', async () => {
     mockPrisma.vehicle.findMany.mockResolvedValue([{ id: 'v-3' }])
     mockPrisma.vehicle.count.mockResolvedValue(10)

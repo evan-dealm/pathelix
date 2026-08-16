@@ -250,6 +250,19 @@ describe('GET /api/clients', () => {
     const res = await getClients(makeGet('/api/clients'))
     expect(res.status).toBe(500)
   })
+
+  // Regression: found via manual QA — the list select omitted contact/phone/email, so the
+  // Catalogue > Clients table always rendered those columns as "—" no matter what was saved,
+  // and the table's own contact/phone/email search filter could never match anything either.
+  it('requests contact, phone and email in the list select', async () => {
+    mockPrisma.client.findMany.mockResolvedValue([])
+    mockPrisma.client.count.mockResolvedValue(0)
+
+    await getClients(makeGet('/api/clients'))
+
+    const select = mockPrisma.client.findMany.mock.calls[0][0].select
+    expect(select).toMatchObject({ contact: true, phone: true, email: true })
+  })
 })
 
 describe('POST /api/clients', () => {
