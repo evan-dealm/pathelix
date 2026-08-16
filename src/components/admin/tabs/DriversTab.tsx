@@ -20,7 +20,7 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
   onEdit: (_d: Driver) => void
   onNew: () => void
   onDelete: (_id: string) => void
-  onImportDriversCSV: (_drivers: Array<Omit<Driver, 'id'>>) => void
+  onImportDriversCSV: (_drivers: Array<Omit<Driver, 'id'>>) => Promise<void>
 }) {
   const drivers = usePlanningStore(s => s.drivers)
   const setSpeed = usePlanningStore(s => s.setSpeed)
@@ -193,7 +193,7 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
             data={filtered}
             filename="chauffeurs"
             parseRows={parseDriverRows}
-            onImport={async (items) => { onImportDriversCSV(items as unknown as Array<Omit<Driver, 'id'>>) }}
+            onImport={async (items) => { await onImportDriversCSV(items as unknown as Array<Omit<Driver, 'id'>>) }}
             needsGeocode
           />
           <Btn onClick={onNew} variant="primary" size="sm"><span className="hidden sm:inline">+ Nouveau chauffeur</span><span className="sm:hidden">+</span></Btn>

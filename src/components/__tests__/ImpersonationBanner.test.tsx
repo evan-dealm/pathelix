@@ -79,7 +79,7 @@ describe('ImpersonationBanner', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<ImpersonationBanner />)
     await waitFor(() => expect(screen.getByText(/Tenant A/)).toBeTruthy())
-    expect(fetchMock.mock.calls.some(([url]: [string]) => url.includes('/api/superadmin/tenants/'))).toBe(false)
+    expect(fetchMock.mock.calls.some((call: unknown[]) => (call[0] as string).includes('/api/superadmin/tenants/'))).toBe(false)
   })
 
   // Regression M6: exiting impersonation left plans/startTimes/etc cached in IndexedDB under a

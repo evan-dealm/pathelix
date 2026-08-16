@@ -80,7 +80,6 @@ export default function AdminPage() {
   const addDriver           = usePlanningStore(s => s.addDriver)
   const updateDriver        = usePlanningStore(s => s.updateDriver)
   const removeDriver        = usePlanningStore(s => s.removeDriver)
-  const addDriversBulk      = usePlanningStore(s => s.addDriversBulk)
   const assignToDriver      = usePlanningStore(s => s.assignToDriver)
   const unassignFromDriver  = usePlanningStore(s => s.unassignFromDriver)
   const updatePlannedMission = usePlanningStore(s => s.updatePlannedMission)
@@ -144,6 +143,28 @@ export default function AdminPage() {
     }
   }
 
+  async function handleImportMissionsCSV(missionsList: Array<Omit<Mission, 'id'>>) {
+    let failed = 0
+    for (const data of missionsList) {
+      try {
+        const res = await fetch('/api/missions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        })
+        if (res.ok) {
+          const created = await res.json()
+          addMission(data, created.id)
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+    }
+    if (failed > 0) throw new Error(`${failed} sur ${missionsList.length} mission(s) n'ont pas pu être importées.`)
+  }
+
   async function handleDeleteMission(id: string) {
     if (!confirm('Supprimer cette mission ? Cette action est irréversible.')) return
     removeMission(id)
@@ -182,6 +203,28 @@ export default function AdminPage() {
         toastError(`Erreur réseau — ${vocab.driver.toLowerCase()} non sauvegardé`)
       }
     }
+  }
+
+  async function handleImportDriversCSV(driversList: Array<Omit<Driver, 'id'>>) {
+    let failed = 0
+    for (const data of driversList) {
+      try {
+        const res = await fetch('/api/drivers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        })
+        if (res.ok) {
+          const created = await res.json()
+          addDriver(data, created.id)
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+    }
+    if (failed > 0) throw new Error(`${failed} sur ${driversList.length} ${vocab.driver.toLowerCase()}(s) n'ont pas pu être importés.`)
   }
 
   async function handleDeleteDriver(id: string) {
@@ -800,7 +843,7 @@ export default function AdminPage() {
           onEdit={(d) => setDriverModal({ kind: 'edit', driver: d })}
           onNew={() => setDriverModal({ kind: 'new' })}
           onDelete={(id) => handleDeleteDriver(id).catch(()=>{})}
-          onImportDriversCSV={(driversList) => addDriversBulk(driversList)}
+          onImportDriversCSV={handleImportDriversCSV}
         />
         </div>
       )}
@@ -813,9 +856,7 @@ export default function AdminPage() {
           onView={(m) => setMissionDetail(m)}
           onDelete={(id) => handleDeleteMission(id).catch(()=>{})}
           onDuplicate={(id) => handleDuplicateMission(id).catch(()=>{})}
-          onImportCSV={(missionsList) => {
-            missionsList.forEach(m => handleSaveMission(m).catch(logErr('api')))
-          }}
+          onImportCSV={handleImportMissionsCSV}
         />
         </div>
       )}

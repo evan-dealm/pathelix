@@ -17,7 +17,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
   onView: (_m: Mission) => void
   onDelete: (_id: string) => void
   onDuplicate: (_id: string) => void
-  onImportCSV: (_missions: Array<Omit<Mission, 'id'>>) => void
+  onImportCSV: (_missions: Array<Omit<Mission, 'id'>>) => Promise<void>
 }) {
   const { missionIcon, missionLabel, enabledTypes, vocab } = useTrade()
 
@@ -212,7 +212,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
             data={missionExportData(filtered)}
             filename="missions"
             parseRows={parseMissionRows}
-            onImport={async (items) => { onImportCSV(items as unknown as Array<Omit<Mission, 'id'>>) }}
+            onImport={async (items) => { await onImportCSV(items as unknown as Array<Omit<Mission, 'id'>>) }}
             needsGeocode
           />
           <div className="flex bg-surface-100 rounded-lg p-0.5 gap-0.5 border border-surface-200">
