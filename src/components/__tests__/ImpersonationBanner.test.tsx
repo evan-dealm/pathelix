@@ -51,6 +51,28 @@ describe('ImpersonationBanner', () => {
     await waitFor(() => expect(screen.getByText(/Tenant A/)).toBeTruthy())
   })
 
+  // Regression: /api/settings carries Cache-Control: private, max-age=120 with no Vary on the
+  // session cookie — the URL is identical for every tenant. A superadmin switching
+  // impersonation target twice within that window got the *previous* tenant's cached name
+  // back after a hard navigation to the new tenant, even though the session was already
+  // correctly the new one. This component must never read either fetch from the browser's
+  // HTTP cache.
+  it('fetches auth/me and settings with cache: no-store', async () => {
+    const fetchMock = mockFetchSequence({
+      '/api/auth/me': () => ({ userId: 'sa:orig-admin', role: 'admin', tenantId: 't1' }),
+      '/api/settings': () => ({ tenantName: 'Tenant A' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ImpersonationBanner />)
+    await waitFor(() => expect(screen.getByText(/Tenant A/)).toBeTruthy())
+
+    for (const [url, opts] of fetchMock.mock.calls as [string, RequestInit?][]) {
+      if (url.includes('/api/auth/me') || url.includes('/api/settings')) {
+        expect(opts?.cache).toBe('no-store')
+      }
+    }
+  })
+
   // Regression: banner used to call /api/superadmin/tenants/[id] to resolve the tenant name.
   // During impersonation the session's role is the target tenant's role (e.g. 'admin'), not
   // 'superadmin', so that route always 403s and the banner silently fell back to the raw

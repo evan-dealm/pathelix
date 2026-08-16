@@ -15,7 +15,16 @@ export function ImpersonationBanner() {
   useEffect(() => {
     async function check() {
       try {
-        const res = await fetch('/api/auth/me')
+        // no-store: /api/settings carries Cache-Control: private, max-age=120 for the normal
+        // case (repeat fetches within one tenant's session). That header has no `Vary` on the
+        // session cookie — the URL is identical for every tenant — so the browser's own HTTP
+        // cache can't tell tenant A's response from tenant B's. A superadmin switching
+        // impersonation target twice inside that 2-minute window got the *previous* tenant's
+        // name back from cache after a hard navigation to the new one, even though the
+        // session/tenantId underneath was already correctly the new tenant. This component's
+        // entire job is showing the tenant you're impersonating right now, so it can never
+        // use a cached response.
+        const res = await fetch('/api/auth/me', { cache: 'no-store' })
         if (!res.ok) return
         const me: MeData = await res.json()
 
@@ -24,7 +33,7 @@ export function ImpersonationBanner() {
         // Not /api/superadmin/tenants/[id]: the impersonated session's role is the target
         // tenant's role (e.g. 'admin'), so that superadmin-only route always 403s here.
         // /api/settings is tenant-scoped and open to any authenticated role.
-        const settingsRes = await fetch('/api/settings')
+        const settingsRes = await fetch('/api/settings', { cache: 'no-store' })
         if (settingsRes.ok) {
           const settings = await settingsRes.json()
           setImpersonation({ tenantId: me.tenantId, tenantName: settings.tenantName || settings.companyDisplayName || me.tenantId })
