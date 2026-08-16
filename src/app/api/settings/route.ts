@@ -40,9 +40,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       async () => {
         const [settings, tenant] = await Promise.all([
           prisma.tenantSettings.findUnique({ where: { tenantId } }),
-          prisma.tenant.findUnique({ where: { id: tenantId }, select: { trade: true } }),
+          prisma.tenant.findUnique({ where: { id: tenantId }, select: { trade: true, name: true } }),
         ])
         const trade = tenant?.trade ?? null
+        const tenantName = tenant?.name ?? null
         const routingSource = detectRoutingSource()
 
         // Custom (superadmin-created) trades are registered server-side
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
         if (!settings) {
           return {
-            tenantId, trade, routingSource, customTradeConfig,
+            tenantId, trade, tenantName, routingSource, customTradeConfig,
 
             defaultSpeedKmh: 50, defaultStartTime: '07:00',
             maxWorkDayMin: 600, pauseAfterMin: 270, pauseDurationMin: 45,
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             valhallaFactor: 1.60,
           }
         }
-        return { ...settings, trade, routingSource, customTradeConfig }
+        return { ...settings, trade, tenantName, routingSource, customTradeConfig }
       },
       120_000,
     )

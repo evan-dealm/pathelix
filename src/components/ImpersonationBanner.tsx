@@ -21,10 +21,13 @@ export function ImpersonationBanner() {
 
         if (!me.userId.startsWith('sa:')) return
 
-        const tenantRes = await fetch(`/api/superadmin/tenants/${me.tenantId}`)
-        if (tenantRes.ok) {
-          const tenant = await tenantRes.json()
-          setImpersonation({ tenantId: me.tenantId, tenantName: tenant.name ?? me.tenantId })
+        // Not /api/superadmin/tenants/[id]: the impersonated session's role is the target
+        // tenant's role (e.g. 'admin'), so that superadmin-only route always 403s here.
+        // /api/settings is tenant-scoped and open to any authenticated role.
+        const settingsRes = await fetch('/api/settings')
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json()
+          setImpersonation({ tenantId: me.tenantId, tenantName: settings.tenantName || settings.companyDisplayName || me.tenantId })
         } else {
           setImpersonation({ tenantId: me.tenantId, tenantName: me.tenantId })
         }

@@ -45,10 +45,41 @@ describe('ImpersonationBanner', () => {
   it('shows the banner when impersonating (userId starts with sa:)', async () => {
     vi.stubGlobal('fetch', mockFetchSequence({
       '/api/auth/me': () => ({ userId: 'sa:orig-admin', role: 'admin', tenantId: 't1' }),
-      '/api/superadmin/tenants/t1': () => ({ name: 'Tenant A' }),
+      '/api/settings': () => ({ tenantName: 'Tenant A' }),
     }))
     render(<ImpersonationBanner />)
     await waitFor(() => expect(screen.getByText(/Tenant A/)).toBeTruthy())
+  })
+
+  // Regression: banner used to call /api/superadmin/tenants/[id] to resolve the tenant name.
+  // During impersonation the session's role is the target tenant's role (e.g. 'admin'), not
+  // 'superadmin', so that route always 403s and the banner silently fell back to the raw
+  // tenant id on every single impersonation. /api/settings is tenant-scoped and open to any
+  // authenticated role, so it must be used instead.
+  it('falls back to raw tenantId, not a crash, if /api/settings 403s (still exercises the real code path)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ userId: 'sa:orig-admin', role: 'admin', tenantId: 't1' }) })
+      }
+      if (url.includes('/api/settings')) {
+        return Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
+      }
+      return Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
+    }))
+    render(<ImpersonationBanner />)
+    await waitFor(() => expect(screen.getByText(/GOD MODE/)).toBeTruthy())
+    expect(screen.getByText('t1')).toBeTruthy()
+  })
+
+  it('does not call the superadmin-only tenant route while impersonating', async () => {
+    const fetchMock = mockFetchSequence({
+      '/api/auth/me': () => ({ userId: 'sa:orig-admin', role: 'admin', tenantId: 't1' }),
+      '/api/settings': () => ({ tenantName: 'Tenant A' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ImpersonationBanner />)
+    await waitFor(() => expect(screen.getByText(/Tenant A/)).toBeTruthy())
+    expect(fetchMock.mock.calls.some(([url]: [string]) => url.includes('/api/superadmin/tenants/'))).toBe(false)
   })
 
   // Regression M6: exiting impersonation left plans/startTimes/etc cached in IndexedDB under a
@@ -57,7 +88,7 @@ describe('ImpersonationBanner', () => {
   it('clears planningStore before navigating away on exit', async () => {
     vi.stubGlobal('fetch', mockFetchSequence({
       '/api/auth/me': () => ({ userId: 'sa:orig-admin', role: 'admin', tenantId: 't1' }),
-      '/api/superadmin/tenants/t1': () => ({ name: 'Tenant A' }),
+      '/api/settings': () => ({ tenantName: 'Tenant A' }),
       'POST /api/superadmin/exit-impersonation': () => ({ redirectTo: '/superadmin' }),
     }))
 
@@ -82,8 +113,8 @@ describe('ImpersonationBanner', () => {
       if (url.includes('/api/auth/me')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ userId: 'sa:orig-admin', role: 'admin', tenantId: 't1' }) })
       }
-      if (url.includes('/api/superadmin/tenants/t1')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ name: 'Tenant A' }) })
+      if (url.includes('/api/settings')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ tenantName: 'Tenant A' }) })
       }
       if (url.includes('exit-impersonation') && opts?.method === 'POST') {
         return Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
