@@ -105,3 +105,12 @@ export function logErr(context: string) {
     log.error(context, { err: err instanceof Error ? err.message : String(err) })
   }
 }
+
+// The API middleware caps every non-public request at 300/min per IP — shared across the
+// whole admin SPA's background polling (driver-status, missions, plans...), not per-route. A
+// CSV import firing its rows as a tight sequential POST loop can burn through that budget on
+// its own past ~100 rows and start 429ing the rest, silently, on top of whatever polling is
+// already running. Pace each row so a bulk import never floods faster than ~5 req/s.
+export function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}

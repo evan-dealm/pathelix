@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { CatalogClient, CatalogSite, CatalogProduct, Exutoire } from '@/lib/types'
 import { Btn, Modal, Field, Input, SelectInput, Textarea } from '../ui'
-import { useDebounce, logErr } from '../hooks'
+import { useDebounce, logErr, sleep } from '../hooks'
 import { useToast } from '@/components/ui/Toast'
 import { ImportExportBar } from '../ImportExportBar'
 import { CLIENT_COLUMNS, parseClientRows, SITE_COLUMNS, parseSiteRows } from '@/lib/importExportColumns'
@@ -98,7 +98,8 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
               parseRows={parseClientRows}
               onImport={async (items) => {
                 let failed = 0
-                for (const c of items) {
+                for (const [i, c] of items.entries()) {
+                  if (i > 0) await sleep(120)
                   const res = await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c) })
                   if (!res.ok) failed++
                 }
@@ -320,7 +321,8 @@ function SitesPanel({ readOnly = false }: { readOnly?: boolean }) {
               needsGeocode
               onImport={async (items) => {
                 let failed = 0
-                for (const s of items) {
+                for (const [i, s] of items.entries()) {
+                  if (i > 0) await sleep(120)
                   const res = await fetch('/api/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) })
                   if (!res.ok) failed++
                 }

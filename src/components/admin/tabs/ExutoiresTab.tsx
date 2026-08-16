@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Exutoire } from '@/lib/types'
 import { BLANK_EXUTOIRE, DAYS_FR } from '../types'
 import { Btn, SelectInput } from '../ui'
-import { minToHHMM, logErr, useDebounce } from '../hooks'
+import { minToHHMM, logErr, useDebounce, sleep } from '../hooks'
 import { useToast } from '@/components/ui/Toast'
 import { ExutoireForm } from '../ExutoireForm'
 import { ImportExportBar } from '../ImportExportBar'
@@ -130,7 +130,8 @@ export function ExutoiresTab() {
             needsGeocode
             onImport={async (items) => {
               let failed = 0
-              for (const e of items) {
+              for (const [i, e] of items.entries()) {
+                if (i > 0) await sleep(120)
                 const res = await fetch('/api/exutoires', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(e) })
                 if (!res.ok) failed++
               }

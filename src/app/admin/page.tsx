@@ -11,7 +11,7 @@ import {
   ViewMode, AppTab, MissionModalState, ConfirmOverrideState,
   SYNTHETIC_TYPES, blankMission, BLANK_DRIVER,
 } from '@/components/admin/types'
-import { today, displayShort, logErr } from '@/components/admin/hooks'
+import { today, displayShort, logErr, sleep } from '@/components/admin/hooks'
 import { cachedFetch } from '@/lib/clientCache'
 import type { SettingsApiResponse } from '@/lib/types'
 
@@ -145,7 +145,8 @@ export default function AdminPage() {
 
   async function handleImportMissionsCSV(missionsList: Array<Omit<Mission, 'id'>>) {
     let failed = 0
-    for (const data of missionsList) {
+    for (const [i, data] of missionsList.entries()) {
+      if (i > 0) await sleep(120)
       try {
         const res = await fetch('/api/missions', {
           method: 'POST',
@@ -207,7 +208,8 @@ export default function AdminPage() {
 
   async function handleImportDriversCSV(driversList: Array<Omit<Driver, 'id'>>) {
     let failed = 0
-    for (const data of driversList) {
+    for (const [i, data] of driversList.entries()) {
+      if (i > 0) await sleep(120)
       try {
         const res = await fetch('/api/drivers', {
           method: 'POST',

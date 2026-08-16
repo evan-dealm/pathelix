@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Btn, Modal, Field, Input, SelectInput, Textarea } from '../ui'
-import { useDebounce, logErr } from '../hooks'
+import { useDebounce, logErr, sleep } from '../hooks'
 import { useToast } from '@/components/ui/Toast'
 import { usePlanningStore } from '@/stores/planningStore'
 import { ImportExportBar } from '../ImportExportBar'
@@ -518,7 +518,8 @@ export function VehiclesTab() {
             parseRows={parseVehicleRows}
             onImport={async (items) => {
               let failed = 0
-              for (const v of items) {
+              for (const [i, v] of items.entries()) {
+                if (i > 0) await sleep(120)
                 const res = await fetch('/api/vehicles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) })
                 if (!res.ok) failed++
               }
