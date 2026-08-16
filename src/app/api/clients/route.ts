@@ -46,6 +46,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               id: true, name: true, vip: true, requiresBsd: true,
               siret: true, archived: true, externalRef: true,
               contact: true, phone: true, email: true,
+              clientSites: { include: { site: true } },
             },
             orderBy: { name: 'asc' },
             skip: (page - 1) * limit,

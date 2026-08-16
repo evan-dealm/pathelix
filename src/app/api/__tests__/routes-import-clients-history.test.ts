@@ -263,6 +263,21 @@ describe('GET /api/clients', () => {
     const select = mockPrisma.client.findMany.mock.calls[0][0].select
     expect(select).toMatchObject({ contact: true, phone: true, email: true })
   })
+
+  // Regression: found via manual QA — MissionForm's "2. Site" step reads
+  // client.clientSites?.map(cs => cs.site), but the list select never included that relation
+  // (only the POST response did). Every client's site picker showed "-- Choisir un site --"
+  // with zero options, and the client search dropdown always displayed "0 sites", even for a
+  // client with real linked sites — a mission could never be created against a specific site.
+  it('requests clientSites (with site) in the list select — MissionForm site picker depends on it', async () => {
+    mockPrisma.client.findMany.mockResolvedValue([])
+    mockPrisma.client.count.mockResolvedValue(0)
+
+    await getClients(makeGet('/api/clients'))
+
+    const select = mockPrisma.client.findMany.mock.calls[0][0].select
+    expect(select.clientSites).toEqual({ include: { site: true } })
+  })
 })
 
 describe('POST /api/clients', () => {
