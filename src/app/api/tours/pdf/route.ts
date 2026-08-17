@@ -4,7 +4,9 @@ import prisma from '@/lib/db'
 import { calcTour } from '@/lib/algorithm'
 import { renderTourPdf } from '@/lib/tourPdf'
 import type { PlannedMission, Driver } from '@/lib/types'
+import { createLogger } from '@/lib/logger'
 
+const log = createLogger('/api/tours/pdf')
 const USE_MOCK = process.env.USE_MOCK_DATA !== 'false'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -78,7 +80,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         'Cache-Control':       'no-store',
       },
     })
-  } catch {
+  } catch (err) {
+    log.error('PDF generation failed', { driverId, err: err instanceof Error ? err.stack ?? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur génération PDF' }, { status: 500 })
   }
 }

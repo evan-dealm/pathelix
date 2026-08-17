@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { NextRequest } from 'next/server'
 
+const mockLog = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 vi.mock('@/lib/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => mockLog,
 }))
 vi.mock('@/lib/data/context', () => ({
   getRequestContext: vi.fn(() => ({ tenantId: 't1', role: 'admin' })),
@@ -67,7 +68,7 @@ describe('GET /api/tours/pdf — real mode', () => {
       getRequestContext: vi.fn(() => ({ tenantId: 't1', role: 'admin' })),
     }))
     vi.mock('@/lib/logger', () => ({
-      createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+      createLogger: () => mockLog,
     }))
     vi.mock('@/lib/algorithm', () => ({ calcTour: mockCalcTour }))
     vi.mock('@/lib/tourPdf',   () => ({ renderTourPdf: mockRenderTourPdf }))
@@ -168,5 +169,26 @@ describe('GET /api/tours/pdf — real mode', () => {
     mockPlanFindFirst.mockRejectedValueOnce(new Error('DB timeout'))
     const res = await GET(makeReq({ driverId: 'd1', date: '2026-06-15' }))
     expect(res.status).toBe(500)
+  })
+
+  // Regression: found via manual QA — /api/tours/pdf 500'd on every single driver in
+  // production (real root cause: @react-pdf/renderer breaking under Next's server bundler,
+  // fixed via serverExternalPackages in next.config.mjs, not unit-testable here since Vitest
+  // doesn't go through that bundler). But finding it took far longer than it should have
+  // because the catch block was bare — nothing was ever logged, so app.log had zero trace of
+  // 23 consecutive failures. This asserts a thrown render error is actually logged now.
+  it('logs the error when PDF rendering throws, instead of swallowing it silently', async () => {
+    vi.clearAllMocks()
+    mockDriverFindFirst.mockResolvedValueOnce(DB_DRIVER)
+    mockPlanFindFirst.mockResolvedValueOnce(DB_PLAN)
+    mockCalcTour.mockReturnValueOnce(TOUR_RESULT)
+    mockRenderTourPdf.mockRejectedValueOnce(new Error('font loading failed'))
+
+    const res = await GET(makeReq({ driverId: 'd1', date: '2026-06-15' }))
+
+    expect(res.status).toBe(500)
+    expect(mockLog.error).toHaveBeenCalled()
+    const [, meta] = mockLog.error.mock.calls[0]
+    expect(meta.err).toContain('font loading failed')
   })
 })

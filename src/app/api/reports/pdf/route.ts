@@ -3,6 +3,9 @@ import prisma                                  from '@/lib/db'
 import { getRequestContext }                   from '@/lib/data/context'
 import { generateMonthlyReportPdf }            from '@/lib/pdfReport'
 import type { MonthlyReportData }              from '@/lib/pdfReport'
+import { createLogger }                        from '@/lib/logger'
+
+const log = createLogger('/api/reports/pdf')
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { tenantId, role } = getRequestContext(req)
@@ -114,6 +117,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       },
     })
   } catch (err) {
+    log.error('PDF generation failed', { err: err instanceof Error ? err.stack ?? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur génération PDF' }, { status: 500 })
   }
 }
