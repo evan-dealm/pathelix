@@ -8,6 +8,7 @@ import { useDebounce, today, getWeekDays } from '../hooks'
 import { ImportExportBar } from '../ImportExportBar'
 import { DRIVER_COLUMNS, parseDriverRows } from '@/lib/importExportColumns'
 import { cachedFetch } from '@/lib/clientCache'
+import { loadPlansForDate } from '@/lib/loadPlansForDate'
 
 const REASON_LABELS: Record<string, string> = {
   conge: 'Congé',
@@ -121,6 +122,15 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
   }, [])
 
   const weekDays = useMemo(() => getWeekDays(today()), [])
+
+  // storePlans only ever holds *today's* plans from DataProvider's initial load. The weekly
+  // workload bar/percentage below (checked against weeklyHoursMax / CE 561/2006 compliance)
+  // sums plans across every day of the current week — without this, any day but today
+  // silently contributed 0 minutes, understating a driver's real weekly workload.
+  useEffect(() => {
+    for (const day of weekDays) loadPlansForDate(day)
+  }, [weekDays])
+
   const weeklyWorkMins = useMemo(() => {
     const result: Record<string, number> = {}
     for (const driver of drivers) {

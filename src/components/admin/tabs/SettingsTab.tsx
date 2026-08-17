@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import { JargonTip } from '@/components/ui/Tooltip'
 import { cachedFetch, invalidateClientCache } from '@/lib/clientCache'
 import type { SettingsApiResponse } from '@/lib/types'
+import { buildBackupExport } from '@/lib/exportBackup'
 
 interface OptimizationSettings {
   defaultSpeedKmh: number
@@ -128,13 +129,6 @@ const LOCALES = [
 
 export function SettingsTab() {
   const { success: toastSuccess, error: toastError } = useToast()
-  const storeDrivers = usePlanningStore(s => s.drivers)
-  const storeMissions = usePlanningStore(s => s.missions)
-  const storePlans = usePlanningStore(s => s.plans)
-  const storeStartTimes = usePlanningStore(s => s.startTimes)
-  const storeSpeeds = usePlanningStore(s => s.speeds)
-  const storeUnavailable = usePlanningStore(s => s.unavailable)
-  const storeLockedPlans = usePlanningStore(s => s.lockedPlans)
   const importInputRef = useRef<HTMLInputElement>(null)
 
   const [backupStatus, setBackupStatus] = useState<'idle' | 'exporting' | 'importing' | 'ok' | 'error'>('idle')
@@ -224,20 +218,10 @@ export function SettingsTab() {
       .finally(() => setHolidayLoading(false))
   }, [])
 
-  function handleExportJSON() {
+  async function handleExportJSON() {
     setBackupStatus('exporting')
     try {
-      const data = {
-        version: '1.0',
-        exportedAt: new Date().toISOString(),
-        drivers:    storeDrivers,
-        missions:   storeMissions,
-        plans:      storePlans,
-        startTimes: storeStartTimes,
-        speeds:     storeSpeeds,
-        unavailable: storeUnavailable,
-        lockedPlans: storeLockedPlans,
-      }
+      const data = await buildBackupExport()
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
@@ -245,7 +229,7 @@ export function SettingsTab() {
       a.download = `pathelix-backup-${new Date().toISOString().slice(0, 10)}.json`
       a.click()
       URL.revokeObjectURL(url)
-      setBackupMsg(`${storeDrivers.length} chauffeurs, ${storeMissions.length} missions exportés`)
+      setBackupMsg(`${(data.drivers as unknown[]).length} chauffeurs, ${(data.missions as unknown[]).length} missions exportés`)
       setBackupStatus('ok')
       setTimeout(() => setBackupStatus('idle'), 4000)
     } catch {
