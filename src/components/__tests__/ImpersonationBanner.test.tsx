@@ -7,6 +7,11 @@ vi.mock('@/stores/planningStore', () => ({
   usePlanningStore: { persist: { clearStorage: mockClearStorage } },
 }))
 
+const mockPathname = vi.hoisted(() => ({ current: '/admin' }))
+vi.mock('next/navigation', () => ({
+  usePathname: () => mockPathname.current,
+}))
+
 import { ImpersonationBanner } from '../ImpersonationBanner'
 
 function mockFetchSequence(handlers: Record<string, () => Promise<unknown> | unknown>) {
@@ -26,6 +31,7 @@ function mockFetchSequence(handlers: Record<string, () => Promise<unknown> | unk
 
 beforeEach(() => {
   mockClearStorage.mockClear()
+  mockPathname.current = '/admin'
 })
 
 afterEach(() => {
@@ -40,6 +46,37 @@ describe('ImpersonationBanner', () => {
     }))
     const { container } = render(<ImpersonationBanner />)
     await waitFor(() => expect(container.firstChild).toBeNull())
+  })
+
+  // Regression: found via manual QA. This component lives in the root layout, which App
+  // Router does not remount on client-side navigation. A superadmin impersonating a tenant
+  // (banner shows), exiting, and a genuine non-superadmin user then logging in in the same
+  // tab never remounts this component — with a mount-only effect, the stale "GOD MODE" banner
+  // kept showing for a user who was never impersonating anyone. Re-running the check when
+  // pathname changes (e.g. login navigating to /admin) must clear it.
+  it('clears a stale banner after navigating into a non-impersonated session', async () => {
+    let call = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        call++
+        const me = call === 1
+          ? { userId: 'sa:orig-admin', role: 'admin', tenantId: 't1' }
+          : { userId: 'user-2', role: 'dispatcher', tenantId: 't1' }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(me) })
+      }
+      if (url.includes('/api/settings')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ tenantName: 'Tenant A' }) })
+      }
+      return Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
+    }))
+
+    const { rerender } = render(<ImpersonationBanner />)
+    await waitFor(() => expect(screen.getByText(/GOD MODE/)).toBeTruthy())
+
+    mockPathname.current = '/admin?after-login'
+    rerender(<ImpersonationBanner />)
+
+    await waitFor(() => expect(screen.queryByText(/GOD MODE/)).toBeNull())
   })
 
   it('shows the banner when impersonating (userId starts with sa:)', async () => {

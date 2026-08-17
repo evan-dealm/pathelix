@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { usePlanningStore } from '@/stores/planningStore'
 
 interface MeData {
@@ -11,7 +12,16 @@ interface MeData {
 
 export function ImpersonationBanner() {
   const [impersonation, setImpersonation] = useState<{ tenantId: string; tenantName: string } | null>(null)
+  const pathname = usePathname()
 
+  // This component lives in the root layout, which App Router does not remount on client-side
+  // navigation — a mount-only effect meant the banner could get stuck showing a PREVIOUS
+  // session's impersonation state. Concretely: a superadmin impersonates a tenant (banner
+  // fetches and caches that state), exits, and a different, genuine (non-superadmin) user logs
+  // in in the same tab — the login navigation never remounts this component, so the stale
+  // "GOD MODE" banner kept showing for a user who was never impersonating anyone. Re-running
+  // the check on every pathname change (covers login, exit-impersonation, and normal tab
+  // navigation) keeps it in sync with whichever session is actually current.
   useEffect(() => {
     async function check() {
       try {
@@ -25,10 +35,10 @@ export function ImpersonationBanner() {
         // entire job is showing the tenant you're impersonating right now, so it can never
         // use a cached response.
         const res = await fetch('/api/auth/me', { cache: 'no-store' })
-        if (!res.ok) return
+        if (!res.ok) { setImpersonation(null); return }
         const me: MeData = await res.json()
 
-        if (!me.userId.startsWith('sa:')) return
+        if (!me.userId.startsWith('sa:')) { setImpersonation(null); return }
 
         // Not /api/superadmin/tenants/[id]: the impersonated session's role is the target
         // tenant's role (e.g. 'admin'), so that superadmin-only route always 403s here.
@@ -45,7 +55,7 @@ export function ImpersonationBanner() {
       }
     }
     check()
-  }, [])
+  }, [pathname])
 
   if (!impersonation) return null
 
