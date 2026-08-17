@@ -115,6 +115,35 @@ describe('addMissionsBulk', () => {
   })
 })
 
+describe('upsertMissions', () => {
+  // Regression: DataProvider's periodic 120s refresh used to call setInitialData(drivers,
+  // missions) with only *today's* missions, which fully replaces the store's missions array
+  // — silently erasing any other dates' missions loaded separately (e.g. the Missions tab's
+  // full-history preload) a couple minutes after they were fetched. upsertMissions must merge
+  // instead of replace, while still updating fields on missions that already existed (unlike
+  // addMissionsBulk, which only adds unseen ids and would never reflect a status change).
+  it('adds missions not already in the store, without dropping existing ones', () => {
+    st().setInitialData([], [MISSION_1])
+    st().upsertMissions([MISSION_2])
+    expect(st().missions).toHaveLength(2)
+    expect(st().missions.map(m => m.id).sort()).toEqual(['m-1', 'm-2'])
+  })
+
+  it('updates fields on a mission that already exists instead of ignoring it', () => {
+    st().setInitialData([], [MISSION_1])
+    st().upsertMissions([{ ...MISSION_1, address: 'Adresse mise à jour' }])
+    expect(st().missions).toHaveLength(1)
+    expect(st().missions[0].address).toBe('Adresse mise à jour')
+  })
+
+  it('leaves missions absent from the incoming batch untouched', () => {
+    st().setInitialData([], [MISSION_1, MISSION_2])
+    st().upsertMissions([{ ...MISSION_1, address: 'Changé' }])
+    expect(st().missions).toHaveLength(2)
+    expect(st().missions.find(m => m.id === 'm-2')?.address).toBe('20 av Champs')
+  })
+})
+
 describe('mergePlansFromDB', () => {
   it('merges plans and startTimes from DB', () => {
     st().setInitialData([DRIVER_A], [MISSION_1])

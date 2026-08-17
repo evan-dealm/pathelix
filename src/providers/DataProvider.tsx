@@ -102,7 +102,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           fetchPage<Driver>('/api/drivers?limit=2000'),
           fetchPage<Mission>(`/api/missions?date=${today}&limit=5000`),
         ])
-        setInitialData(drivers, missions)
+        // upsertMissions (not setInitialData) — a full replace here would silently wipe out
+        // any other dates' missions loaded separately (e.g. by the Missions tab's full-history
+        // preload) every 120s, reverting the tab back to "today only" a couple minutes after
+        // it was fixed to show the full catalog. See src/lib/loadAllMissions.ts.
+        usePlanningStore.setState({ drivers })
+        usePlanningStore.getState().upsertMissions(missions)
       } catch {  }
     }, 120_000)
     return () => clearInterval(interval)

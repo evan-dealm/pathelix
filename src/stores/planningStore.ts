@@ -38,6 +38,7 @@ interface PlanningActions {
 
   setInitialData(_drivers: Driver[], _missions: Mission[]): void
   addMissionsBulk(_missions: Mission[]): void
+  upsertMissions(_missions: Mission[]): void
   mergePlansFromDB(_plans: Array<{
     driverId:   string
     date:       string
@@ -237,6 +238,19 @@ export const usePlanningStore = create<PlanningStore>()(
           const toAdd = newMissions.filter(m => !existingIds.has(m.id))
           if (toAdd.length === 0) return {}
           return { missions: [...state.missions, ...toAdd] }
+        })
+      },
+
+      // Unlike setInitialData (full replace) or addMissionsBulk (add-only), this updates
+      // missions already in the store in place and adds any new ones — needed so the
+      // periodic "today" refresh in DataProvider can push live status changes without
+      // wiping out other dates' missions that were separately loaded (e.g. by the Missions
+      // tab's full-history preload), which a full `set({ missions })` replace would erase.
+      upsertMissions(incoming: Mission[]) {
+        set(state => {
+          const byId = new Map(state.missions.map(m => [m.id, m]))
+          for (const m of incoming) byId.set(m.id, m)
+          return { missions: [...byId.values()] }
         })
       },
 
