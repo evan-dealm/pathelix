@@ -20,6 +20,7 @@ import { ParetoSelector } from '@/components/admin/ParetoSelector'
 import type { OptimizationResult } from '@/lib/types'
 import { usePermissions, hasPerm } from '@/hooks/usePermissions'
 import { cachedFetch } from '@/lib/clientCache'
+import { loadPlansForDate } from '@/lib/loadPlansForDate'
 import type { SettingsApiResponse } from '@/lib/types'
 
 const FleetMap = dynamic(() => import('@/components/FleetMap'), {
@@ -99,6 +100,8 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
   const [tourDate, setTourDate] = useState(today())
   const [hoveredMissionId, setHoveredMissionId] = useState<string | null>(null)
   const [p1RiskMap, setP1RiskMap] = useState<Map<string, { risk: 'low' | 'medium' | 'high'; score: number; reason: string }>>(new Map())
+
+  useEffect(() => { loadPlansForDate(tourDate) }, [tourDate])
 
   useEffect(() => {
     fetch(`/api/plans/p1-risk?date=${tourDate}`, { cache: 'no-store' })
