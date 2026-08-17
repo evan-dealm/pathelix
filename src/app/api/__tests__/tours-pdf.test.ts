@@ -172,11 +172,12 @@ describe('GET /api/tours/pdf — real mode', () => {
   })
 
   // Regression: found via manual QA — /api/tours/pdf 500'd on every single driver in
-  // production (real root cause: @react-pdf/renderer breaking under Next's server bundler,
-  // fixed via serverExternalPackages in next.config.mjs, not unit-testable here since Vitest
-  // doesn't go through that bundler). But finding it took far longer than it should have
-  // because the catch block was bare — nothing was ever logged, so app.log had zero trace of
-  // 23 consecutive failures. This asserts a thrown render error is actually logged now.
+  // production (real root cause: dual React module instance between webpack-bundled route
+  // handler and pure-ESM @react-pdf/reconciler — see next.config.mjs; NOT fixable via
+  // serverExternalPackages, still open, not unit-testable here since Vitest doesn't go
+  // through Next's server bundler/module resolution). But finding it took far longer than
+  // it should have because the catch block was bare — nothing was ever logged, so app.log
+  // had zero trace of failures. This asserts a thrown render error is actually logged now.
   it('logs the error when PDF rendering throws, instead of swallowing it silently', async () => {
     vi.clearAllMocks()
     mockDriverFindFirst.mockResolvedValueOnce(DB_DRIVER)

@@ -30,12 +30,18 @@ const nextConfig = {
 
   typescript: { ignoreBuildErrors: false },
 
-  // @react-pdf/renderer breaks when bundled by Next's server compiler (its font/image
-  // machinery doesn't survive webpack bundling) — both PDF generation routes
-  // (/api/tours/pdf and /api/reports/pdf) 500'd on every single call in production ("next
-  // start"), with the error swallowed by a bare catch, no matter the input. Ran fine under
-  // plain tsx outside Next's bundler, which is what pointed at the bundling step itself.
-  serverExternalPackages: ['bullmq', 'ioredis', '@prisma/client', '@react-pdf/renderer'],
+  // NOTE: @react-pdf/renderer PDF generation (/api/tours/pdf, /api/reports/pdf) is BROKEN in
+  // production ("next start") — always 500s with React error #31. Root cause: @react-pdf/reconciler
+  // ships pure ESM ("type":"module"), so Next auto-externalizes it; the native ESM loader then pulls
+  // its own copy of React, separate from the webpack-bundled React the route handler uses to build
+  // JSX. Elements built by one React copy fail isValidElement in the reconciler's copy. Adding
+  // '@react-pdf/renderer' to serverExternalPackages here does NOT fix this (tried, verified live —
+  // identical error/stack before and after). Adding 'react'/'react-dom' here breaks the build
+  // entirely (Next's own RSC cache() APIs need its bundled React). This needs either an upstream fix,
+  // pinning to a CJS-compatible react-pdf version, or moving PDF rendering out of the Next server
+  // process (own worker, mirroring src/workers/vrpWorker.ts) — not a config-flag fix. See git history
+  // for the false-start diagnosis this replaces.
+  serverExternalPackages: ['bullmq', 'ioredis', '@prisma/client'],
 
   experimental: {
     optimizePackageImports: ['@tanstack/react-virtual', '@tanstack/react-query', 'fuse.js', 'zustand', 'zod', 'exceljs', 'react-leaflet', 'dayjs', 'bcryptjs'],

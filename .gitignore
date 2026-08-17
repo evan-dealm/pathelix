@@ -33,3 +33,4 @@ load-tests/results/
 .claude/daemon.log
 .claude/daemon.pid
 .claude/daemon-session.json
+.manualtest/
