@@ -10,6 +10,7 @@ import { Btn, TypeBadge } from '../ui'
 import { useDebounce, today, displayShort, mTitle, logErr } from '../hooks'
 import { ImportExportBar } from '../ImportExportBar'
 import { MISSION_COLUMNS, parseMissionRows, missionExportData } from '@/lib/importExportColumns'
+import { loadAllMissionsIntoStore } from '@/lib/loadAllMissions'
 
 export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onImportCSV }: {
   onEdit: (_m: Mission) => void
@@ -24,6 +25,18 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
   const poolTypes = enabledTypes.filter(t => !SYNTHETIC_TYPES.includes(t))
 
   const missions = usePlanningStore(s => s.missions)
+  // DataProvider only ever loads *today's* missions into the store (fast path for the
+  // operational planning view). This tab is a full catalog (import/export/archive/kanban,
+  // date-range filter below) — without this, dateFrom/dateTo silently filter an array that
+  // can never contain anything but today, and opening the tab on a day with 0 missions shows
+  // "Aucune mission" even when hundreds exist on other dates. Paginate the full history in
+  // once, merging additively (addMissionsBulk never overwrites already-loaded missions, so
+  // this can't stomp on live status updates to today's missions from the periodic refresh).
+  useEffect(() => {
+    const controller = { cancelled: false }
+    loadAllMissionsIntoStore(controller)
+    return () => { controller.cancelled = true }
+  }, [])
   const drivers = usePlanningStore(s => s.drivers)
   const plans = usePlanningStore(s => s.plans)
   const archiveMission = usePlanningStore(s => s.archiveMission)
