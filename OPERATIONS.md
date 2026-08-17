@@ -79,6 +79,23 @@ npx prisma migrate deploy
 | `npm run db:seed-superadmin` | Compte superadmin uniquement |
 | `npm run db:backfill-template-links` | Backfill `Mission.generatedFromTemplateId` sur les données existantes |
 
+### Garde-fou : scripts contre une base de test
+
+Tout script ou commande qui écrit en base pendant une session de test manuel (seed, requête
+directe, migration contre une DB de sandbox) doit passer par `scripts/db-guard.sh` :
+
+```bash
+export DATABASE_URL=$(grep '^DATABASE_URL=' .env.production.local | cut -d= -f2-)
+scripts/db-guard.sh npx tsx prisma/seed-superadmin.ts
+```
+
+Le script refuse d'exécuter la commande si `DATABASE_URL` n'est pas explicitement exportée, ou
+si le nom de la base résolue ne contient pas le marqueur attendu — voir l'en-tête du script pour
+l'incident qui a motivé ce garde-fou (un `source` sans `export` a fait retomber un seed sur la
+vraie base). Toute base de test doit avoir un nom sans substring commun avec `pathelix_fleet`
+(ex. `manualtest_sandbox_never_prod`), pour qu'aucune troncature/faute de frappe ne puisse
+accidentellement matcher le nom réel.
+
 ### CRON automatiques
 
 | Job | Heure | Origine |
