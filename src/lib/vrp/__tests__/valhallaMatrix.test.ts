@@ -133,4 +133,40 @@ describe('buildValhallaMatrix — Valhalla available (fetch mocked)', () => {
     const matrix = await buildValhallaMatrix(points)
     expect(matrix.source).toBe('haversine')
   })
+
+  // Regression: found via manual QA on a 100-driver/40-mission tenant — every real VRP run
+  // silently used pure haversine distances, no matter how healthy Valhalla was. Root cause:
+  // the chunk size sent sources.length * targets.length = 6400 pairs per request, and
+  // Valhalla's costmatrix action rejects anything over its max_matrix_locations (2500 by
+  // default) with a 400 — so every single chunk failed, on every run with >80 combined
+  // points. This asserts the actual wire request never exceeds that budget, for a fleet size
+  // (120 points) well past where the old 80-point chunk size broke.
+  it('never sends a sources*targets product above Valhallas default max_matrix_locations (2500)', async () => {
+    const manyPoints: GeoPoint[] = Array.from({ length: 120 }, (_, i) => ({
+      id: `p${i}`, lat: 45.7 + i * 0.001, lng: 6.0 + i * 0.001,
+    }))
+
+    const seenChunkSizes: number[] = []
+    vi.spyOn(global, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string)
+      seenChunkSizes.push(body.sources.length * body.targets.length)
+      const n = body.sources.length, m = body.targets.length
+      return {
+        ok: true,
+        json: async () => ({
+          sources_to_targets: Array.from({ length: n }, () =>
+            Array.from({ length: m }, () => ({ distance: 1, time: 60 }))),
+        }),
+      } as Response
+    })
+
+    const { buildValhallaMatrix } = await import('../valhallaMatrix')
+    const matrix = await buildValhallaMatrix(manyPoints)
+
+    expect(matrix.source).toBe('valhalla-chunked')
+    expect(seenChunkSizes.length).toBeGreaterThan(0)
+    for (const size of seenChunkSizes) {
+      expect(size).toBeLessThanOrEqual(2500)
+    }
+  })
 })

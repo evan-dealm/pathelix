@@ -5,7 +5,14 @@ import { trafficFactor } from '@/lib/algorithm'
 
 const log = createLogger('valhallaMatrix')
 
-const MAX_CHUNK_SIZE       = 80
+// Valhalla's costmatrix action rejects a request whose sources x targets product exceeds its
+// configured max_matrix_locations (2500 by default, unconfigured in this app's docker-compose
+// service). A square chunk of N sources x N targets must satisfy N*N <= 2500, i.e. N <= 50.
+// This was 80 (6400 pairs/chunk) — every chunk on every real request exceeded the limit and
+// 400'd, so any VRP run with more than 80 combined points (any realistic multi-driver fleet)
+// silently fell all the way back to haversine-only distances, defeating the real-road-network
+// routing entirely. 45 leaves margin below the exact 50 boundary.
+const MAX_CHUNK_SIZE       = 45
 const MAX_CONCURRENT       = 4
 const REDIS_CACHE_TTL_S    = 86400
 
