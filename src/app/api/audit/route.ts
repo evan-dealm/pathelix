@@ -32,11 +32,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       prisma.auditLog.count({ where }),
     ])
 
+    // AuditLog only stores userId (superadmin impersonation entries prefix it "sa:<id>"),
+    // never a display name — the Audit tab's "Utilisateur" column was blank on every row
+    // because nothing here ever resolved it. Batch-fetch the distinct real user ids once.
+    const realUserId = (userId: string) => userId.startsWith('sa:') ? userId.slice(3) : userId
+    const rawIds  = logs.map(l => l.userId).filter((id): id is string => Boolean(id))
+    const realIds = [...new Set(rawIds.map(realUserId))]
+    const users = realIds.length > 0
+      ? await prisma.user.findMany({ where: { id: { in: realIds } }, select: { id: true, firstName: true, lastName: true, email: true } })
+      : []
+    const nameById = new Map(users.map(u => [u.id, `${u.firstName} ${u.lastName}`.trim() || u.email]))
+    const withNames = logs.map(l => ({
+      ...l,
+      userName: l.userId ? (nameById.get(realUserId(l.userId)) ?? l.userId) : '—',
+    }))
+
     metrics.histogram(METRIC.API_LATENCY_MS, Date.now() - t0, { route: '/api/audit', method: 'GET' })
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/audit', method: 'GET', status: '200' })
 
     return NextResponse.json({
-      data:       logs,
+      data:       withNames,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {

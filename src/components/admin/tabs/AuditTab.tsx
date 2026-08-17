@@ -6,13 +6,13 @@ import { logErr, useDebounce } from '../hooks'
 
 interface AuditEntry {
   id: string
-  date: string
+  createdAt: string
   userId: string
   userName: string
-  action: 'create' | 'update' | 'delete' | 'assign'
+  action: string
   entityType: string
   entityId: string
-  details?: string
+  changes?: Record<string, unknown> | null
 }
 
 const PAGE_SIZE = 25
@@ -25,15 +25,17 @@ const ACTION_TYPES = [
   { value: 'assign', label: 'Assignation' },
 ]
 
+// Values must match the entityType strings actual auditAsync() call sites use (grep
+// `auditAsync(req,` across src/app/api) — Prisma-model-cased ('Driver', not 'driver'). These
+// never matched before, so filtering by any of these silently always returned 0 rows.
 const ENTITY_TYPES = [
   { value: '', label: 'Tous les types' },
-  { value: 'mission', label: 'Mission' },
-  { value: 'driver', label: 'Chauffeur' },
-  { value: 'vehicle', label: 'Vehicule' },
-  { value: 'user', label: 'Utilisateur' },
-  { value: 'plan', label: 'Plan' },
-  { value: 'exutoire', label: 'Exutoire' },
-  { value: 'settings', label: 'Parametres' },
+  { value: 'Mission', label: 'Mission' },
+  { value: 'Driver', label: 'Chauffeur' },
+  { value: 'Vehicle', label: 'Vehicule' },
+  { value: 'User', label: 'Utilisateur' },
+  { value: 'Integration', label: 'Integration' },
+  { value: 'tenant', label: 'Tenant (superadmin)' },
 ]
 
 function actionBadge(action: string) {
@@ -61,14 +63,15 @@ export function AuditTab() {
 
   function load(pageNum: number, entity: string) {
     setLoading(true)
-    const params = new URLSearchParams({ page: String(pageNum), limit: String(PAGE_SIZE) })
+    // pageNum is 0-indexed (component state); the API's page param is 1-indexed.
+    const params = new URLSearchParams({ page: String(pageNum + 1), limit: String(PAGE_SIZE) })
     if (entity) params.set('entityType', entity)
     fetch(`/api/audit?${params}`)
       .then(r => r.json())
       .then(d => {
         if (d && Array.isArray(d.data)) {
           setEntries(d.data)
-          setTotal(d.total || d.data.length)
+          setTotal(d.pagination?.total ?? d.data.length)
         } else if (Array.isArray(d)) {
           setEntries(d)
           setTotal(d.length)
@@ -100,10 +103,10 @@ export function AuditTab() {
       result = result.filter(e => e.action === actionFilter)
     }
     if (dateStart) {
-      result = result.filter(e => e.date >= dateStart)
+      result = result.filter(e => e.createdAt >= dateStart)
     }
     if (dateEnd) {
-      result = result.filter(e => e.date <= dateEnd + 'T23:59:59')
+      result = result.filter(e => e.createdAt <= dateEnd + 'T23:59:59')
     }
     return result
   }, [entries, debouncedSearch, actionFilter, dateStart, dateEnd])
@@ -148,14 +151,14 @@ export function AuditTab() {
               {filteredEntries.map(e => (
                 <div key={e.id} className="bg-white border border-surface-200 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-surface-500 text-[10px]">{new Date(e.date).toLocaleString('fr-FR')}</span>
+                    <span className="text-surface-500 text-[10px]">{new Date(e.createdAt).toLocaleString('fr-FR')}</span>
                     {actionBadge(e.action)}
                   </div>
                   <div className="text-surface-900 text-sm">{e.userName}</div>
                   <div className="text-surface-400 text-xs">
                     {e.entityType} <span className="text-surface-300 font-mono">{e.entityId}</span>
                   </div>
-                  {e.details && <div className="text-surface-400 text-[10px]">{e.details}</div>}
+                  {e.changes && <div className="text-surface-400 text-[10px] truncate">{JSON.stringify(e.changes)}</div>}
                 </div>
               ))}
             </div>
@@ -172,12 +175,12 @@ export function AuditTab() {
               <tbody>
                 {filteredEntries.map(e => (
                   <tr key={e.id} className="border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                    <td className="px-4 py-3 text-surface-500 text-xs whitespace-nowrap">{new Date(e.date).toLocaleString('fr-FR')}</td>
+                    <td className="px-4 py-3 text-surface-500 text-xs whitespace-nowrap">{new Date(e.createdAt).toLocaleString('fr-FR')}</td>
                     <td className="px-4 py-3 text-surface-900 text-sm">{e.userName}</td>
                     <td className="px-4 py-3">{actionBadge(e.action)}</td>
                     <td className="px-4 py-3 text-surface-600 text-xs">{e.entityType}</td>
                     <td className="px-4 py-3 text-surface-400 text-[10px] font-mono">{e.entityId}</td>
-                    <td className="px-4 py-3 text-surface-400 text-xs max-w-[250px] truncate">{e.details || '-'}</td>
+                    <td className="px-4 py-3 text-surface-400 text-xs max-w-[250px] truncate">{e.changes ? JSON.stringify(e.changes) : '-'}</td>
                   </tr>
                 ))}
               </tbody>

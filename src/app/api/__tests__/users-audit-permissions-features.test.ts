@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 const mockPrisma = vi.hoisted(() => ({
   user: {
     findFirst: vi.fn(),
+    findMany:  vi.fn(() => Promise.resolve([])),
     update:    vi.fn(),
     delete:    vi.fn(),
   },
@@ -277,7 +278,7 @@ describe('GET /api/audit', () => {
 
   it('returns paginated audit logs (200)', async () => {
     mockPrisma.auditLog.findMany.mockResolvedValue([
-      { id: 'al-1', action: 'driver.update', tenantId: 'tenant-test', createdAt: new Date() },
+      { id: 'al-1', action: 'driver.update', tenantId: 'tenant-test', userId: 'user-1', createdAt: new Date() },
     ])
     mockPrisma.auditLog.count.mockResolvedValue(1)
 
