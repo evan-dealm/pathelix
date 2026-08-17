@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { MissionType, MISSION_TYPE_HEX } from '@/lib/types'
 import { useTrade } from '@/providers/TradeProvider'
 import { formatDuration } from '@/lib/algorithm'
@@ -8,6 +8,8 @@ import { usePlanningStore } from '@/stores/planningStore'
 import { Sparkline } from '@/components/ui/Sparkline'
 import { SYNTHETIC_TYPES } from '../types'
 import { today, addDays, displayShort, getWeekDays, useDebounce } from '../hooks'
+import { loadAllMissionsIntoStore } from '@/lib/loadAllMissions'
+import { loadPlansForDate } from '@/lib/loadPlansForDate'
 
 function MiniBarChart({ data, barClass = 'bg-[#0055A4]/70' }: {
   data: { label: string; value: number; max: number; barClass?: string }[]
@@ -72,6 +74,18 @@ export function StatsTab() {
   const debouncedStatsSearch = useDebounce(statsSearch, 200)
   const [sectorFilter, setSectorFilter] = useState('all')
   const [statsDate, setStatsDate] = useState(today())
+
+  // storeMissions/storePlans only ever hold *today's* data from DataProvider's initial load —
+  // this tab lets the user pick any date, but nothing fetched that date's data, so every date
+  // but today silently showed all-zero stats regardless of what existed in the DB. Same root
+  // cause as loadAllMissions.ts (Missions tab) / loadPlansForDate.ts (Tournées tab).
+  useEffect(() => {
+    const controller = { cancelled: false }
+    loadAllMissionsIntoStore(controller)
+    return () => { controller.cancelled = true }
+  }, [])
+
+  useEffect(() => { loadPlansForDate(statsDate) }, [statsDate])
 
   const { allMissions, p1Count, p2Count, p3Count, noGps } = useMemo(() => {
     const all: typeof storeMissions extends (infer T)[] ? T[] : never[] = []
