@@ -66,7 +66,8 @@ function resetStore() {
     speeds:      {},
     unavailable: {},
     _history:    [],
-    _historyIdx: -1,
+    _historyIdx: 0,
+    _tip:        null,
   })
 }
 
@@ -197,8 +198,11 @@ describe('planningStore', () => {
       expect(usePlanningStore.getState().canUndo()).toBe(true)
     })
 
-    it('undo restores previous snapshot', () => {
-
+    it('undo after 2 actions restores the state after the 1st action, not the initial state', () => {
+      // Regression test for a bug where a single undo skipped an entire history
+      // level (decrement-then-read instead of read-then-decrement): after
+      // actions A, B, one undo must land on "after A", not jump straight back
+      // past it to the pre-A state.
       usePlanningStore.getState().assignToDriver('m-1', 'd-1', DATE)
       usePlanningStore.getState().assignToDriver('m-2', 'd-1', DATE)
 
@@ -207,10 +211,32 @@ describe('planningStore', () => {
       usePlanningStore.getState().undo()
 
       const plan = usePlanningStore.getState().plans['d-1|2026-03-18']
-      expect(plan === undefined || plan.length === 0).toBe(true)
+      expect(plan).toHaveLength(1)
+      expect(plan[0].id).toBe('m-1')
     })
 
-    it('redo goes forward in history', () => {
+    it('undo three times after three actions reaches the true initial state, a fourth is a no-op', () => {
+      usePlanningStore.getState().assignToDriver('m-1', 'd-1', DATE)
+      usePlanningStore.getState().assignToDriver('m-2', 'd-1', DATE)
+      usePlanningStore.getState().unassignFromDriver('m-1', 'd-1', DATE)
+
+      usePlanningStore.getState().undo()
+      expect(usePlanningStore.getState().plans['d-1|2026-03-18']?.map(m => m.id)).toEqual(['m-1', 'm-2'])
+      usePlanningStore.getState().undo()
+      expect(usePlanningStore.getState().plans['d-1|2026-03-18']?.map(m => m.id)).toEqual(['m-1'])
+      usePlanningStore.getState().undo()
+      const plan = usePlanningStore.getState().plans['d-1|2026-03-18']
+      expect(plan === undefined || plan.length === 0).toBe(true)
+      expect(usePlanningStore.getState().canUndo()).toBe(false)
+
+      usePlanningStore.getState().undo()
+      expect(usePlanningStore.getState().plans['d-1|2026-03-18']?.length ?? 0).toBe(0)
+    })
+
+    it('redo after undo returns exactly to the live tip, including the last action', () => {
+      // Regression test: _history only ever stored pre-action snapshots, so the
+      // true latest state (after the last action) could never be reached again
+      // via redo — this pinned the bug instead of catching it.
       usePlanningStore.getState().assignToDriver('m-1', 'd-1', DATE)
       usePlanningStore.getState().assignToDriver('m-2', 'd-1', DATE)
       usePlanningStore.getState().undo()
@@ -219,8 +245,40 @@ describe('planningStore', () => {
 
       const plan = usePlanningStore.getState().plans['d-1|2026-03-18']
       expect(plan).toBeDefined()
-      expect(plan).toHaveLength(1)
-      expect(plan[0].id).toBe('m-1')
+      expect(plan).toHaveLength(2)
+      expect(plan.map(m => m.id)).toEqual(['m-1', 'm-2'])
+    })
+
+    it('undo/redo round-trip through a full chain returns to the exact tip', () => {
+      usePlanningStore.getState().assignToDriver('m-1', 'd-1', DATE)
+      usePlanningStore.getState().assignToDriver('m-2', 'd-1', DATE)
+      usePlanningStore.getState().unassignFromDriver('m-1', 'd-1', DATE)
+      const tip = usePlanningStore.getState().plans['d-1|2026-03-18']
+
+      usePlanningStore.getState().undo()
+      usePlanningStore.getState().undo()
+      usePlanningStore.getState().undo()
+      usePlanningStore.getState().redo()
+      usePlanningStore.getState().redo()
+      usePlanningStore.getState().redo()
+
+      expect(usePlanningStore.getState().plans['d-1|2026-03-18']).toEqual(tip)
+      expect(usePlanningStore.getState().canRedo()).toBe(false)
+    })
+
+    it('a new action after undo discards the stale redo branch', () => {
+      usePlanningStore.getState().assignToDriver('m-1', 'd-1', DATE)
+      usePlanningStore.getState().assignToDriver('m-2', 'd-1', DATE)
+      usePlanningStore.getState().undo()
+
+      usePlanningStore.getState().unassignFromDriver('m-1', 'd-1', DATE)
+
+      expect(usePlanningStore.getState().canRedo()).toBe(false)
+      const plan = usePlanningStore.getState().plans['d-1|2026-03-18']
+      expect(plan === undefined || plan.length === 0).toBe(true)
+
+      usePlanningStore.getState().undo()
+      expect(usePlanningStore.getState().plans['d-1|2026-03-18']?.map(m => m.id)).toEqual(['m-1'])
     })
 
     it('canRedo returns false when at latest state', () => {

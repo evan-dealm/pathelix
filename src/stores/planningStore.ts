@@ -31,7 +31,10 @@ interface PlanningState {
   lastSyncedAt:  string | null
 
   _history:    HistorySnapshot[]
+  /** Number of undo steps taken since the last action (0 = at the live tip). */
   _historyIdx: number
+  /** Live state captured lazily on the first undo since the last action, so redo can return to it — `_history` only ever stores pre-action snapshots, never the tip itself. */
+  _tip:        HistorySnapshot | null
 }
 
 interface PlanningActions {
@@ -108,12 +111,16 @@ function genId(): string {
 const MAX_HISTORY = 5
 
 function pushHistory(state: PlanningState, snap: HistorySnapshot): Partial<PlanningState> {
-
-  const base = state._history.slice(0, state._historyIdx + 1)
+  // _historyIdx counts undo steps taken since the last action: any state reachable
+  // only via a now-abandoned redo branch (indices beyond the current position) is
+  // dropped, then the new pre-action snapshot is appended.
+  const keepUpTo = state._history.length - state._historyIdx
+  const base = state._history.slice(0, keepUpTo)
   const next = [...base, snap].slice(-MAX_HISTORY)
   return {
     _history:    next,
-    _historyIdx: next.length - 1,
+    _historyIdx: 0,
+    _tip:        null,
   }
 }
 
@@ -226,7 +233,8 @@ export const usePlanningStore = create<PlanningStore>()(
       syncStatus:    'idle',
       lastSyncedAt:  null,
       _history:    [],
-      _historyIdx: -1,
+      _historyIdx: 0,
+      _tip:        null,
 
       setInitialData(drivers, missions) {
         set({ drivers, missions })
@@ -645,36 +653,53 @@ export const usePlanningStore = create<PlanningStore>()(
 
       undo() {
         set(state => {
-          if (state._historyIdx <= 0) return {}
-          const idx  = state._historyIdx - 1
-          const snap = state._history[idx]
+          const n = state._history.length
+          if (state._historyIdx >= n) return {}
+          // Capture the live state on the first undo since the last action, so
+          // redo can eventually return to it — it is never stored in _history.
+          const tip = state._historyIdx === 0
+            ? { plans: state.plans, startTimes: state.startTimes }
+            : state._tip
+          const newIdx = state._historyIdx + 1
+          const snap   = state._history[n - newIdx]
           return {
             plans:       snap.plans,
             startTimes:  snap.startTimes,
-            _historyIdx: idx,
+            _historyIdx: newIdx,
+            _tip:        tip,
           }
         })
       },
 
       redo() {
         set(state => {
-          if (state._historyIdx >= state._history.length - 1) return {}
-          const idx  = state._historyIdx + 1
-          const snap = state._history[idx]
+          if (state._historyIdx <= 0) return {}
+          const newIdx = state._historyIdx - 1
+          if (newIdx === 0) {
+            if (!state._tip) return {}
+            return {
+              plans:       state._tip.plans,
+              startTimes:  state._tip.startTimes,
+              _historyIdx: 0,
+            }
+          }
+          const n    = state._history.length
+          const snap = state._history[n - newIdx]
           return {
             plans:       snap.plans,
             startTimes:  snap.startTimes,
-            _historyIdx: idx,
+            _historyIdx: newIdx,
           }
         })
       },
 
       canUndo() {
-        return get()._historyIdx > 0
+        const state = get()
+        return state._historyIdx < state._history.length
       },
 
       canRedo() {
-        return get()._historyIdx < get()._history.length - 1
+        return get()._historyIdx > 0
       },
 
       updatePlannedMission(missionId, driverId, date, data) {

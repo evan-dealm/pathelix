@@ -25,7 +25,7 @@ function resetStore() {
   usePlanningStore.setState({
     drivers: [], missions: [], plans: {}, startTimes: {}, speeds: {},
     unavailable: {}, lockedPlans: {}, syncStatus: 'idle', lastSyncedAt: null,
-    _history: [], _historyIdx: -1,
+    _history: [], _historyIdx: 0, _tip: null,
   })
 }
 
