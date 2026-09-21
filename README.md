@@ -1,21 +1,28 @@
 # Pathélix
 
 > SaaS B2B multi-tenant de gestion de flotte et d'optimisation de tournées.
-> Documentation vérifiée contre le code source réel (août 2026).
+> Documentation vérifiée contre le code source réel (2026-09-21).
 
 ---
 
 ## Table des matières
 
-Cette documentation tient en 5 fichiers à la racine du dépôt :
+La documentation complète vit dans [`docs/`](docs/) :
 
 1. **README.md** (ce fichier) — vue d'ensemble produit, architecture, rôles, glossaire
-2. **[FEATURES.md](FEATURES.md)** — fonctionnalités détaillées par rôle (admin, dispatcher, chauffeur, superadmin)
-3. **[TECHNICAL.md](TECHNICAL.md)** — stack technique, modèle de données, sécurité, moteur VRP, système ML
-4. **[API.md](API.md)** — référence des routes API, webhooks, intégrations externes, variables d'environnement
-5. **[OPERATIONS.md](OPERATIONS.md)** — installation, tests, déploiement, runbook d'incidents, limitations connues
+2. **[docs/architecture.md](docs/architecture.md)** — stack technique, arborescence, flux de données, workers
+3. **[docs/installation.md](docs/installation.md)** — prérequis, installation, commandes
+4. **[docs/configuration.md](docs/configuration.md)** — toutes les variables d'environnement
+5. **[docs/base-de-donnees.md](docs/base-de-donnees.md)** — schéma, modèles, migrations
+6. **[docs/api.md](docs/api.md)** — routes API, webhooks, intégrations externes
+7. **[docs/fonctionnalites.md](docs/fonctionnalites.md)** — fonctionnalités détaillées par rôle
+8. **[docs/authentification-securite.md](docs/authentification-securite.md)** — auth, permissions, invariants de sécurité, risques résiduels
+9. **[docs/tests.md](docs/tests.md)** — organisation des tests, comment les lancer, ce qui n'est pas couvert
+10. **[docs/deploiement.md](docs/deploiement.md)** — build, déploiement, runbook d'incidents, HALT Trackdéchets
+11. **[docs/audit-2026-09-21.md](docs/audit-2026-09-21.md)** — synthèse de l'audit complet le plus récent
 
-`CLAUDE.md` (racine) est un fichier séparé — instructions opérationnelles pour les sessions Claude Code, pas de la documentation produit. Il n'est pas remplacé par ces 5 fichiers.
+`CLAUDE.md` (racine) est un fichier séparé — instructions opérationnelles pour les sessions
+Claude Code, pas de la documentation produit. Il n'est pas remplacé par ces fichiers.
 
 ---
 
@@ -58,11 +65,11 @@ Pathélix s'adapte au vocabulaire de chaque secteur via le champ `trade` du tena
 | `maintenance_sav` | Maintenance & SAV | Interventions, pièces, techniciens |
 | `coursier_express` | Coursier & Express | Colis urgents, relais, livraisons express |
 
-Les labels UI (missions, véhicules, sites…) changent dynamiquement selon le trade du tenant (`src/lib/trades.ts`, `TradeProvider`). Des trades personnalisés au-delà de ces 6 peuvent être créés par un superadmin (registre server-only, voir TECHNICAL.md).
+Les labels UI (missions, véhicules, sites…) changent dynamiquement selon le trade du tenant (`src/lib/trades.ts`, `TradeProvider`). Des trades personnalisés au-delà de ces 6 peuvent être créés par un superadmin (registre server-only, voir docs/architecture.md).
 
 ## 4. Architecture globale
 
-Pathélix fonctionne sur un **serveur cloud dédié unique**. Tous les services communiquent via un réseau bridge Docker interne — pas de cluster distribué (voir OPERATIONS.md pour les implications sur le cache/rate-limiting en mémoire).
+Pathélix fonctionne sur un **serveur cloud dédié unique**. Tous les services communiquent via un réseau bridge Docker interne — pas de cluster distribué (voir docs/architecture.md pour les implications sur le cache/rate-limiting en mémoire).
 
 ```
 Internet (HTTPS)
@@ -100,7 +107,7 @@ Internet (HTTPS)
 | **Valhalla** | Routage poids-lourds principal | Auto-hébergé, OSM France |
 | **OSRM** | Repli routage PL statique | Auto-hébergé, algorithme MLD |
 | **Worker VRP** | Optimisation asynchrone (BullMQ consumer) | Node.js, Worker Threads |
-| **AI Engine** | OCR tickets de pesée (Donut model, GPU) | Python FastAPI, code existant mais pas orchestré en prod — voir OPERATIONS.md |
+| **AI Engine** | OCR tickets de pesée (Donut model, GPU) | Python FastAPI, code existant mais pas orchestré en prod — voir docs/deploiement.md |
 
 ### Flux de données typique (optimisation)
 
@@ -123,7 +130,7 @@ Planificateur → POST /api/optimize
 | `dispatcher` | Planification : missions, tournées, VRP, chauffeurs, véhicules par défaut | `/admin` (onglets limités) |
 | `driver` | Tournée du jour : navigation, statuts, photos, commentaires | `/driver/[id]` (mobile) |
 
-Détail complet par rôle : [FEATURES.md](FEATURES.md). Modèle de permissions granulaires et invariants de sécurité : [TECHNICAL.md](TECHNICAL.md).
+Détail complet par rôle : [docs/fonctionnalites.md](docs/fonctionnalites.md). Modèle de permissions granulaires et invariants de sécurité : [docs/authentification-securite.md](docs/authentification-securite.md).
 
 ## 6. Démarrage rapide
 
@@ -137,7 +144,7 @@ npm run db:seed
 npm run dev          # http://localhost:3000
 ```
 
-Guide complet (variables d'environnement, workers, tests, déploiement) : [OPERATIONS.md](OPERATIONS.md).
+Guide complet (variables d'environnement, workers, tests, déploiement) : [docs/installation.md](docs/installation.md) et [docs/deploiement.md](docs/deploiement.md).
 
 ## 7. Glossaire
 
@@ -152,7 +159,7 @@ Guide complet (variables d'environnement, workers, tests, déploiement) : [OPERA
 | **VRP** | Vehicle Routing Problem — problème d'optimisation de tournées de véhicules. |
 | **ALNS** | Adaptive Large Neighborhood Search — méta-heuristique centrale du moteur VRP. |
 | **Trade** | Secteur d'activité du tenant. Conditionne les labels UI. |
-| **BSDD** | Bordereau de suivi des déchets dangereux — document Trackdéchets. HALT actif en prod, voir OPERATIONS.md. |
+| **BSDD** | Bordereau de suivi des déchets dangereux — document Trackdéchets. HALT actif en prod, voir docs/deploiement.md. |
 | **P1** | Mission prioritaire urgente. Toujours affectée, même au détriment de l'équilibre de tournée. |
 | **TenantMLProfile** | Coefficients ML calculés nuitamment : ajustement des durées par chauffeur × site × type. |
 | **SSE** | Server-Sent Events — flux temps réel unidirectionnel serveur → client. |
