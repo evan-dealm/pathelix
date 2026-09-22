@@ -220,3 +220,161 @@ lui-même ne s'initialise jamais dans un vrai navigateur, pour une raison non id
   précisément où son pipeline interne de chargement de style s'arrête.
 - Tester avec le style MapTiler (clé requise, non disponible dans cet environnement) pour voir
   si le défaut est spécifique au style OpenFreeMap Liberty.
+
+## Investigation 2 — 2026-09-22 (résolue)
+
+Mission de suivi dédiée, avec une méthode imposée précise (instrumentation du cycle de vie
+AVANT toute nouvelle hypothèse) et une correction explicite de l'Investigation 1 : la
+conclusion "échec réseau écarté car une seule requête chacune" était invalide — les requêtes
+annulées par un `map.remove()` avant même d'atteindre le réseau n'apparaissent pas dans les
+logs `page.on('response')`, donc ce raisonnement ne permettait pas d'écarter une recréation
+répétée de l'instance.
+
+### Étape 1 — Instrumentation du cycle de vie (méthode imposée)
+
+Instrumentation ajoutée temporairement dans `useMapLibreMap.ts` (compteur `effectRuns`/
+`effectCleanups` global, un enregistrement par instance avec compteurs d'événements
+`styledata`/`sourcedata`/`data`/`render`/`idle`/`error`/`load`/`resize`) et dans `FleetMap.tsx`
+(compteur de rendus/montages/démontages du composant), exposés sur `window` pour lecture
+directe depuis un test E2E (`e2e/zz-investigate.spec.ts`, supprimé après usage).
+
+**Résultat, méthode et preuve — exécution réelle, pas une supposition :**
+
+| Vérification | Méthode | Résultat |
+|---|---|---|
+| Recréation répétée de l'instance `maplibregl.Map` | Compteur direct dans l'effet de `useMapLibreMap` | **Infirmée** : `effectRuns: 1`, `effectCleanups: 0`, `instanceCount: 1` — une seule instance, jamais recréée |
+| Recréation du composant `FleetMapInner` lui-même | Compteur de montage/démontage | **Infirmée** : `fleetMapMounts: 1`, `fleetMapUnmounts: 0` (4 re-rendus du composant, mais un seul montage réel) |
+| État interne du style au moment du blocage | Lecture directe de `map.style._loaded`, `map.style._updatedSources`, et de chaque `tileManagers[id]` (`_sourceLoaded`, `_updated`, `used`, `_source.loaded()`, nombre de tuiles suivies) | **Pointe précisément vers la source `openmaptiles`** : `loaded: false`, mais `_sourceLoaded: true` et `_source.loaded(): true` (le TileJSON a bien été récupéré) — **8 tuiles suivies, dont au moins une jamais passée à l'état `loaded`/`errored`**, alors qu'aucune requête réseau vers une tuile `.pbf` n'apparaît nulle part dans les logs |
+
+Cette dernière ligne a immédiatement réorienté l'investigation : le style ET les métadonnées de
+la source vectorielle se chargent bien (confirmé par les événements `styledata`/`sourcedata`),
+mais les TUILES elles-mêmes (chargées via le Web Worker de MapLibre) ne sont jamais
+effectivement récupérées.
+
+### Étape 1 (suite) — Root cause exacte, avec preuve directe
+
+Patch temporaire de `window.Worker` via `page.addInitScript` (avant tout chargement de page)
+pour intercepter **chaque tentative réelle de construction d'un Worker**, avec son URL exacte
+et sa pile d'appel. Résultat, sans ambiguïté :
+
+```json
+{ "url": "", "options": { "type": "module" }, "stack": "... at new em (initActors) ... at oL._updateStyle ... at oL.setStyle ... at new oL ..." }
+```
+
+**`new Worker("", { type: "module" })`** — URL vide, appelée depuis les internals mêmes de
+MapLibre (`Dispatcher`/`Actor.acquire`). Une URL vide pour un Worker se résout contre le
+document courant (`http://localhost:3000/admin`) — exactement la valeur observée pour
+`worker.url()` via `page.on('worker')` lors des tentatives précédentes, elle aussi mal
+interprétée au premier abord comme "un worker sans rapport avec MapLibre".
+
+Lecture du code source non minifié de `maplibre-gl` (`node_modules/maplibre-gl/dist/
+maplibre-gl-dev.mjs`) :
+
+```js
+function defaultWorkerUrl() {
+  const moduleUrl = import.meta.url;
+  if (!/^https?:/.test(moduleUrl)) return "";
+  const workerName = moduleUrl.endsWith("-dev.mjs") ? "maplibre-gl-worker-dev.mjs" : "maplibre-gl-worker.mjs";
+  return new URL(`./${workerName}`, moduleUrl).href;
+}
+// ...
+const url = config.WORKER_URL || defaultWorkerUrl();
+```
+
+**Cause racine confirmée** : `import.meta.url`, évalué à l'intérieur du code de `maplibre-gl`
+une fois ce dernier re-bundlé par le webpack de Next.js, ne correspond pas à une URL
+`http(s):` réelle (le bundling transforme/déplace ce module dans un chunk dont le
+`import.meta.url` runtime ne pointe pas vers son origine npm). Le test `/^https?:/.test(...)`
+échoue donc silencieusement, et `defaultWorkerUrl()` retourne `""` — sans lever la moindre
+exception, sans émettre le moindre événement `'error'` sur la carte. Le Worker créé avec cette
+URL vide ne fait jamais tourner le vrai code de traitement des tuiles ; les tuiles restent
+indéfiniment en attente, `Style.loaded()` ne devient jamais `true`, et `'load'` ne se déclenche
+donc jamais. Ce mécanisme explique intégralement, sans reste, tous les symptômes observés lors
+de l'Investigation 1 (aucune erreur, réseau "normal" en apparence, comportement identique en
+dev et en production).
+
+**Pourquoi `LiveTrackingMap` fonctionnait quand même** : non déterminé avec certitude (aurait
+nécessité de comparer le découpage exact des chunks webpack pour les deux routes, non fait par
+manque de temps face à une cause racine déjà confirmée et corrigible indépendamment de cette
+question) — mais sans conséquence sur la correction retenue, qui élimine la dépendance à
+`import.meta.url` pour les deux composants de la même façon.
+
+### Correctif appliqué
+
+MapLibre expose exactement le mécanisme prévu pour ce cas (bundlers incapables de résoudre
+correctement l'URL du worker) : `maplibregl.setWorkerUrl(url)`, qui prend le pas sur
+`defaultWorkerUrl()` (`config.WORKER_URL || defaultWorkerUrl()`), à appeler une fois avant la
+création de toute instance `maplibregl.Map`.
+
+1. **`public/maplibre-gl-worker.mjs`** et **`public/maplibre-gl-shared.mjs`** (le worker
+   importe ce second fichier via un chemin relatif — sans lui, le worker charge mais échoue à
+   son tour, `net::ERR_ABORTED` sur `/maplibre-gl-shared.mjs`, trouvé et corrigé dans la même
+   investigation) : copies statiques de `node_modules/maplibre-gl/dist/`, synchronisées
+   automatiquement par `scripts/sync-maplibre-worker.js` (hook `postinstall`), committées pour
+   qu'un checkout frais fonctionne même avant qu'`npm install` ne relance ce hook.
+2. **`src/lib/maplibre/config.ts`** : nouvelle constante `MAPLIBRE_WORKER_URL =
+   '/maplibre-gl-worker.mjs'`, documentée en détail (pourquoi, comment rester synchronisée).
+3. **`src/hooks/useMapLibreMap.ts`** : `maplibregl.setWorkerUrl(MAPLIBRE_WORKER_URL)` appelé
+   une fois au chargement du module, avant toute création de `Map`.
+4. **`src/middleware.ts`** : **second bug distinct, trouvé en testant le correctif** — ces deux
+   fichiers statiques passaient par le middleware d'authentification comme n'importe quelle
+   route, qui les redirigeait vers `/login` (307) pour toute requête sans cookie de session
+   valide (le cas du Worker, dont la requête interne pour son propre script n'est pas garantie
+   de porter le contexte d'authentification comme une navigation de page normale). Corrigé en
+   les ajoutant à l'exclusion du `matcher` du middleware, au même titre que `favicon.svg`/
+   `sw.js`/`manifest.json` — ce sont des ressources publiques sans donnée sensible.
+5. **Bug supplémentaire révélé une fois les tuiles réellement chargées** : `MISSIONS_LABEL_LAYER`
+   utilisait une expression `feature-state` sur `text-size`, une propriété de **layout** —
+   MapLibre ne supporte `feature-state` que sur les propriétés de **paint** (confirmé par un
+   véritable événement `'error'` de la carte, invisible tant que les tuiles ne chargeaient
+   jamais). Corrigé : `text-size` fixé à une constante (13) ; le retour visuel au survol reste
+   porté par `circle-radius`/`circle-stroke-width` (propriétés paint, elles supportent bien
+   `feature-state`, déjà correctes).
+
+### Vérification post-correctif
+
+Ré-exécution de la même instrumentation après le correctif : `load: 1`, `idle: 1`,
+`styleLoaded: true`, `mapLoaded: true`, `openmaptiles.loaded: true`, des dizaines de vraies
+requêtes `.pbf` de tuiles et de glyphes observées, zéro événement `'error'`. Confirmé
+visuellement par capture d'écran (rues nommées, étiquette d'exutoire, contrôles, attribution
+tous visibles et corrects) et par `e2e/maplibre-migration.spec.ts`, qui passe désormais de
+façon fiable et rapide (~3s) en s'appuyant sur un signal robuste et permanent
+(`data-maplibre-loaded`, un attribut posé directement depuis `isStyleLoaded`) plutôt que sur un
+échantillonnage de pixel unique et sensible au minutage exact du cycle de rendu (qui avait
+produit un faux négatif alors même que la carte, prouvée par capture d'écran, fonctionnait
+parfaitement).
+
+Toute l'instrumentation temporaire (`window.__mapLibreDebug`, `window.__fleetMapDebug`,
+`e2e/zz-investigate.spec.ts`) a été retirée avant les commits finaux — seul un hook minimal et
+permanent subsiste (`container.__maplibreMap`, une propriété exposée sur l'élément conteneur
+pour permettre à un test E2E d'appeler `queryRenderedFeatures()`/`getBounds()`/etc., utilisé
+par `e2e/fleetmap-validation.spec.ts`).
+
+### Résidu trouvé, hors périmètre de cette investigation
+
+Les marqueurs de mission utilisent un emoji littéral comme `text-field`. Le serveur de glyphes
+public d'OpenFreeMap ne couvre pas l'intégralité des plages Unicode emoji pour la police de
+repli utilisée par le style Liberty — 2 requêtes `.pbf` de glyphes (plages 127744-127999 et
+128256-128511) retournent `404`. MapLibre gère ce cas normalement (repli visuel sans planter,
+aucun événement `'error'` de la carte) — ce n'est pas le défaut de cette mission, ni introduit
+par cette migration : c'est une limitation du service public tiers, distincte et pré-existante.
+Documenté et filtré explicitement (par comptage exact, pas par un filtre de texte générique)
+dans `e2e/fleetmap-validation.spec.ts`. Pas corrigé — options pour une session dédiée si
+souhaité : bascule vers le style MapTiler (couverture glyphes plus complète, clé requise) ou
+remplacement des emoji par des icônes de sprite personnalisées.
+
+### Leçon — pourquoi les tests mockés ne pouvaient pas détecter ce défaut
+
+Les tests composants (`FleetMap.test.tsx`, `useMapLibreMap.test.ts`) mockent entièrement le
+module `maplibre-gl` (`vi.mock('maplibre-gl', ...)`) — la classe `Map` simulée n'a ni Worker,
+ni réseau, ni pipeline de style réel : elle ne peut structurellement pas reproduire un bug situé
+dans la résolution d'URL du Worker par le VRAI `maplibre-gl`, rebundlé par le VRAI webpack de
+Next.js. Aucune quantité de tests unitaires supplémentaires n'aurait pu détecter ceci — seul un
+navigateur réel, exécutant le vrai bundle produit par le vrai bundler, le pouvait. C'est
+exactement pourquoi ce projet distingue déjà tests unitaires/composants (rapides, isolés,
+larges en couverture de logique) et tests E2E (lents, coûteux, mais seuls capables de vérifier
+l'intégration réelle bundler ↔ bibliothèque tierce) — garde ajoutée : `e2e/maplibre-migration.
+spec.ts` et `e2e/fleetmap-validation.spec.ts` font maintenant partie de la suite E2E régulière
+du projet, donc toute régression future sur ce point précis (ex. une mise à jour de
+`maplibre-gl` qui réintroduirait un besoin de worker mal résolu) serait détectée au prochain
+run E2E, pas seulement lors d'un test manuel.
