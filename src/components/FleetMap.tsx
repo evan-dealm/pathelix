@@ -2,31 +2,16 @@
 
 import React from 'react'
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { MapContainer, TileLayer, Polyline, Marker, Tooltip, CircleMarker, useMap, useMapEvents } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+import * as maplibregl from 'maplibre-gl'
+import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
 
+import { useMapLibreMap } from '@/hooks/useMapLibreMap'
+import { toLngLat } from '@/lib/maplibre/coords'
+import { escapeHtml } from '@/lib/maplibre/escapeHtml'
 import type { Driver, Exutoire } from '@/lib/types'
 import { MISSION_TYPE_HEX } from '@/lib/types'
 import { useTrade } from '@/providers/TradeProvider'
 import type { TourResult } from '@/lib/algorithm'
-
-type LeafletMapInternal = {
-  _initContainer(_id: HTMLElement | string): void
-  __reactStrictPatch?: boolean
-};
-
-(function patchLeafletStrictMode() {
-  const proto = L.Map.prototype as unknown as LeafletMapInternal
-  if (proto.__reactStrictPatch) return
-  const original = proto._initContainer
-  proto._initContainer = function(this: L.Map, id: HTMLElement | string) {
-    const el = (typeof id === 'string' ? document.getElementById(id) : id) as Record<string, unknown> | null
-    if (el) delete el._leaflet_id
-    original.call(this, id)
-  }
-  proto.__reactStrictPatch = true
-}())
 
 const DRIVER_COLORS = [
   '#3B82F6', '#22C55E', '#F59E0B', '#EF4444',
@@ -70,10 +55,6 @@ export interface FleetMapProps {
   livePositions?:    DriverLivePosition[]
 }
 
-function geoToLeaflet(coords: [number, number][]): [number, number][] {
-  return coords.map(([lng, lat]) => [lat, lng])
-}
-
 function effectiveDepot(driver: Driver, exutoires: Exutoire[]): { lat: number; lng: number } {
   if (driver.startingExutoireId) {
     const ex = exutoires.find(e => e.id === driver.startingExutoireId)
@@ -82,88 +63,49 @@ function effectiveDepot(driver: Driver, exutoires: Exutoire[]): { lat: number; l
   return { lat: driver.depotLat, lng: driver.depotLng }
 }
 
-function BoundsController({ points }: { points: [number, number][] }) {
-  const map = useMap()
+// ─── Layer/source ids ───────────────────────────────────────────────────────────────────────
+const ROUTES_SOURCE   = 'fleetmap-routes'
+const ROUTES_HALO_LAYER = 'fleetmap-routes-halo'
+const ROUTES_LINE_LAYER = 'fleetmap-routes-line'
+const MISSIONS_SOURCE   = 'fleetmap-missions'
+const MISSIONS_CIRCLE_LAYER = 'fleetmap-missions-circle'
+const MISSIONS_LABEL_LAYER  = 'fleetmap-missions-label'
+const HEATMAP_LAYER = 'fleetmap-heatmap'
 
-  const pointsHash = useMemo(() => {
-    let h = 2166136261
-    for (const [a, b] of points) {
-      h ^= (a * 1e5) | 0; h = Math.imul(h, 16777619)
-      h ^= (b * 1e5) | 0; h = Math.imul(h, 16777619)
-    }
-    return (h >>> 0)
-  }, [points])
-  useEffect(() => {
-    if (points.length === 0) return
-    try { map.fitBounds(L.latLngBounds(points), { padding: [40, 40] }) } catch {  }
-  }, [pointsHash, map, points])
-  return null
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
+
+function makeDivIconEl(html: string, size: number): HTMLDivElement {
+  const el = document.createElement('div')
+  el.innerHTML = html
+  el.style.width  = `${size}px`
+  el.style.height = `${size}px`
+  return el.firstElementChild as HTMLDivElement
 }
 
-function MapClickHandler({ onDeselect }: { onDeselect: () => void }) {
-  useMapEvents({ click: () => onDeselect() })
-  return null
-}
-
-function InvalidateSizeOnMount() {
-  const map = useMap()
-  useEffect(() => {
-
-    const container = map.getContainer()
-    let rafId: number
-    const ro = new ResizeObserver(() => {
-      rafId = requestAnimationFrame(() => {
-        try { map.invalidateSize({ animate: false }) } catch {  }
-      })
-    })
-    ro.observe(container)
-    return () => { ro.disconnect(); cancelAnimationFrame(rafId) }
-  }, [map])
-  return null
-}
-
-const _iconCache = new Map<string, L.DivIcon>()
-
-function depotIcon(color: string, dimmed: boolean) {
-  const key = `depot-${color}-${dimmed}`
-  let icon = _iconCache.get(key)
-  if (icon) return icon
+function depotIconHtml(color: string, dimmed: boolean): string {
   const c = dimmed ? DIMMED_COLOR : color
   const opacity = dimmed ? 0.35 : 1
-  icon = L.divIcon({
-    className: '',
-    html: `<div style="width:30px;height:30px;border-radius:50%;background:${c}22;border:2px solid ${c};display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;opacity:${opacity};">🏠</div>`,
-    iconSize: [30, 30], iconAnchor: [15, 15],
-  })
-  _iconCache.set(key, icon)
-  return icon
+  return `<div style="width:30px;height:30px;border-radius:50%;background:${c}22;border:2px solid ${c};display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;opacity:${opacity};cursor:pointer;">🏠</div>`
 }
 
-function missionIcon(typeColor: string, emoji: string, hovered: boolean, dimmed: boolean) {
-  const key = `mission-${typeColor}-${emoji}-${hovered}-${dimmed}`
-  let icon = _iconCache.get(key)
-  if (icon) return icon
-  const sz = hovered ? 34 : 24
-  const bw = hovered ? 3 : 2
-  const c = dimmed ? DIMMED_COLOR : typeColor
-  const opacity = dimmed ? 0.25 : 1
-  icon = L.divIcon({
-    className: '',
-    html: `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${c}33;border:${bw}px solid ${c};display:flex;align-items:center;justify-content:center;font-size:${hovered ? 16 : 11}px;line-height:1;opacity:${opacity};">${emoji}</div>`,
-    iconSize: [sz, sz], iconAnchor: [sz >> 1, sz >> 1],
-  })
-  _iconCache.set(key, icon)
-  return icon
+const EXUTOIRE_ICON_HTML = `<div style="width:28px;height:28px;border-radius:6px;background:#22c55e22;border:2px solid #22c55e;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;">♻️</div>`
+
+function liveIconHtml(color: string, ignition: boolean, stale: boolean): string {
+  return `<div style="
+    width:28px;height:28px;border-radius:50%;
+    background:${stale ? '#9CA3AF' : color};
+    border:3px solid white;
+    box-shadow:0 2px 8px rgba(0,0,0,0.3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:14px;
+    ${ignition ? '' : 'opacity:0.5;'}
+  ">🚛</div>`
 }
 
-const _exutoireIconCached = L.divIcon({
-  className: '',
-  html: `<div style="width:28px;height:28px;border-radius:6px;background:#22c55e22;border:2px solid #22c55e;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;">♻️</div>`,
-  iconSize: [28, 28], iconAnchor: [14, 14],
-})
-
-function exutoireIcon() {
-  return _exutoireIconCached
+function tooltipPopup(): maplibregl.Popup {
+  return new maplibregl.Popup({
+    closeButton: false, closeOnClick: false, offset: 16, className: 'fleetmap-tooltip',
+  })
 }
 
 function FleetMapInner({
@@ -174,46 +116,16 @@ function FleetMapInner({
   livePositions,
 }: FleetMapProps) {
 
-  const mapRef      = useRef<L.Map | null>(null)
-  const mapWrapperRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const [showHeatmap, setShowHeatmap] = useState(false)
-
-  const heatCells = useMemo(() => {
-    if (!showHeatmap) return []
-    const GRID = 0.04
-    const cellMap = new Map<string, { lat: number; lng: number; count: number }>()
-    for (const driver of drivers) {
-      const result = calcResults[driver.id]
-      if (!result) continue
-      for (const step of result.steps) {
-        if (step.isSynthetic || step.hasMissingCoords) continue
-        const lat = Math.round(step.mission.latitude / GRID) * GRID
-        const lng = Math.round(step.mission.longitude / GRID) * GRID
-        const key = `${lat.toFixed(3)},${lng.toFixed(3)}`
-        const existing = cellMap.get(key)
-        if (existing) existing.count++
-        else cellMap.set(key, { lat, lng, count: 1 })
-      }
-    }
-    const cells = Array.from(cellMap.values())
-    const maxCount = Math.max(1, ...cells.map(c => c.count))
-    return cells.map(c => ({ ...c, intensity: c.count / maxCount }))
-  }, [showHeatmap, drivers, calcResults])
-
   const { missionIcon: tradeMissionIcon } = useTrade()
 
   const [roadGeo, setRoadGeo]           = useState<Record<string, GeoLineString | null>>({})
   const [loadingRoutes, setLoadingRoutes] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
-  const [mapKey, setMapKey] = useState(0)
-  useEffect(() => {
-    setMapKey(k => k + 1)
-  }, [])
-
   const [isolated, setIsolated] = useState<Set<string>>(new Set())
-
   const toggleIsolate = useCallback((id: string) => {
     setIsolated(prev => {
       const next = new Set(prev)
@@ -222,9 +134,7 @@ function FleetMapInner({
       return next
     })
   }, [])
-
   const clearIsolation = useCallback(() => setIsolated(new Set()), [])
-
   const hasIsolation = isolated.size > 0
 
   const routeStepsKey = useMemo(
@@ -293,6 +203,15 @@ function FleetMapInner({
     return pts
   }, [drivers, calcResults, exutoires])
 
+  const pointsHash = useMemo(() => {
+    let h = 2166136261
+    for (const [a, b] of allPoints) {
+      h ^= (a * 1e5) | 0; h = Math.imul(h, 16777619)
+      h ^= (b * 1e5) | 0; h = Math.imul(h, 16777619)
+    }
+    return (h >>> 0)
+  }, [allPoints])
+
   const routes = useMemo(() => drivers.map(d => {
     const idx = driverIndex.get(d.id) ?? 0
     const color = driverColor(idx)
@@ -309,242 +228,380 @@ function FleetMapInner({
 
   const activeRoutes = useMemo(() => routes.filter(r => r.coords.length > 0), [routes])
 
-  const center: [number, number] = allPoints.length > 0 ? allPoints[0] : [45.9, 6.1]
+  const center: [number, number] = allPoints.length > 0
+    ? toLngLat({ lat: allPoints[0][0], lng: allPoints[0][1] })
+    : [6.1, 45.9]
 
   function isDriverDimmed(driverId: string): boolean {
     return hasIsolation && !isolated.has(driverId)
   }
 
-  function polylineProps(driverId: string, color: string) {
-    const dimmed = isDriverDimmed(driverId)
-    return {
-      color:   dimmed ? DIMMED_COLOR : color,
-      weight:  dimmed ? 2 : 4,
-      opacity: dimmed ? 0.15 : 0.85,
-    }
-  }
+  const { map, isStyleLoaded } = useMapLibreMap(containerRef, { center, zoom: 11 })
 
-  function handleDriverClick(e: L.LeafletMouseEvent, driverId: string) {
-    L.DomEvent.stopPropagation(e.originalEvent)
-    toggleIsolate(driverId)
-  }
+  // ─── One-time layer setup, once the style has loaded ────────────────────────────────────
+  const layersReadyRef = useRef(false)
+  useEffect(() => {
+    if (!map || !isStyleLoaded || layersReadyRef.current) return
+    layersReadyRef.current = true
+
+    map.addSource(ROUTES_SOURCE, { type: 'geojson', data: EMPTY_FC })
+    map.addLayer({
+      id: ROUTES_HALO_LAYER, type: 'line', source: ROUTES_SOURCE,
+      filter: ['==', ['get', 'isolated'], true],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-width': 10, 'line-opacity': 0.2 },
+    })
+    map.addLayer({
+      id: ROUTES_LINE_LAYER, type: 'line', source: ROUTES_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color':   ['get', 'lineColor'],
+        'line-width':   ['get', 'lineWidth'],
+        'line-opacity': ['get', 'lineOpacity'],
+        'line-dasharray': ['case', ['get', 'dashed'], ['literal', [2, 1.3]], ['literal', [1, 0]]],
+      },
+    })
+
+    map.addSource(MISSIONS_SOURCE, { type: 'geojson', data: EMPTY_FC })
+    map.addLayer({
+      id: HEATMAP_LAYER, type: 'heatmap', source: MISSIONS_SOURCE,
+      layout: { visibility: 'none' },
+      paint: {
+        'heatmap-weight':    1,
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 9, 1, 15, 3],
+        'heatmap-radius':    ['interpolate', ['linear'], ['zoom'], 9, 18, 15, 40],
+        'heatmap-opacity':   0.55,
+        'heatmap-color': [
+          'interpolate', ['linear'], ['heatmap-density'],
+          0,    'rgba(0,0,0,0)',
+          0.2,  '#2DD4BF',
+          0.4,  '#22C55E',
+          0.6,  '#F59E0B',
+          0.8,  '#EF4444',
+          1,    '#DC2626',
+        ],
+      },
+    })
+    map.addLayer({
+      id: MISSIONS_CIRCLE_LAYER, type: 'circle', source: MISSIONS_SOURCE,
+      paint: {
+        'circle-radius': [
+          'case', ['boolean', ['feature-state', 'hovered'], false], 17, 12,
+        ],
+        'circle-color':        ['get', 'color'],
+        'circle-opacity':      ['get', 'fillOpacity'],
+        'circle-stroke-color': ['get', 'color'],
+        'circle-stroke-width': [
+          'case', ['boolean', ['feature-state', 'hovered'], false], 3, 2,
+        ],
+        'circle-stroke-opacity': ['get', 'strokeOpacity'],
+      },
+    })
+    map.addLayer({
+      id: MISSIONS_LABEL_LAYER, type: 'symbol', source: MISSIONS_SOURCE,
+      layout: {
+        'text-field': ['get', 'emoji'],
+        'text-size': [
+          'case', ['boolean', ['feature-state', 'hovered'], false], 16, 11,
+        ],
+        'text-allow-overlap': true, 'text-ignore-placement': true,
+      },
+      paint: { 'text-opacity': ['get', 'fillOpacity'] },
+    })
+
+    const tooltip = tooltipPopup()
+    let hoveredFeatureId: number | string | undefined
+
+    function setHover(id: number | string | undefined) {
+      if (hoveredFeatureId === id) return
+      if (hoveredFeatureId !== undefined) {
+        map!.setFeatureState({ source: MISSIONS_SOURCE, id: hoveredFeatureId }, { hovered: false })
+      }
+      hoveredFeatureId = id
+      if (id !== undefined) {
+        map!.setFeatureState({ source: MISSIONS_SOURCE, id }, { hovered: true })
+      }
+    }
+
+    map.on('mousemove', MISSIONS_CIRCLE_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0]
+      if (!f) return
+      setHover(f.id)
+      map!.getCanvas().style.cursor = 'pointer'
+      const p = f.properties as Record<string, string>
+      tooltip.setLngLat((f.geometry as Point).coordinates as [number, number]).setHTML(`
+        <div style="font-size:12px;line-height:1.4">
+          <div style="font-weight:600;color:${p.color}">${escapeHtml(p.emoji)} ${escapeHtml(p.label)}</div>
+          <div style="color:#94a3b8">${escapeHtml(p.timeRange)}</div>
+          <div style="color:${p.driverColor};opacity:.8">${escapeHtml(p.driverName)}</div>
+        </div>
+      `).addTo(map!)
+    })
+    map.on('mouseleave', MISSIONS_CIRCLE_LAYER, () => {
+      setHover(undefined)
+      map!.getCanvas().style.cursor = ''
+      tooltip.remove()
+    })
+    map.on('click', MISSIONS_CIRCLE_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0]
+      const driverId = (f?.properties as Record<string, string> | undefined)?.driverId
+      if (driverId) toggleIsolate(driverId)
+    })
+    map.on('click', ROUTES_LINE_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
+      const driverId = (e.features?.[0]?.properties as Record<string, string> | undefined)?.driverId
+      if (driverId) toggleIsolate(driverId)
+    })
+    map.on('mouseenter', ROUTES_LINE_LAYER, () => { map!.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', ROUTES_LINE_LAYER, () => { map!.getCanvas().style.cursor = '' })
+  }, [map, isStyleLoaded, toggleIsolate])
+
+  // ─── Routes source data ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!map || !isStyleLoaded || !layersReadyRef.current) return
+    const source = map.getSource(ROUTES_SOURCE) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+
+    const features: Feature<LineString>[] = []
+    for (const { driver, color, coords } of routes) {
+      if (coords.length < 2) continue
+      const geo = roadGeo[driver.id]
+      const positions = geo?.coordinates?.length ? geo.coordinates : coords.map(([lat, lng]) => [lng, lat])
+      const lngLatCoords: [number, number][] = geo?.coordinates?.length
+        ? positions as [number, number][]
+        : coords.map(([lat, lng]) => toLngLat({ lat, lng }))
+
+      const dimmed = isDriverDimmed(driver.id)
+      const iso = isolated.has(driver.id)
+      features.push({
+        type: 'Feature',
+        id: driverIndex.get(driver.id) ?? 0,
+        geometry: { type: 'LineString', coordinates: lngLatCoords },
+        properties: {
+          driverId: driver.id,
+          color,
+          isolated: iso,
+          lineColor: dimmed ? DIMMED_COLOR : color,
+          lineWidth: iso ? 5 : (dimmed ? 2 : (loadingRoutes ? 2 : 4)),
+          lineOpacity: iso ? 1 : (dimmed ? 0.15 : (loadingRoutes ? 0.4 : 0.85)),
+          dashed: loadingRoutes && !iso && !dimmed,
+        },
+      })
+    }
+    source.setData({ type: 'FeatureCollection', features })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, isStyleLoaded, routes, roadGeo, isolated, loadingRoutes, hasIsolation])
+
+  // ─── Mission points source data (also feeds the heatmap layer) ─────────────────────────────
+  const missionIdToFeatureId = useRef<Map<string, number>>(new Map())
+  useEffect(() => {
+    if (!map || !isStyleLoaded || !layersReadyRef.current) return
+    const source = map.getSource(MISSIONS_SOURCE) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+
+    const MAX_MAP_MARKERS = 500
+    const features: Feature<Point>[] = []
+    const idMap = new Map<string, number>()
+    let fid = 0
+
+    outer:
+    for (const driver of drivers) {
+      const result = calcResults[driver.id]
+      if (!result) continue
+      const idx = driverIndex.get(driver.id) ?? 0
+      const color = driverColor(idx)
+      const dimmed = isDriverDimmed(driver.id)
+      for (const step of result.steps) {
+        if (step.hasMissingCoords || step.isSynthetic) continue
+        const pm = step.mission
+        const typeColor = (MISSION_TYPE_HEX as Record<string, string>)[pm.type] ?? '#6b7280'
+        const emoji = tradeMissionIcon(pm.type) || '📍'
+        idMap.set(pm.id, fid)
+        features.push({
+          type: 'Feature',
+          id: fid++,
+          geometry: { type: 'Point', coordinates: toLngLat({ lat: pm.latitude, lng: pm.longitude }) },
+          properties: {
+            missionId:    pm.id,
+            driverId:     driver.id,
+            color:        dimmed ? DIMMED_COLOR : typeColor,
+            emoji,
+            label:        pm.clientName || pm.outletName || pm.address,
+            timeRange:    `${step.arrivalStr} → ${step.departureStr}`,
+            driverColor:  dimmed ? DIMMED_COLOR : color,
+            driverName:   `${driver.firstName} ${driver.lastName}`,
+            fillOpacity:  dimmed ? 0.25 : 1,
+            strokeOpacity: dimmed ? 0.25 : 1,
+          },
+        })
+        if (features.length >= MAX_MAP_MARKERS) break outer
+      }
+    }
+    missionIdToFeatureId.current = idMap
+    source.setData({ type: 'FeatureCollection', features })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, isStyleLoaded, drivers, calcResults, driverIndex, isolated, hasIsolation, tradeMissionIcon])
+
+  // ─── Heatmap visibility toggle ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!map || !isStyleLoaded || !layersReadyRef.current) return
+    map.setLayoutProperty(HEATMAP_LAYER, 'visibility', showHeatmap ? 'visible' : 'none')
+  }, [map, isStyleLoaded, showHeatmap])
+
+  // ─── External hover sync (e.g. hovering a mission in a list elsewhere in the UI) ────────────
+  const externalHoverIdRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (!map || !isStyleLoaded || !layersReadyRef.current) return
+    const prev = externalHoverIdRef.current
+    if (prev !== undefined) {
+      map.setFeatureState({ source: MISSIONS_SOURCE, id: prev }, { hovered: false })
+      externalHoverIdRef.current = undefined
+    }
+    if (hoveredMissionId) {
+      const fid = missionIdToFeatureId.current.get(hoveredMissionId)
+      if (fid !== undefined) {
+        map.setFeatureState({ source: MISSIONS_SOURCE, id: fid }, { hovered: true })
+        externalHoverIdRef.current = fid
+      }
+    }
+  }, [map, isStyleLoaded, hoveredMissionId])
+
+  // ─── fitBounds on data change ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!map || !isStyleLoaded || allPoints.length === 0) return
+    const bounds = new maplibregl.LngLatBounds()
+    for (const [lat, lng] of allPoints) bounds.extend(toLngLat({ lat, lng }))
+    try { map.fitBounds(bounds, { padding: 40 }) } catch { /* single/invalid point */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, isStyleLoaded, pointsHash])
+
+  // ─── Depot markers (HTML Marker + hover tooltip) ────────────────────────────────────────
+  const depotMarkersRef = useRef<Map<string, { marker: maplibregl.Marker; popup: maplibregl.Popup }>>(new Map())
+  useEffect(() => {
+    if (!map || !isStyleLoaded) return
+    const held = depotMarkersRef.current
+    const seen = new Set<string>()
+
+    for (const { driver, color } of routes) {
+      seen.add(driver.id)
+      const dep = effectiveDepot(driver, exutoires)
+      const dimmed = isDriverDimmed(driver.id)
+      const depotName = driver.startingExutoireId
+        ? exutoires.find(e => e.id === driver.startingExutoireId)?.name ?? driver.depotName
+        : driver.depotName
+
+      let entry = held.get(driver.id)
+      if (!entry) {
+        const el = makeDivIconEl(depotIconHtml(color, dimmed), 30)
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat(toLngLat({ lat: dep.lat, lng: dep.lng }))
+          .addTo(map)
+        const popup = tooltipPopup()
+        el.addEventListener('mouseenter', () => {
+          popup.setLngLat(toLngLat({ lat: dep.lat, lng: dep.lng }))
+            .setHTML(`<div style="font-size:12px"><div style="font-weight:600">${escapeHtml(driver.firstName)} ${escapeHtml(driver.lastName)}</div><div style="color:#94a3b8">${escapeHtml(depotName)}</div></div>`)
+            .addTo(map)
+        })
+        el.addEventListener('mouseleave', () => popup.remove())
+        el.addEventListener('click', ev => { ev.stopPropagation(); toggleIsolate(driver.id) })
+        entry = { marker, popup }
+        held.set(driver.id, entry)
+      } else {
+        entry.marker.setLngLat(toLngLat({ lat: dep.lat, lng: dep.lng }))
+        entry.marker.getElement().replaceChildren(makeDivIconEl(depotIconHtml(color, dimmed), 30))
+      }
+    }
+    for (const [id, entry] of held) {
+      if (!seen.has(id)) { entry.marker.remove(); entry.popup.remove(); held.delete(id) }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, isStyleLoaded, routes, exutoires, isolated, hasIsolation, toggleIsolate])
+
+  // ─── Exutoire markers (static-ish, small count) ─────────────────────────────────────────
+  const exutoireMarkersRef = useRef<Map<string, { marker: maplibregl.Marker; popup: maplibregl.Popup }>>(new Map())
+  useEffect(() => {
+    if (!map || !isStyleLoaded) return
+    const held = exutoireMarkersRef.current
+    const seen = new Set<string>()
+
+    for (const e of exutoires) {
+      seen.add(e.id)
+      if (held.has(e.id)) continue
+      const el = makeDivIconEl(EXUTOIRE_ICON_HTML, 28)
+      const marker = new maplibregl.Marker({ element: el }).setLngLat(toLngLat({ lat: e.lat, lng: e.lng })).addTo(map)
+      const popup = tooltipPopup()
+      el.addEventListener('mouseenter', () => {
+        popup.setLngLat(toLngLat({ lat: e.lat, lng: e.lng }))
+          .setHTML(`<div style="font-size:12px"><div style="font-weight:600;color:#4ade80">${escapeHtml(e.name)}</div><div style="color:#94a3b8">${escapeHtml(e.address)}</div></div>`)
+          .addTo(map)
+      })
+      el.addEventListener('mouseleave', () => popup.remove())
+      held.set(e.id, { marker, popup })
+    }
+    for (const [id, entry] of held) {
+      if (!seen.has(id)) { entry.marker.remove(); entry.popup.remove(); held.delete(id) }
+    }
+  }, [map, isStyleLoaded, exutoires])
+
+  // ─── Live position markers ───────────────────────────────────────────────────────────────
+  const liveMarkersRef = useRef<Map<string, { marker: maplibregl.Marker; popup: maplibregl.Popup }>>(new Map())
+  useEffect(() => {
+    if (!map || !isStyleLoaded) return
+    const held = liveMarkersRef.current
+    const seen = new Set<string>()
+
+    for (const pos of livePositions ?? []) {
+      const driverIdx = drivers.findIndex(d => d.id === pos.driverId)
+      const driver = drivers[driverIdx]
+      if (!driver) continue
+      seen.add(pos.driverId)
+      const color = driverColor(driverIdx)
+      const ageMin = Math.round((Date.now() - pos.updatedAt) / 60_000)
+      const isStale = ageMin > 30
+      const ageLabel = ageMin < 1 ? "A l'instant" : ageMin < 60 ? `Il y a ${ageMin} min` : `Il y a ${Math.round(ageMin / 60)}h`
+      const html = `<div style="font-size:12px">
+          <div style="font-weight:600;color:${color}">${escapeHtml(driver.firstName)} ${escapeHtml(driver.lastName)}</div>
+          <div style="color:#6b7280">${pos.speedKmh > 0 ? `${Math.round(pos.speedKmh)} km/h` : "A l'arret"}</div>
+          <div style="color:#94a3b8">${ageLabel}</div>
+          ${!pos.ignition ? '<div style="color:#f87171">Moteur eteint</div>' : ''}
+        </div>`
+
+      const entry = held.get(pos.driverId)
+      if (!entry) {
+        const el = makeDivIconEl(liveIconHtml(color, pos.ignition, isStale), 28)
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat(toLngLat({ lat: pos.lat, lng: pos.lng }))
+          .addTo(map)
+        const popup = tooltipPopup()
+        el.addEventListener('mouseenter', () => popup.setLngLat(toLngLat({ lat: pos.lat, lng: pos.lng })).setHTML(html).addTo(map))
+        el.addEventListener('mouseleave', () => popup.remove())
+        held.set(pos.driverId, { marker, popup })
+      } else {
+        entry.marker.setLngLat(toLngLat({ lat: pos.lat, lng: pos.lng }))
+        entry.marker.getElement().replaceChildren(makeDivIconEl(liveIconHtml(color, pos.ignition, isStale), 28))
+      }
+    }
+    for (const [id, entry] of held) {
+      if (!seen.has(id)) { entry.marker.remove(); entry.popup.remove(); held.delete(id) }
+    }
+  }, [map, isStyleLoaded, livePositions, drivers])
 
   return (
-    <div ref={mapWrapperRef} className="relative w-full h-full" role="application" aria-label="Carte de la flotte">
-      {}
-      {mapKey === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#09090f] text-gray-600 text-sm">
+    <div className="relative w-full h-full" role="application" aria-label="Carte de la flotte">
+      {!isStyleLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#09090f] text-gray-600 text-sm z-10 pointer-events-none">
           Chargement carte…
         </div>
       )}
 
-      {}
-      {mapKey > 0 && allPoints.length === 0 && (
-        <div className="absolute inset-0 z-[1000] flex flex-col items-center justify-center bg-gray-950 text-gray-600 gap-2 pointer-events-none">
+      {isStyleLoaded && allPoints.length === 0 && (
+        <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center bg-gray-950 text-gray-600 gap-2 pointer-events-none">
           <div className="text-3xl">🗺️</div>
           <div className="text-sm">Aucune donnee geographique</div>
         </div>
       )}
 
-      {mapKey > 0 && <MapContainer
-        key={mapKey}
-        ref={mapRef}
-        style={{ width: '100%', height: '100%', background: '#09090f' }}
-        center={center} zoom={11} scrollWheelZoom zoomControl dragging
-      >
-        <InvalidateSizeOnMount />
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd" maxZoom={20}
-        />
-        <BoundsController points={allPoints} />
-        <MapClickHandler onDeselect={() => {}} />
+      <div ref={containerRef} style={{ width: '100%', height: '100%', background: '#09090f' }} />
 
-        {}
-        {showHeatmap && heatCells.map(cell => {
-
-          const hue = Math.round((1 - cell.intensity) * 200)
-          return (
-            <CircleMarker
-              key={`heat-${cell.lat.toFixed(3)}-${cell.lng.toFixed(3)}`}
-              center={[cell.lat, cell.lng]}
-              radius={Math.round(12 + cell.intensity * 36)}
-              interactive={false}
-              pathOptions={{
-                fillColor:    `hsl(${hue}, 80%, 50%)`,
-                fillOpacity:  0.12 + cell.intensity * 0.38,
-                color:        'transparent',
-                weight:       0,
-              }}
-            />
-          )
-        })}
-
-        {}
-        {routes.map(({ driver, color, coords }) => {
-          if (coords.length < 2 || !isDriverDimmed(driver.id)) return null
-          const geo = roadGeo[driver.id]
-          const positions = geo?.coordinates?.length ? geoToLeaflet(geo.coordinates) : coords
-          return (
-            <Polyline
-              key={`route-dim-${driver.id}`}
-              positions={positions}
-              {...polylineProps(driver.id, color)}
-              eventHandlers={{ click: (e) => handleDriverClick(e, driver.id) }}
-            />
-          )
-        })}
-
-        {}
-        {routes.map(({ driver, color, coords }) => {
-          if (coords.length < 2 || isDriverDimmed(driver.id)) return null
-          const geo = roadGeo[driver.id]
-          const positions = geo?.coordinates?.length ? geoToLeaflet(geo.coordinates) : coords
-          const isIso = isolated.has(driver.id)
-
-          return (
-            <React.Fragment key={`route-active-${driver.id}`}>
-              {}
-              {isIso && (
-                <Polyline
-                  key={`route-halo-${driver.id}`}
-                  positions={positions}
-                  color={color} weight={10} opacity={0.2}
-                />
-              )}
-              <Polyline
-                key={`route-${driver.id}`}
-                positions={positions}
-                color={color}
-                weight={isIso ? 5 : (loadingRoutes ? 2 : 4)}
-                opacity={isIso ? 1 : (loadingRoutes ? 0.4 : 0.85)}
-                dashArray={loadingRoutes && !isIso ? '6 4' : undefined}
-                eventHandlers={{ click: (e) => handleDriverClick(e, driver.id) }}
-              />
-            </React.Fragment>
-          )
-        })}
-
-        {}
-        {routes.map(({ driver, color }) => {
-          const dep = effectiveDepot(driver, exutoires)
-          return (
-          <Marker
-            key={`depot-${driver.id}`}
-            position={[dep.lat, dep.lng]}
-            icon={depotIcon(color, isDriverDimmed(driver.id))}
-            eventHandlers={{ click: (e) => handleDriverClick(e, driver.id) }}
-          >
-            <Tooltip direction="top" offset={[0, -16]}>
-              <div className="text-xs">
-                <div className="font-semibold">{driver.firstName} {driver.lastName}</div>
-                <div className="text-gray-400">{driver.startingExutoireId ? exutoires.find(e => e.id === driver.startingExutoireId)?.name ?? driver.depotName : driver.depotName}</div>
-              </div>
-            </Tooltip>
-          </Marker>
-        )})}
-
-        {}
-        {(() => {
-          const MAX_MAP_MARKERS = 500
-          const allSteps: Array<{ step: import('@/lib/algorithm').TourStep; driver: typeof drivers[0]; color: string; idx: number; dimmed: boolean }> = []
-          for (const driver of drivers) {
-            const result = calcResults[driver.id]
-            if (!result) continue
-            const idx = driverIndex.get(driver.id) ?? 0
-            const color = driverColor(idx)
-            const dimmed = isDriverDimmed(driver.id)
-            for (const step of result.steps) {
-              if (step.hasMissingCoords || step.isSynthetic) continue
-              allSteps.push({ step, driver, color, idx, dimmed })
-              if (allSteps.length >= MAX_MAP_MARKERS) break
-            }
-            if (allSteps.length >= MAX_MAP_MARKERS) break
-          }
-          return allSteps.map(({ step, driver, color, dimmed }) => {
-            const pm = step.mission
-            const isHovered = hoveredMissionId === pm.id
-            const typeColor = (MISSION_TYPE_HEX as Record<string, string>)[pm.type] ?? '#6b7280'
-            const emoji = tradeMissionIcon(pm.type) || '📍'
-            return (
-              <Marker
-                key={`mission-${pm.id}`}
-                position={[pm.latitude, pm.longitude]}
-                icon={missionIcon(typeColor, emoji, isHovered, dimmed)}
-                zIndexOffset={isHovered ? 1000 : dimmed ? -100 : 0}
-                eventHandlers={{ click: (e) => handleDriverClick(e, driver.id) }}
-              >
-                <Tooltip direction="top" offset={[0, isHovered ? -20 : -14]} permanent={isHovered}>
-                  <div className="text-xs leading-relaxed">
-                    <div className="font-semibold" style={{ color: typeColor }}>
-                      {emoji} {pm.clientName || pm.outletName || pm.address}
-                    </div>
-                    <div className="text-gray-400">{step.arrivalStr} → {step.departureStr}</div>
-                    <div style={{ color }} className="opacity-80">
-                      {driver.firstName} {driver.lastName}
-                    </div>
-                  </div>
-                </Tooltip>
-              </Marker>
-            )
-          })
-        })()}
-
-        {}
-        {exutoires.map(e => (
-          <Marker key={`exutoire-${e.id}`} position={[e.lat, e.lng]} icon={exutoireIcon()}>
-            <Tooltip direction="top" offset={[0, -16]}>
-              <div className="text-xs">
-                <div className="font-semibold text-green-400">{e.name}</div>
-                <div className="text-gray-400">{e.address}</div>
-              </div>
-            </Tooltip>
-          </Marker>
-        ))}
-
-        {}
-        {livePositions && livePositions.map(pos => {
-          const driverIdx = drivers.findIndex(d => d.id === pos.driverId)
-          const driver = drivers[driverIdx]
-          if (!driver) return null
-          const color = driverColor(driverIdx)
-          const ageMin = Math.round((Date.now() - pos.updatedAt) / 60_000)
-          const isStale = ageMin > 30
-
-          return (
-            <Marker
-              key={`live-${pos.driverId}`}
-              position={[pos.lat, pos.lng]}
-              icon={L.divIcon({
-                className: '',
-                iconSize: [28, 28],
-                iconAnchor: [14, 14],
-                html: `<div style="
-                  width:28px;height:28px;border-radius:50%;
-                  background:${isStale ? '#9CA3AF' : color};
-                  border:3px solid white;
-                  box-shadow:0 2px 8px rgba(0,0,0,0.3);
-                  display:flex;align-items:center;justify-content:center;
-                  font-size:14px;
-                  ${pos.ignition ? '' : 'opacity:0.5;'}
-                ">🚛</div>`,
-              })}
-            >
-              <Tooltip direction="top" offset={[0, -18]} permanent={false}>
-                <div className="text-xs">
-                  <div className="font-semibold" style={{ color }}>{driver.firstName} {driver.lastName}</div>
-                  <div className="text-gray-500">{pos.speedKmh > 0 ? `${Math.round(pos.speedKmh)} km/h` : 'A l\'arret'}</div>
-                  <div className="text-gray-400">{ageMin < 1 ? 'A l\'instant' : ageMin < 60 ? `Il y a ${ageMin} min` : `Il y a ${Math.round(ageMin / 60)}h`}</div>
-                  {!pos.ignition && <div className="text-red-400">Moteur eteint</div>}
-                </div>
-              </Tooltip>
-            </Marker>
-          )
-        })}
-      </MapContainer>}
-
-      {}
       <div className="absolute top-3 right-28 z-[999] flex items-center gap-2">
         <button
           onClick={() => setShowHeatmap(v => !v)}
@@ -569,7 +626,6 @@ function FleetMapInner({
         )}
       </div>
 
-      {}
       {loadingRoutes && (
         <div className={`absolute ${hasIsolation ? 'top-12' : 'top-3'} right-3 z-[999] flex items-center gap-2 bg-gray-950/90 border border-gray-800 rounded-lg px-3 py-1.5 pointer-events-none`}>
           <svg className="w-3.5 h-3.5 animate-spin text-[#0055A4]" viewBox="0 0 24 24" fill="none">
@@ -580,7 +636,6 @@ function FleetMapInner({
         </div>
       )}
 
-      {}
       {activeRoutes.length > 0 && (
         <div className="absolute bottom-4 left-3 z-[999] bg-gray-950/90 border border-gray-800 rounded-lg px-3 py-2.5 space-y-0.5 max-w-[190px] max-h-[45vh] overflow-y-auto"
              style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
@@ -623,4 +678,3 @@ function FleetMapInner({
 
 const FleetMap = React.memo(FleetMapInner)
 export default FleetMap
-
