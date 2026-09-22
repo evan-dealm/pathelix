@@ -151,7 +151,15 @@ créés par un superadmin.
 ## 9. Cartographie (MapLibre GL JS)
 
 Migré depuis Leaflet le 2026-09-22 (voir `MIGRATION_MAPLIBRE_LOG.md` à la racine pour
-l'historique complet de la migration). Deux cartes dans l'app, toutes deux `'use client'` et
+l'historique complet de la migration).
+
+> ⚠️ **Défaut connu, non résolu** : `FleetMap.tsx` (onglet Tournées) ne rend actuellement
+> **aucun pixel** dans un vrai navigateur — confirmé en dev ET en production, cause non
+> identifiée malgré une investigation exhaustive (réseau OK, WebGL OK, dimensions OK,
+> aucune erreur). `LiveTrackingMap.tsx` (même hook partagé) fonctionne correctement. Test de
+> régression qui documente ce défaut : `e2e/maplibre-migration.spec.ts`. **Ne pas merger en
+> production tant que ce point n'est pas résolu** — voir `MIGRATION_MAPLIBRE_LOG.md` pour le
+> détail complet de l'investigation et les pistes non explorées. Deux cartes dans l'app, toutes deux `'use client'` et
 chargées via `next/dynamic({ ssr: false })` depuis leur onglet (MapLibre dépend de `window` et
 de WebGL, jamais de rendu serveur) :
 
