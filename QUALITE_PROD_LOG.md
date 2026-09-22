@@ -315,3 +315,29 @@ repli fonctionne sans lui.
 - **Saisie en langage naturel, repli si Ollama indisponible** : non vérifié cette session (accès
   Ollama non confirmé dans cet environnement, comme documenté par la session de test manuel
   précédente — "Ollama non démarré" déjà noté comme limitation d'environnement, pas un bug).
+
+## Phase 7 — un correctif ciblé (le reste non traité, faute de temps)
+
+Constat du prompt vérifié directement dans le code (pas supposé) : "bulk select inclut Platform
+Admin, jamais bulk-suspendre sans déselectionner" (note de la session de test manuel précédente,
+C2) — confirmé comme un **vrai bug non corrigé**, pas juste une prudence manuelle. Dans
+`src/app/superadmin/page.tsx`, deux autres vues du même fichier filtrent déjà `t.slug !==
+'__platform__'`, mais le tableau de l'onglet Tenants (case à cocher "tout sélectionner" +
+lignes individuelles) ne le faisait pas — un superadmin cliquant "tout sélectionner" puis
+"Suspendre tous" aurait réellement suspendu le tenant plateforme lui-même.
+
+Corrigé : la case "tout sélectionner" ne sélectionne plus que les tenants non-plateforme
+(recalcul de la liste sélectionnable, comparaison de longueur ajustée) ; la case à cocher
+individuelle du tenant plateforme est désormais désactivée (grisée, `disabled`, tooltip
+explicite) — défense en profondeur, pas seulement l'exclusion de la sélection groupée.
+
+**Pas de test de régression ajouté** — `src/app/superadmin/page.tsx` (2163 lignes) n'a aucune
+infrastructure de test composant existante à ce jour (seules des routes API superadmin sont
+testées) ; construire ce harnais depuis zéro pour un seul correctif ciblé n'a pas été jugé
+proportionné au temps restant de cette session. Lacune honnête, pas cachée.
+
+**Reste de la Phase 7, non traité** : worker PDF dédié, confirmation sur "✕ Vider", `MAX_HISTORY`
+à 20, notes de planification partagées (`PlanningNote`), persistance des positions OBD via
+`DriverPosition`, toast de confirmation sur la purge de cache, indication de portée sur la
+recherche superadmin Ctrl+K. Liste complète et détail dans
+[docs/problemes-connus.md](docs/problemes-connus.md).

@@ -1701,10 +1701,22 @@ export default function SuperAdminPage() {
                 <thead className="bg-zinc-800/50 text-zinc-500 text-left uppercase tracking-wider">
                   <tr>
                     <th className="px-2 py-3 w-8">
-                      <input type="checkbox" title="Tout selectionner"
-                        checked={selectedTenants.size === tenants.length && tenants.length > 0}
-                        onChange={e => setSelectedTenants(e.target.checked ? new Set(tenants.map(t => t.id)) : new Set())}
-                        className="accent-red-500" />
+                      {(() => {
+                        // The platform tenant (__platform__) must never be bulk-selectable —
+                        // a "select all" + "Suspendre tous" would otherwise suspend the
+                        // platform's own tenant along with real ones. Confirmed as a real risk
+                        // during manual QA, not just a caution note: this table's rows were
+                        // never filtered to exclude it, unlike the two other tenant listings
+                        // elsewhere in this file (see the .filter(t => t.slug !== '__platform__')
+                        // above, in the dashboard/stats views).
+                        const selectableTenants = tenants.filter(t => t.slug !== '__platform__')
+                        return (
+                          <input type="checkbox" title="Tout selectionner"
+                            checked={selectedTenants.size === selectableTenants.length && selectableTenants.length > 0}
+                            onChange={e => setSelectedTenants(e.target.checked ? new Set(selectableTenants.map(t => t.id)) : new Set())}
+                            className="accent-red-500" />
+                        )
+                      })()}
                     </th>
                     <th className="px-4 py-3">Tenant</th>
                     <th className="px-4 py-3">Plan</th>
@@ -1725,12 +1737,16 @@ export default function SuperAdminPage() {
                     <tr className={`border-t border-zinc-800 hover:bg-zinc-800/50 transition cursor-pointer ${expandedTenant === t.id ? 'bg-zinc-800/70' : ''}`}
                       onClick={() => toggleTenantDetail(t.id)}>
                       <td className="px-2 py-3 w-8" onClick={e => e.stopPropagation()}>
-                        <input type="checkbox" title={`Selectionner ${t.name}`}
-                          checked={selectedTenants.has(t.id)}
-                          onChange={e => setSelectedTenants(prev => {
-                            const n = new Set(prev); if (e.target.checked) n.add(t.id); else n.delete(t.id); return n
-                          })}
-                          className="accent-red-500" />
+                        {t.slug === '__platform__' ? (
+                          <input type="checkbox" disabled title="Le tenant plateforme ne peut pas être sélectionné pour une action groupée" className="accent-red-500 opacity-30 cursor-not-allowed" />
+                        ) : (
+                          <input type="checkbox" title={`Selectionner ${t.name}`}
+                            checked={selectedTenants.has(t.id)}
+                            onChange={e => setSelectedTenants(prev => {
+                              const n = new Set(prev); if (e.target.checked) n.add(t.id); else n.delete(t.id); return n
+                            })}
+                            className="accent-red-500" />
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
