@@ -44,6 +44,12 @@
 | `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` | Pour `npm run db:seed-superadmin` |
 | `NEXTAUTH_URL` | Base URL pour les redirections auth (défaut `http://localhost:3000`) |
 
+## Carte (MapLibre GL JS)
+
+| Variable | Défaut | Rôle |
+|----------|--------|------|
+| `NEXT_PUBLIC_MAPTILER_KEY` | absent = fond de carte OpenFreeMap Liberty (gratuit, sans clé) | Clé MapTiler gratuite ([cloud.maptiler.com/account/keys](https://cloud.maptiler.com/account/keys/)) pour basculer vers le style vectoriel MapTiler. `NEXT_PUBLIC_` car lue côté client (les cartes ne rendent jamais côté serveur). Voir [architecture.md](architecture.md) §9. |
+
 ## Routage
 
 | Variable | Rôle |

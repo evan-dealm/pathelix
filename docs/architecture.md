@@ -15,7 +15,7 @@
 | State management | Zustand | 4.5 |
 | Data fetching | TanStack Query | 5 |
 | Styling | Tailwind CSS | 3.4 |
-| Cartes | Leaflet + React-Leaflet | — |
+| Cartes | MapLibre GL JS (intégration directe, sans wrapper React) | 6 |
 | Validation | Zod | 4 |
 | File de jobs | BullMQ + ioredis | 5 |
 | Auth | JWT HMAC-SHA256 (Web Crypto) | — |
@@ -147,3 +147,73 @@ Le champ `trade` du tenant adapte le vocabulaire UI (`src/lib/trades.ts`, `Trade
 `collecte_recyclage`, `livraison_distribution`, `btp_location`, `demenagement`,
 `maintenance_sav`, `coursier_express`. Des trades personnalisés au-delà de ces 6 peuvent être
 créés par un superadmin.
+
+## 9. Cartographie (MapLibre GL JS)
+
+Migré depuis Leaflet le 2026-09-22 (voir `MIGRATION_MAPLIBRE_LOG.md` à la racine pour
+l'historique complet de la migration). Deux cartes dans l'app, toutes deux `'use client'` et
+chargées via `next/dynamic({ ssr: false })` depuis leur onglet (MapLibre dépend de `window` et
+de WebGL, jamais de rendu serveur) :
+
+| Composant | Où | Rôle |
+|---|---|---|
+| `src/components/FleetMap.tsx` | `ToursTab.tsx` (onglet Tournées) | Carte principale : tournées, missions, exutoires, dépôts, positions live, heatmap densité |
+| `src/components/LiveTrackingMap.tsx` | `TelematicsTab.tsx` (onglet Télématique) | Mini-carte de suivi GPS temps réel |
+
+### Infrastructure partagée
+
+- **`src/hooks/useMapLibreMap.ts`** — hook réutilisable qui centralise l'initialisation, le
+  cycle de vie (nettoyage `map.remove()` au démontage, sûr sous React 18 StrictMode) et les
+  contrôles par défaut. Toute nouvelle carte doit passer par lui plutôt que d'instancier
+  `maplibregl.Map` directement.
+- **`src/lib/maplibre/config.ts`** — sélection du fond de carte et paramètres de vue par
+  défaut (`pitch: 45`, `bearing: -17`, `maxPitch: 70` — choisis pour révéler l'extrusion 3D
+  des bâtiments du style sans nuire à la lisibilité aux niveaux de zoom réellement utilisés,
+  ~10-14).
+- **`src/lib/maplibre/coords.ts`** — conversions explicites lat/lng ↔ lng/lat. Le reste de
+  l'app (Prisma, Zod, `TourStep`) stocke toujours `{lat, lng}` séparés (convention héritée de
+  Leaflet) ; MapLibre et GeoJSON attendent `[lng, lat]`. **Toujours** passer par
+  `toLngLat({lat, lng})` au point d'entrée d'une donnée dans une API MapLibre — jamais de
+  tuple brut.
+- **`src/lib/maplibre/escapeHtml.ts`** — les popups/tooltips MapLibre sont du HTML brut
+  (`Popup.setHTML()`), contrairement aux anciens `<Tooltip>`/`<Popup>` JSX Leaflet qui
+  échappaient automatiquement via React. Toute chaîne issue de la base (nom client, adresse,
+  nom chauffeur) interpolée dans du HTML de popup **doit** passer par `escapeHtml()`.
+
+### Fond de carte
+
+`basemapStyleUrl()` (dans `config.ts`) choisit le style vectoriel :
+
+- **Sans clé (défaut)** : [OpenFreeMap Liberty](https://tiles.openfreemap.org/styles/liberty)
+  — gratuit, sans inscription, vérifié en direct (200 OK) lors de la migration. Schéma
+  OpenMapTiles, sprite + glyphes inclus, contient nativement une couche bâtiments 3D
+  (`building-3d`, `fill-extrusion`, `minzoom: 14`) à partir de vraies hauteurs OSM — aucune
+  couche personnalisée à ajouter pour la 3D.
+- **Avec clé MapTiler** : dès que `NEXT_PUBLIC_MAPTILER_KEY` est définie (voir
+  [configuration.md](configuration.md)), bascule automatique vers le style vectoriel
+  MapTiler (`streets-v2`) — aucun changement de code requis. **Non vérifié en direct** dans
+  cet environnement (pas de clé disponible) — à valider manuellement après obtention d'une
+  clé.
+- `demotiles.maplibre.org` n'est jamais utilisé (trop pauvre pour un usage réel).
+
+### Attribution
+
+Obligatoire légalement (données OpenStreetMap). `useMapLibreMap` ajoute toujours un
+`AttributionControl` compact ; en mode sans clé, l'attribution OSM + OpenFreeMap est fournie
+explicitement (`OPENFREEMAP_ATTRIBUTION` dans `config.ts`) car le style OpenFreeMap ne
+l'embarque pas lui-même. En mode MapTiler, l'attribution est déjà intégrée au style et
+n'a pas besoin d'être dupliquée.
+
+### Ajouter une nouvelle couche
+
+1. Utiliser `useMapLibreMap(containerRef, options)` pour obtenir `{ map, isStyleLoaded }`.
+2. Attendre `isStyleLoaded === true` avant tout `map.addSource`/`addLayer` (jamais avant —
+   voir le commentaire dans `useMapLibreMap.ts`).
+3. Pour des données nombreuses (> quelques dizaines de points) : une source GeoJSON +
+   couche(s) `circle`/`symbol`/`line`/`fill`, mises à jour via `source.setData()` — jamais un
+   `Marker` DOM par élément (coûteux au-delà de quelques dizaines). `FleetMap.tsx` (missions,
+   routes, heatmap) en est la référence dans ce projet.
+4. Pour un petit nombre de marqueurs personnalisés (dépôts, exutoires) : `maplibregl.Marker`
+   avec un élément HTML, comme dans `FleetMap.tsx`/`LiveTrackingMap.tsx`.
+5. Convertir toute coordonnée `{lat,lng}` via `toLngLat()` avant de l'utiliser dans MapLibre.
+6. Échapper toute chaîne issue de la base avant de l'interpoler dans un `Popup.setHTML()`.

@@ -14,7 +14,7 @@ les permissions granulaires contrôlent réellement versus ce qu'elles ne contr�
 ### Tableau de bord
 
 - KPI du jour : missions planifiées, en cours, terminées, en retard, non assignées
-- Carte temps réel des chauffeurs (Leaflet, positions GPS)
+- Carte temps réel des chauffeurs (MapLibre GL JS, tuiles vectorielles, positions GPS)
 - Alertes P1, chauffeurs sans tournée, GPS manquant, violations réglementaires
 - Vue calendrier semaine/mois avec pool de missions
 - Notes de planification — **limitation connue** : stockées en `localStorage` uniquement,
@@ -107,7 +107,10 @@ les permissions granulaires contrôlent réellement versus ce qu'elles ne contr�
 Point d'entrée : `/driver/[id]`. Interface mobile-first, tactile. Accès via JWT `role=driver`.
 
 - Tournée du jour, progression, ETA, mission P1 mise en évidence
-- Navigation turn-by-turn, carte Leaflet
+- Navigation : lien externe vers Google Maps par mission (itinéraire ou recherche selon les
+  coordonnées disponibles) — **pas de carte embarquée sur cette page** (correction d'une
+  inexactitude documentaire antérieure qui affirmait à tort une "carte interactive Leaflet"
+  ici ; vérifié contre le code le 2026-09-22, voir MIGRATION_MAPLIBRE_LOG.md)
 - Statuts tactiles : Démarrer → Arriver → Commencer travail → Terminer
 - Photo de preuve (capture/signature), commentaires, déclaration d'incident
 - Scan ticket de pesée après une mission `VIDER`

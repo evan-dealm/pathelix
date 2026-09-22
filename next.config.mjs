@@ -44,7 +44,7 @@ const nextConfig = {
   serverExternalPackages: ['bullmq', 'ioredis', '@prisma/client'],
 
   experimental: {
-    optimizePackageImports: ['@tanstack/react-virtual', '@tanstack/react-query', 'fuse.js', 'zustand', 'zod', 'exceljs', 'react-leaflet', 'dayjs', 'bcryptjs'],
+    optimizePackageImports: ['@tanstack/react-virtual', '@tanstack/react-query', 'fuse.js', 'zustand', 'zod', 'exceljs', 'dayjs', 'bcryptjs'],
   },
   images: {
     formats: ['image/avif', 'image/webp'],
@@ -73,8 +73,8 @@ const nextConfig = {
           scriptSrc,
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "font-src 'self' data: https://fonts.gstatic.com",
-          "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org",
-          "connect-src 'self' https://nominatim.openstreetmap.org https://router.project-osrm.org https://*.basemaps.cartocdn.com https://api-adresse.data.gouv.fr https://*.ingest.sentry.io https://*.ingest.de.sentry.io",
+          "img-src 'self' data: blob:",
+          "connect-src 'self' https://tiles.openfreemap.org https://api.maptiler.com https://nominatim.openstreetmap.org https://router.project-osrm.org https://api-adresse.data.gouv.fr https://*.ingest.sentry.io https://*.ingest.de.sentry.io",
           "worker-src 'self' blob:",
           "frame-src 'self' https://www.openstreetmap.org",
           "frame-ancestors 'none'",

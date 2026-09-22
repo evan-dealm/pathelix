@@ -5,7 +5,7 @@
 ## Project identity
 
 **Pathélix** — multi-tenant B2B SaaS for fleet management and route optimization.
-Stack: Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prisma 7 · Zustand · TanStack Query 5 · Tailwind CSS 3 · Leaflet · Zod 4 · BullMQ + Redis · Valhalla/OSRM · Sentry · next-intl · Vitest
+Stack: Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prisma 7 · Zustand · TanStack Query 5 · Tailwind CSS 3 · MapLibre GL JS · Zod 4 · BullMQ + Redis · Valhalla/OSRM · Sentry · next-intl · Vitest
 
 ## Critical invariants — never break these
 
