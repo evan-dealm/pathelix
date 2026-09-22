@@ -51,3 +51,111 @@ en bloc — évite un double-constat périmé si le code change entre-temps pend
 ## Phases
 
 Voir sections ci-dessous, une par phase, ajoutées au fur et à mesure.
+
+## Phase 1 — Isolation multi-tenant structurelle
+
+### Inventaire
+
+`prisma/schema.prisma` : **33 modèles**, dont **29 tenant-scoped** (colonne `tenantId` propre).
+4 modèles hors périmètre, chacun pour une raison distincte vérifiée dans le schéma :
+- `Tenant` — c'est la racine, pas un enregistrement scopé.
+- `ClientSite` — **aucune colonne `tenantId` propre** (liaison many-to-many `Client`↔`Site`,
+  scopée uniquement de façon transitive via `clientId`/`siteId`, qui appartiennent chacun à un
+  tenant). Voir audit dédié ci-dessous.
+- `CustomTrade` — intentionnellement global (métiers personnalisés gérés par le superadmin,
+  partagés entre tous les tenants — comportement voulu, pas un oubli).
+- Les 4 énumérations ne sont bien sûr pas concernées.
+
+1079 sites d'appel `prisma.<modèle>.<opération>(` recensés sur 102 fichiers non-test
+(`grep -rEo "\bprisma\.[a-zA-Z]+\.[a-zA-Z]+\(" src/`). Ordre de grandeur qui dépasse largement
+ce qui peut être migré et re-testé un par un, avec la rigueur exigée par la règle 9 (« jamais de
+régression »), dans le temps de cette seule session. Décision : construire l'extension
+structurelle (le vrai levier), migrer un sous-ensemble réel et prioritaire (zones à risque
+historique + modèles centraux), documenter précisément et honnêtement le reste comme travail
+restant exploitable par une session future — conformément à la règle 10 (honnêteté) plutôt que
+de simuler une migration exhaustive.
+
+### `getTenantDb(tenantId)` — extension Prisma Client (`src/lib/tenantDb.ts`)
+
+Injecte `tenantId` dans `where` (lecture/`update`/`delete`, y compris `findUnique`/`update`/
+`delete` par id seul — "extended where" Prisma 7, confirmé fonctionnel en direct, voir plus
+bas) et dans `data` à la création (`create`/`createMany`/`upsert`), avec rejet immédiat
+(`throw`) si l'appelant fournit explicitement un `tenantId` différent — jamais un cas légitime.
+`unscopedPrisma` (alias explicite du client brut) réexporté depuis ce même fichier, nom
+canonique pour la liste blanche ESLint (voir plus bas).
+
+**Double preuve** :
+1. `src/lib/__tests__/tenantDb.test.ts` — 213 tests, mock du client Prisma sous-jacent
+   (`.$extends()` simulé fidèlement à la vraie API runtime, vérifiée contre les types générés
+   `src/generated/prisma/runtime/client.d.ts`), boucle sur les 29 modèles tenant-scoped ×
+   7 catégories de test (lecture/agrégat, extended-where par id, non-confiance d'un `tenantId`
+   fourni par l'appelant, `create`, rejet de `create` avec `tenantId` incohérent, `createMany`,
+   `upsert`) + 2 tests de non-régression sur `Tenant`/`CustomTrade` (jamais filtrés) + 1 garde-
+   fou (`tenantId` vide → throw synchrone).
+2. Script jetable exécuté en direct contre la sandbox via `db-guard.sh` (supprimé après usage,
+   pas dans le dépôt) : lecture cross-tenant réelle confirmée renvoyer `null`, `create` avec
+   `tenantId` incohérent confirmé lever l'erreur attendue — preuve que le vrai `$extends()` de
+   Prisma 7 se comporte exactement comme le mock le prédit, pas seulement en théorie.
+
+### Ce que l'extension ne couvre pas — audité à la main, pas juste documenté
+
+- **Écritures imbriquées** (nested `create`/`update` via une relation) : grep exhaustif
+  (`connectOrCreate`, `: { create:`, `: { update:`) sur tout `src/app|lib|workers` → exactement
+  2 occurrences, `src/app/api/clients/route.ts:112` et `src/app/api/sites/route.ts:112`, toutes
+  deux des écritures imbriquées sur `ClientSite` — qui n'a de toute façon pas de colonne
+  `tenantId` (voir ci-dessous). Zéro exposition réelle actuellement.
+- **Filtres dans `include`/`select`** (`include: { relation: { where: {...} } }`) : grep sur les
+  12 fichiers utilisant `include:` → zéro occurrence de ce pattern dans tout `src/`.
+- **`$queryRaw`/`$executeRaw`(`Unsafe`)** : 4 usages dans toute l'app, tous des `SELECT 1` de
+  health check (`/api/health`, `/api/ready`, `/api/status`, `/api/superadmin/system-health`),
+  aucune donnée tenant impliquée.
+- **`ClientSite`** (pas de colonne `tenantId`) : les 8 sites d'appel (`clients/route.ts`,
+  `clients/[id]/route.ts` ×2, `sites/route.ts` ×2, `sites/[id]/route.ts` ×2, `site-products/
+  route.ts`) vérifiés un par un — chacun valide indépendamment que `clientId`/`siteId` (ou les
+  deux) appartiennent bien au tenant courant (`prisma.client.count({where:{id:{in:...},
+  tenantId}})` ou équivalent) **avant** toute lecture/écriture `clientSite`. Confirmé sûr partout
+  — c'est très probablement la correction déjà appliquée lors de l'audit d'août 2026 pour le bug
+  cross-tenant historique sur ce point précis (voir `authentification-securite.md` §4).
+
+### Liste blanche client brut (`unscopedPrisma`) — légitime, pas en attente de migration
+
+Catégories déjà identifiées comme structurellement nécessitant un accès cross-tenant (à
+distinguer, dans la suite de cette phase et dans la configuration ESLint, des fichiers qui
+restent simplement à migrer) :
+- Webhooks (`nessy`/`obd`/`geotab`/`samsara`) : le tenant est résolu **en cherchant** quelle
+  intégration activée correspond au secret/clé fourni — par construction cross-tenant tant que
+  le tenant n'est pas encore identifié.
+- `src/app/api/superadmin/**` (17 fichiers) : accès cross-tenant par conception du rôle.
+- `src/workers/auditRetentionWorker.ts`, `recurringMissionsWorker.ts` : traitement batch sur
+  tous les tenants.
+- `src/lib/superadminAudit.ts` : journalisation superadmin, cross-tenant par nature.
+- Health checks (`health`/`ready`/`status`) : aucune donnée tenant, `SELECT 1` seul.
+- `src/lib/db.ts`, `src/lib/tenantDb.ts` eux-mêmes (définissent le client).
+
+### Migration des routes — sous-ensemble réel et testé cette session
+
+**Fait** (voir commits) : *(rempli au fur et à mesure de la migration, section mise à jour dans
+un commit ultérieur — ne pas se fier à cette ligne seule pour l'état final, voir le rapport final
+de la mission pour le décompte exact)*
+
+**Restant** : la majorité des 89 routes API + quelques fichiers `src/lib`/`src/workers`
+n'utilisant pas encore `getTenantDb`. Liste exacte des fichiers important encore `prisma`/
+`default` depuis `@/lib/db` en dehors de la liste blanche ci-dessus : reproductible avec
+`grep -rl "from '@/lib/db'" src/app/api src/lib src/workers --include="*.ts" | grep -v
+__tests__`, puis en retirant la liste blanche ci-dessus — migration mécanique (remplacer l'accès
+`prisma.<modèle>` par `getTenantDb(tenantId).<modèle>` pour tout modèle tenant-scoped, mettre à
+jour le mock `vi.mock('@/lib/db', ...)` du test associé en `vi.mock('@/lib/tenantDb', ...)`),
+mais à faire fichier par fichier pour vérifier quel identifiant de tenant est réellement en
+portée à chaque site d'appel — pas automatisable sans risque de régression silencieuse.
+
+### Règle ESLint — accès direct au client brut
+
+*(ajoutée avec la migration des routes, voir commit dédié — reste alignée avec la liste
+blanche légitime ci-dessus + un override explicite, distinctement commenté, pour les fichiers
+encore en attente de migration, afin de ne jamais casser le gate lint pendant que Phase 1 reste
+partielle)*
+
+### RLS PostgreSQL — conception évaluée, non implémentée (comme demandé)
+
+Voir section dédiée dans `docs/authentification-securite.md` (ajoutée en Phase 9/1) : faisabilité
+avec `@prisma/adapter-pg`, coût perf, plan de migration.
