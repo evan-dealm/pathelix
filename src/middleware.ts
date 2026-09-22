@@ -190,11 +190,15 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  // maplibre-gl-worker.mjs / maplibre-gl-shared.mjs: plain public static assets (the MapLibre
-  // GL JS Web Worker script and the module it imports, served from public/ — see
-  // src/lib/maplibre/config.ts MAPLIBRE_WORKER_URL). Must be fetchable without a session
-  // cookie: the worker's own internal request for its script isn't guaranteed to carry auth
-  // context the same way a normal page navigation does, and there is nothing tenant/user-
-  // specific in either file to protect.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.svg|sw.js|manifest.json|maplibre-gl-worker\\.mjs|maplibre-gl-shared\\.mjs|uploads|icons|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.webp|.*\\.svg|.*\\.ico).*)'],
+  // maplibre/<version>/maplibre-gl-worker.mjs / .../maplibre-gl-shared.mjs: plain public static
+  // assets (the MapLibre GL JS Web Worker script and the module it imports, served from
+  // public/maplibre/<version>/ — see src/lib/maplibre/config.ts MAPLIBRE_WORKER_URL). Must be
+  // fetchable without a session cookie: the worker's own internal request for its script isn't
+  // guaranteed to carry auth context the same way a normal page navigation does, and there is
+  // nothing tenant/user-specific in either file to protect. Scoped to exactly these two
+  // filenames under a `maplibre/<anything-but-a-slash>/` segment — NOT a bare `maplibre/`
+  // prefix — so this exemption can never widen into an accidentally-open static path. See
+  // src/middleware.test.ts for a proving test (this path 200s with no session; a neighboring
+  // non-exempted route still redirects to /login).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.svg|sw.js|manifest.json|maplibre\\/[^/]+\\/maplibre-gl-(?:worker|shared)\\.mjs|uploads|icons|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.webp|.*\\.svg|.*\\.ico).*)'],
 }

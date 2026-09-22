@@ -1,7 +1,17 @@
+import { readFileSync } from 'node:fs'
 import createNextIntlPlugin from 'next-intl/plugin'
 import { withSentryConfig } from '@sentry/nextjs/config'
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
+
+// Derived from the installed package, never hardcoded — used to version the static worker
+// files under public/maplibre/<version>/ (see scripts/sync-maplibre-worker.js and
+// src/lib/maplibre/config.ts). A future `maplibre-gl` upgrade without re-running the sync
+// script fails loudly via the drift test in src/lib/maplibre/__tests__/workerSync.test.ts,
+// not silently here.
+const maplibreVersion = JSON.parse(
+  readFileSync(new URL('./node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'),
+).version
 
 if (process.env.NODE_ENV !== 'test') {
   const missing = ['DATABASE_URL', 'SESSION_SECRET'].filter(k => !process.env[k])
@@ -25,6 +35,10 @@ const scriptSrc = isDev
 const nextConfig = {
   output: 'standalone',
   compress: true,
+
+  env: {
+    NEXT_PUBLIC_MAPLIBRE_VERSION: maplibreVersion,
+  },
 
   eslint: { ignoreDuringBuilds: true },
 

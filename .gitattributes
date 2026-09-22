@@ -1,0 +1,4 @@
+# Committed verbatim copies of node_modules/maplibre-gl/dist/*.mjs — must stay byte-for-byte
+# identical across checkouts (a workerSync.test.ts hash comparison depends on it) or Windows'
+# core.autocrlf=true would silently rewrite LF to CRLF on checkout and break the drift check.
+public/maplibre/** -text

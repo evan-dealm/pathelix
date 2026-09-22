@@ -1,5 +1,12 @@
 import { defineConfig } from 'vitest/config'
+import { readFileSync } from 'node:fs'
 import path from 'path'
+
+// Mirrors next.config.mjs's injection of NEXT_PUBLIC_MAPLIBRE_VERSION — tests run outside
+// Next's build pipeline, so src/lib/maplibre/config.ts needs this set here too.
+const maplibreVersion = JSON.parse(
+  readFileSync(new URL('./node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'),
+).version
 
 export default defineConfig({
   esbuild: {
@@ -9,6 +16,10 @@ export default defineConfig({
   test: {
 
     environment: 'node',
+
+    env: {
+      NEXT_PUBLIC_MAPLIBRE_VERSION: maplibreVersion,
+    },
 
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/__tests__/**/*.test.ts', 'src/**/__tests__/**/*.test.tsx'],
 

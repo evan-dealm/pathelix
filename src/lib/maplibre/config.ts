@@ -37,14 +37,29 @@ export function hasMapTilerKey(): boolean {
  * bundler-resolution problem entirely — `maplibregl.setWorkerUrl(WORKER_URL)` (called once,
  * before any Map is constructed) takes priority over `defaultWorkerUrl()`.
  *
- * `public/maplibre-gl-worker.mjs` (+ `public/maplibre-gl-shared.mjs`, which the worker script
- * itself imports via a relative specifier and which must therefore live alongside it) are
- * copies of the matching files in `node_modules/maplibre-gl/dist/` — kept in sync
- * automatically by `scripts/sync-maplibre-worker.js` (runs on `postinstall`), and committed so
- * a fresh checkout works even before `npm install` reruns that hook. Both are also exempted
- * from auth in `src/middleware.ts`'s matcher — see the comment there.
+ * The files are served from a path that embeds the installed `maplibre-gl` version —
+ * `public/maplibre/<version>/maplibre-gl-worker.mjs` (+ `.../maplibre-gl-shared.mjs`, which the
+ * worker script itself imports via a relative specifier and which must therefore live
+ * alongside it) — so a version bump can never silently serve a stale worker built for a
+ * different maplibre-gl release. The version is derived from the installed package at build
+ * time (`next.config.mjs` reads `node_modules/maplibre-gl/package.json` and injects
+ * `NEXT_PUBLIC_MAPLIBRE_VERSION`) — never hardcoded as a literal here. The files themselves are
+ * copies of `node_modules/maplibre-gl/dist/*`, kept in sync automatically by
+ * `scripts/sync-maplibre-worker.js` (runs on `postinstall`) and committed so a fresh checkout
+ * works even before `npm install` reruns that hook (also covers `npm ci --ignore-scripts`,
+ * which CI/Docker use — see src/lib/maplibre/__tests__/workerSync.test.ts, which fails loudly
+ * if the committed files ever drift from node_modules). Both are exempted from auth in
+ * `src/middleware.ts`'s matcher, narrowly scoped to this exact versioned path — see the
+ * comment there.
  */
-export const MAPLIBRE_WORKER_URL = '/maplibre-gl-worker.mjs'
+const MAPLIBRE_VERSION = process.env.NEXT_PUBLIC_MAPLIBRE_VERSION
+if (!MAPLIBRE_VERSION) {
+  throw new Error(
+    'NEXT_PUBLIC_MAPLIBRE_VERSION is not set — next.config.mjs should inject it from the ' +
+    'installed maplibre-gl package version. Check the `env` block in next.config.mjs.',
+  )
+}
+export const MAPLIBRE_WORKER_URL = `/maplibre/${MAPLIBRE_VERSION}/maplibre-gl-worker.mjs`
 
 /**
  * OpenFreeMap's style doesn't embed source attribution (unlike MapTiler's, which does) — the

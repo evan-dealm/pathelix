@@ -53,6 +53,7 @@ vi.mock('maplibre-gl', () => ({
 
 // Imported after the mock so it picks up the faked module.
 const { useMapLibreMap } = await import('@/hooks/useMapLibreMap')
+const { MAPLIBRE_WORKER_URL } = await import('@/lib/maplibre/config')
 
 beforeEach(() => {
   addControlMock.mockClear()
@@ -85,7 +86,10 @@ describe('useMapLibreMap', () => {
     const ref = containerRefWithDiv()
     renderHook(() => useMapLibreMap(ref, { center: [2.3, 46.8], zoom: 10 }))
 
-    expect(setWorkerUrlMock).toHaveBeenCalledWith('/maplibre-gl-worker.mjs')
+    // Compared against the real exported constant (not a hardcoded literal) so this test can't
+    // drift from src/lib/maplibre/config.ts, which derives the version from the installed
+    // maplibre-gl package rather than hardcoding it.
+    expect(setWorkerUrlMock).toHaveBeenCalledWith(MAPLIBRE_WORKER_URL)
   })
 
   it('creates the map with the given center/zoom and the shared pitch/bearing defaults', () => {
