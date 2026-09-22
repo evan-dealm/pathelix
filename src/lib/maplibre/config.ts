@@ -24,6 +24,29 @@ export function hasMapTilerKey(): boolean {
 }
 
 /**
+ * MapLibre computes its Web Worker script URL from `import.meta.url` inside its own bundled
+ * module (`defaultWorkerUrl()` in maplibre-gl's source). Re-bundled through Next.js's webpack,
+ * that `import.meta.url` does not resolve to a real `http(s):` URL, so the check
+ * `/^https?:/.test(moduleUrl)` fails and the library silently falls back to an EMPTY worker
+ * URL — `new Worker("", { type: "module" })`, which resolves against the current document and
+ * ends up trying to run the page's own HTML as a worker script. No error is thrown anywhere:
+ * the worker exists but never runs real code, so vector tiles are requested internally but
+ * never actually fetched/parsed, and the map's `'load'` event never fires — confirmed via
+ * direct instrumentation of the Worker constructor, see MIGRATION_MAPLIBRE_LOG.md
+ * "Investigation 2". Serving the worker script ourselves as a plain static file sidesteps the
+ * bundler-resolution problem entirely — `maplibregl.setWorkerUrl(WORKER_URL)` (called once,
+ * before any Map is constructed) takes priority over `defaultWorkerUrl()`.
+ *
+ * `public/maplibre-gl-worker.mjs` (+ `public/maplibre-gl-shared.mjs`, which the worker script
+ * itself imports via a relative specifier and which must therefore live alongside it) are
+ * copies of the matching files in `node_modules/maplibre-gl/dist/` — kept in sync
+ * automatically by `scripts/sync-maplibre-worker.js` (runs on `postinstall`), and committed so
+ * a fresh checkout works even before `npm install` reruns that hook. Both are also exempted
+ * from auth in `src/middleware.ts`'s matcher — see the comment there.
+ */
+export const MAPLIBRE_WORKER_URL = '/maplibre-gl-worker.mjs'
+
+/**
  * OpenFreeMap's style doesn't embed source attribution (unlike MapTiler's, which does) — the
  * OSM data credit is a legal requirement, not optional, so it's supplied explicitly here and
  * only used for the no-key path.

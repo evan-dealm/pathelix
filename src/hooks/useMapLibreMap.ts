@@ -3,10 +3,26 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { basemapStyleUrl, hasMapTilerKey, MAP_VIEW_DEFAULTS, OPENFREEMAP_ATTRIBUTION } from '@/lib/maplibre/config'
+import { basemapStyleUrl, hasMapTilerKey, MAP_VIEW_DEFAULTS, MAPLIBRE_WORKER_URL, OPENFREEMAP_ATTRIBUTION } from '@/lib/maplibre/config'
 import { createLogger } from '@/lib/logger'
 
 const log = createLogger('useMapLibreMap')
+
+// Testability hook: the live map instance is exposed as a plain property on its container
+// element (never on `window` — keeps multiple maps on one page distinguishable by which
+// container an E2E test queried). Not used by app code; only by E2E specs that need
+// `queryRenderedFeatures()`/similar real-map introspection jsdom-mocked component tests can't
+// provide. See e2e/fleetmap-validation.spec.ts.
+declare global {
+  // eslint-disable-next-line no-unused-vars
+  interface HTMLDivElement { __maplibreMap?: maplibregl.Map }
+}
+
+// Must run before the first `new maplibregl.Map(...)` anywhere on the page — see the doc
+// comment on MAPLIBRE_WORKER_URL for why this is required under Next.js's webpack bundling.
+if (typeof window !== 'undefined') {
+  maplibregl.setWorkerUrl(MAPLIBRE_WORKER_URL)
+}
 
 export interface UseMapLibreMapOptions {
   /** Initial view — [lng, lat], MapLibre/GeoJSON order (NOT Leaflet's [lat, lng]). */
@@ -77,12 +93,14 @@ export function useMapLibreMap(
     ro.observe(container)
 
     mapRef.current = instance
+    container.__maplibreMap = instance
     setMap(instance)
 
     return () => {
       ro.disconnect()
       instance.remove()
       mapRef.current = null
+      container.__maplibreMap = undefined
       setMap(null)
       setIsStyleLoaded(false)
     }

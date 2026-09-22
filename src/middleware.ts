@@ -190,5 +190,11 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.svg|sw.js|manifest.json|uploads|icons|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.webp|.*\\.svg|.*\\.ico).*)'],
+  // maplibre-gl-worker.mjs / maplibre-gl-shared.mjs: plain public static assets (the MapLibre
+  // GL JS Web Worker script and the module it imports, served from public/ — see
+  // src/lib/maplibre/config.ts MAPLIBRE_WORKER_URL). Must be fetchable without a session
+  // cookie: the worker's own internal request for its script isn't guaranteed to carry auth
+  // context the same way a normal page navigation does, and there is nothing tenant/user-
+  // specific in either file to protect.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.svg|sw.js|manifest.json|maplibre-gl-worker\\.mjs|maplibre-gl-shared\\.mjs|uploads|icons|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.webp|.*\\.svg|.*\\.ico).*)'],
 }
