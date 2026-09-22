@@ -5,7 +5,7 @@ import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { redisCache }                from '@/lib/redisCache'
 import { getVehicleStore }           from './_store'
-import prisma                        from '@/lib/db'
+import { getTenantDb }               from '@/lib/tenantDb'
 import { auditAsync }                from '@/lib/audit'
 import { hasPermission }             from '@/lib/permissions'
 
@@ -33,10 +33,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'vehicles',
       tenantId,
       async () => {
-        const where = { tenantId }
+        const db = getTenantDb(tenantId)
         const [vehicles, total] = await Promise.all([
-          prisma.vehicle.findMany({
-            where,
+          db.vehicle.findMany({
             select: {
               id: true, licensePlate: true, gabaritProfile: true,
               weightTon: true, heightM: true, widthM: true, lengthM: true,
@@ -52,7 +51,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             take: limit,
             orderBy: { createdAt: 'desc' },
           }),
-          prisma.vehicle.count({ where }),
+          db.vehicle.count({}),
         ])
         return { data: vehicles, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
       },
@@ -110,14 +109,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
+    const db = getTenantDb(tenantId)
     const { assignedDriverId, ...rest } = parsed.data as Record<string, unknown> & { assignedDriverId?: string }
-    const createData: Record<string, unknown> = { tenantId, ...rest }
+    const createData: Record<string, unknown> = { ...rest }
     if (assignedDriverId) {
+      // assignedDriverId has no tenant-aware FK constraint at the DB level (Driver.id is
+      // globally unique) — verify it belongs to this tenant before linking, or a crafted id
+      // could assign a vehicle to another tenant's driver.
+      const driver = await db.driver.findFirst({ where: { id: assignedDriverId }, select: { id: true } })
+      if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable pour ce tenant' }, { status: 422 })
       createData.assignedDriverId = assignedDriverId
     }
 
-    const vehicle  = await prisma.vehicle.create({
-      data: createData as Parameters<typeof prisma.vehicle.create>[0]['data'],
+    const vehicle  = await db.vehicle.create({
+      data: createData as Parameters<typeof db.vehicle.create>[0]['data'],
     })
 
     void redisCache.invalidateAll('vehicles', tenantId)

@@ -5,7 +5,7 @@ import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { redisCache }                from '@/lib/redisCache'
 import { getVehicleStore }           from '../_store'
-import prisma                        from '@/lib/db'
+import { getTenantDb }               from '@/lib/tenantDb'
 import { auditAsync }                from '@/lib/audit'
 import { hasPermission }             from '@/lib/permissions'
 
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   }
 
   try {
-    const vehicle = await prisma.vehicle.findFirst({ where: { id, tenantId } })
+    const vehicle = await getTenantDb(tenantId).vehicle.findFirst({ where: { id } })
     if (!vehicle) return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
 
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/vehicles/[id]', method: 'GET', status: '200' })
@@ -62,16 +62,22 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   }
 
   try {
+    const db = getTenantDb(tenantId)
     const { assignedDriverId, ...rest } = parsed.data as Record<string, unknown> & { assignedDriverId?: string }
     const data: Record<string, unknown> = { ...rest }
     if (assignedDriverId !== undefined) {
-      data.assignedDriver = assignedDriverId
-        ? { connect: { id: assignedDriverId } }
-        : { disconnect: true }
+      if (assignedDriverId) {
+        // Same tenant-aware verification as POST — assignedDriverId has no tenant-scoped FK.
+        const driver = await db.driver.findFirst({ where: { id: assignedDriverId }, select: { id: true } })
+        if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable pour ce tenant' }, { status: 422 })
+        data.assignedDriver = { connect: { id: assignedDriverId } }
+      } else {
+        data.assignedDriver = { disconnect: true }
+      }
     }
 
-    const vehicle = await prisma.vehicle.update({
-      where: { id, tenantId },
+    const vehicle = await db.vehicle.update({
+      where: { id },
       data,
     })
 
@@ -108,7 +114,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   }
 
   try {
-    const result = await prisma.vehicle.updateMany({ where: { id, tenantId }, data: { archived: true } })
+    const result = await getTenantDb(tenantId).vehicle.updateMany({ where: { id }, data: { archived: true } })
     if (result.count === 0) return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
 
     void redisCache.invalidateAll('vehicles', tenantId)

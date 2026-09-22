@@ -25,6 +25,8 @@ const { mockPrisma } = vi.hoisted(() => {
 })
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+const getTenantDbMock = vi.hoisted(() => vi.fn(() => mockPrisma))
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: getTenantDbMock }))
 
 vi.mock('@/lib/data/context', () => ({
   getTenantId:       vi.fn(() => 'tenant-test'),
@@ -294,9 +296,7 @@ describe('GET /api/vehicles', () => {
     const req = makeRequest('http://localhost:3000/api/vehicles')
     await vehiclesGet(req)
 
-    expect(mockPrisma.vehicle.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tenantId: 'custom-tenant' } }),
-    )
+    expect(getTenantDbMock).toHaveBeenCalledWith('custom-tenant')
   })
 })
 
