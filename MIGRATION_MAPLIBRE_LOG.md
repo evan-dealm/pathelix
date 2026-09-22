@@ -350,18 +350,85 @@ permanent subsiste (`container.__maplibreMap`, une propriété exposée sur l'é
 pour permettre à un test E2E d'appeler `queryRenderedFeatures()`/`getBounds()`/etc., utilisé
 par `e2e/fleetmap-validation.spec.ts`).
 
-### Résidu trouvé, hors périmètre de cette investigation
+### Résidu trouvé, hors périmètre de cette investigation — **CONCLUSION CORRIGÉE, voir Investigation 3**
 
-Les marqueurs de mission utilisent un emoji littéral comme `text-field`. Le serveur de glyphes
-public d'OpenFreeMap ne couvre pas l'intégralité des plages Unicode emoji pour la police de
-repli utilisée par le style Liberty — 2 requêtes `.pbf` de glyphes (plages 127744-127999 et
-128256-128511) retournent `404`. MapLibre gère ce cas normalement (repli visuel sans planter,
-aucun événement `'error'` de la carte) — ce n'est pas le défaut de cette mission, ni introduit
-par cette migration : c'est une limitation du service public tiers, distincte et pré-existante.
-Documenté et filtré explicitement (par comptage exact, pas par un filtre de texte générique)
-dans `e2e/fleetmap-validation.spec.ts`. Pas corrigé — options pour une session dédiée si
-souhaité : bascule vers le style MapTiler (couverture glyphes plus complète, clé requise) ou
-remplacement des emoji par des icônes de sprite personnalisées.
+~~Les marqueurs de mission utilisent un emoji littéral comme `text-field`. Le serveur de glyphes
+public d'OpenFreeMap ne couvre pas l'intégralité des plages Unicode emoji... ce n'est pas le
+défaut de cette mission, ni introduit par cette migration : c'est une limitation du service
+public tiers, distincte et pré-existante.~~
+
+**Cette conclusion était fausse.** Elle confondait "le service tiers ne couvre pas tout
+Unicode" (vrai, mais hors sujet) avec "ce 404 est sans conséquence" (faux). Sous Leaflet, ces
+mêmes emoji étaient rendus en `divIcon` HTML — jamais passés par un pipeline de glyphes. C'est
+la migration elle-même qui a introduit un `text-field` MapLibre sur ces emoji, donc introduit le
+404 et le rendu cassé qui en découle. Voir Investigation 3 ci-dessous pour le constat vérifié et
+le correctif.
+
+## Investigation 3 — 2026-09-22 : icônes emoji des marqueurs de mission (résolue)
+
+**Déclencheur** : mission de finition pré-merge, correction explicite de l'utilisateur sur la
+conclusion ci-dessus.
+
+**Vérification d'abord** (avant tout correctif) : capture d'écran à fort zoom sur un marqueur de
+mission (`test-results/zz-mission-marker-zoom.png`) et sur la vue d'ensemble incluant un
+marqueur de position live (`test-results/zz-full-view.png`), via un spec d'investigation
+temporaire (`e2e/zz-emoji-investigate.spec.ts`, supprimé avant le commit final).
+
+**Constat** :
+- Le marqueur de mission (cercle rouge, couche `fleetmap-missions-circle` + `fleetmap-missions-
+  label`) s'affiche **sans aucun glyphe visible** à l'intérieur — cercle plein, vide. Confirmé
+  visuellement sur capture.
+- Le marqueur de position live (`Marker` HTML/DOM, badge bleu "Alice Martin") affiche son emoji
+  🚗 correctement — confirmé sur la même capture. Les marqueurs dépôt/exutoire utilisent le même
+  mécanisme (`makeDivIconEl` + `new maplibregl.Marker({element})`, lecture du code), donc non
+  affectés par construction : le rendu HTML/CSS de l'emoji passe par la pile de polices native
+  du navigateur, indépendante du pipeline de glyphes MapLibre.
+- `queryRenderedFeatures(['fleetmap-missions-circle'])` sur les données du tenant seed
+  `fleetmap-e2e` donne exactement 3 emoji utilisés : `🔴` (U+1F534), `🔄` (U+1F504), `🏭`
+  (U+1F3ED).
+- Les 2 URLs `.pbf` en 404 couvrent les plages `127744-127999` (🌀…🏿) et `128256-128511`
+  (🔀…🗿) — **les trois emoji ci-dessus tombent exactement dans ces deux plages.** Preuve
+  directe : le 404 est causé par nos propres emoji de type de mission, pas par une police
+  incomplète sans rapport.
+- Aucun autre usage de `text-field` emoji dans le composant : les labels de rues du style
+  OpenFreeMap (police latine standard) chargent sans erreur — la police du fournisseur couvre
+  bien le texte latin, seulement pas les glyphes pictographiques couleur.
+
+**Correctif** (`src/lib/maplibre/emojiIcon.ts`, nouveau) :
+- `ensureEmojiImage(map, emoji)` : dessine l'emoji sur un `<canvas>` offscreen à
+  `devicePixelRatio`, l'enregistre via `map.addImage(emoji, imageData, { pixelRatio })`.
+  Idempotent — `map.hasImage(emoji)` est la source de vérité (pas de cache local dupliqué), donc
+  correct même après un rechargement de style réel.
+- `installEmojiImageFallback(map)` : écouteur `styleimagemissing` en filet de sécurité — seul
+  usage `icon-image` de l'app étant les emoji de mission, tout id manquant ici est un des nôtres.
+- `FleetMap.tsx` : la couche `fleetmap-missions-label` passe de `text-field`/`text-size` à
+  `icon-image`/`icon-size` (constante, même raison que `text-size` précédemment — propriété
+  layout, pas de `feature-state`). Les images sont enregistrées (`ensureEmojiImage` pour chaque
+  emoji distinct du batch courant) juste avant chaque `source.setData()`, donc à chaque mise à
+  jour de la source — couvre le cas où de nouveaux types de mission apparaissent en cours de
+  session.
+- Marqueurs dépôt/exutoire/position live : **non modifiés**, confirmés hors du périmètre du bug.
+
+**Vérification post-correctif** : rebuild production, ré-exécution du spec d'investigation —
+`map.hasImage(emoji)` retourne `true` pour les 3 emoji, `map.getLayoutProperty(...,
+'icon-image')` confirme `['get','emoji']`, et zéro requête `.pbf` de glyphes en 404 (capturées
+via `page.on('response')`). Voir le commit correspondant pour les nombres exacts.
+
+Le filtre de comptage exact des 404 dans `e2e/fleetmap-validation.spec.ts` a été supprimé — la
+suite E2E n'a désormais plus aucune exclusion.
+
+**Captures de référence** (post-correctif, commitées) :
+`migration-maplibre-assets/point1-mission-marker-after-fix.png` — zoom fort sur un marqueur de
+mission après le correctif ; `migration-maplibre-assets/point1-overview-after-fix.png` — vue
+d'ensemble incluant le marqueur de position live (DOM, non affecté). Note honnête sur la
+première capture : le type de mission zoomé utilise l'emoji 🔴 (cercle rouge), visuellement
+quasi indissociable du fond `circle-color` déjà rouge de la couche `fleetmap-missions-circle` —
+la preuve visuelle à l'œil nu est donc peu concluante *pour ce type de mission précis*, mais la
+preuve structurelle ne dépend pas de l'inspection visuelle : `map.hasImage('🔴')` → `true`,
+`map.getLayoutProperty('fleetmap-missions-label','icon-image')` → `['get','emoji']`, zéro 404,
+et l'assertion E2E dédiée (`iconProof` dans `fleetmap-validation.spec.ts`) qui vérifie les 3
+emoji réellement utilisés (🔴🔄🏭) passe. Les emoji 🔄 et 🏭 sont visuellement distincts de leur
+fond et confirmeraient le rendu à l'œil nu sur un autre type de mission.
 
 ### Leçon — pourquoi les tests mockés ne pouvaient pas détecter ce défaut
 
@@ -378,3 +445,99 @@ spec.ts` et `e2e/fleetmap-validation.spec.ts` font maintenant partie de la suite
 du projet, donc toute régression future sur ce point précis (ex. une mise à jour de
 `maplibre-gl` qui réintroduirait un besoin de worker mal résolu) serait détectée au prochain
 run E2E, pas seulement lors d'un test manuel.
+
+## Point 2 — 2026-09-22 : versionnement du Web Worker, dérive, périmètre de l'exemption auth
+
+**Problème** : `MAPLIBRE_WORKER_URL` pointait vers un chemin fixe (`/maplibre-gl-worker.mjs`)
+sans aucun lien explicite avec la version de `maplibre-gl` réellement installée — un upgrade de
+la dépendance sans relancer `scripts/sync-maplibre-worker.js` (`postinstall`) pouvait servir un
+Worker désynchronisé de la version du code principal, sans qu'aucun test ne le détecte.
+
+**Correctif** :
+1. `next.config.mjs` lit `node_modules/maplibre-gl/package.json` au build et injecte
+   `NEXT_PUBLIC_MAPLIBRE_VERSION` (jamais une chaîne codée en dur). `src/lib/maplibre/config.ts`
+   construit `MAPLIBRE_WORKER_URL = /maplibre/${version}/maplibre-gl-worker.mjs` à partir de
+   cette variable, et lève une erreur explicite si elle est absente — échec bruyant plutôt qu'un
+   repli silencieux vers un chemin obsolète.
+2. `scripts/sync-maplibre-worker.js` copie désormais vers `public/maplibre/<version>/` (au lieu
+   d'un chemin plat) et supprime les anciens dossiers de version au passage.
+3. `vitest.config.ts` injecte la même variable pour les tests (`test.env`), qui tournent hors
+   du pipeline de build Next.
+4. Nouveau test `src/lib/maplibre/__tests__/workerSync.test.ts` : compare par hash SHA-256 les
+   fichiers commités sous `public/maplibre/<version>/` à ceux de
+   `node_modules/maplibre-gl/dist/` ; message d'échec nommant la commande exacte de resync
+   (`node scripts/sync-maplibre-worker.js`).
+5. **Piège Windows découvert en écrivant ce test** : `core.autocrlf=true` (config git locale)
+   aurait réécrit silencieusement LF→CRLF sur ces fichiers `.mjs` commités à chaque checkout,
+   cassant la comparaison de hash sur toute machine Windows fraîchement clonée. Corrigé par un
+   nouveau `.gitattributes` (`public/maplibre/** -text`) + `git add --renormalize`.
+6. `src/middleware.ts` : le `matcher` exempte désormais
+   `maplibre/[^/]+/maplibre-gl-(worker|shared).mjs` — un segment de version quelconque mais
+   seulement ces deux noms de fichiers exacts, jamais un préfixe `maplibre/` ouvert. Nouveau
+   spec `e2e/maplibre-worker-exemption.spec.ts` (4 tests, HTTP direct via un
+   `APIRequestContext` **explicitement sans session** — voir piège ci-dessous) : les deux
+   fichiers répondent 200 sans cookie, `/admin` redirige toujours 307→`/login` sans session, un
+   nom de fichier inventé sous le même préfixe n'est pas exempté.
+7. **Piège Playwright découvert en écrivant ce test** : `playwrightRequest.newContext({baseURL})`
+   hérite silencieusement du `use.storageState` du projet `chromium` (`e2e/.auth/state.json`)
+   configuré dans `playwright.config.ts` — un premier essai de ce test a donné un faux résultat
+   (`/admin` → 200 au lieu de 307) parce que le contexte "sans session" avait en fait une
+   session valide. Corrigé en passant explicitement `storageState: undefined`.
+8. `npm ci --ignore-scripts` (CI, build Docker) saute `postinstall`, donc ne relance jamais le
+   script de sync — sans conséquence : les fichiers versionnés sont déjà commités, et
+   `workerSync.test.ts` est la seule garantie nécessaire qu'ils sont à jour. Vérifié en pratique
+   par l'étape de vérification finale de cette mission (voir plus bas).
+9. CSP : `worker-src 'self' blob:` couvre déjà n'importe quel chemin same-origin — le
+   changement de chemin (plat → versionné) ne touche pas cette directive. Confirmé par
+   l'absence de violation CSP dans les captures console de `e2e/fleetmap-validation.spec.ts`.
+
+**Fichiers modifiés** : `next.config.mjs`, `vitest.config.ts`, `src/lib/maplibre/config.ts`,
+`src/middleware.ts`, `scripts/sync-maplibre-worker.js`, `.gitattributes` (nouveau),
+`public/maplibre-gl-worker.mjs` + `public/maplibre-gl-shared.mjs` → déplacés vers
+`public/maplibre/6.10.0/`, `src/lib/maplibre/__tests__/workerSync.test.ts` (nouveau),
+`e2e/maplibre-worker-exemption.spec.ts` (nouveau), `src/hooks/__tests__/useMapLibreMap.test.ts`
+(assertion mise à jour pour comparer contre la constante exportée plutôt qu'un littéral).
+
+## Point 3 — 2026-09-22 : couverture réelle du test LiveTrackingMap
+
+**Problème** : `e2e/maplibre-migration.spec.ts`'s test LiveTrackingMap enveloppait toutes ses
+assertions dans `if (count > 0)` — `TelematicsTab.tsx` ne monte `LiveTrackingMap` que si
+`data.positions.length > 0`, et aucune position live n'était jamais seedée pour le tenant par
+défaut (`excoffier-test`, voir `e2e/global-setup.ts` : seed tenant/admin/exutoire/vehicle/
+missions, **aucun Driver**). Ce test passait donc **sans avoir jamais exécuté son corps** —
+un faux positif structurel, pas une vérification réelle. Cela explique directement pourquoi ce
+test « passait » y compris avant le correctif du worker (Investigation 2) : il ne testait rien.
+
+**Correctif** (`e2e/maplibre-migration.spec.ts`, nouveau describe block dédié) :
+- Authentification vers le tenant `fleetmap-e2e` (seedé via `scripts/seed-fleetmap-e2e.ts`,
+  garanti d'avoir de vrais chauffeurs) plutôt que le tenant par défaut sans chauffeur — describe
+  séparé sans `beforeEach` partagé, pour éviter un login gaspillé face au rate-limiter.
+- POST réel d'une position via `/api/driver-position` (même mécanisme qu'un boîtier OBD),
+  aucune condition — le test échoue maintenant s'il ne peut pas seeder ou si la carte ne
+  s'affiche pas, il ne « skip » plus silencieusement.
+- `map.isSourceLoaded(id)` sur toutes les sources vectorielles du style — preuve que de vraies
+  tuiles ont été chargées, pas seulement qu'une couche `background` s'est peinte sans donnée
+  (exactement le trou que ce point visait à combler).
+- Position du marqueur comparée à `map.project([lng, lat])` pour les coordonnées seedées —
+  identification du bon marqueur par proximité (pas `.first()` en ordre DOM : une position
+  d'un run précédent de `fleetmap-validation.spec.ts` persiste réellement en base et produit un
+  second marqueur légitime sur la même carte — piège découvert en cours de route, voir capture
+  `test-results/maplibre-migration-*-chromium/test-failed-1.png` du premier essai raté).
+- Attente explicite de l'événement `'idle'` de la carte (`!map.isMoving() && !map.isEasing()`)
+  avant de mesurer la position du marqueur — le `fitBounds()` de `LiveTrackingMap` anime la
+  caméra, et mesurer pendant la transition produisait un écart de mesure flaky de 15-20px.
+- Ouverture du popup au clic sur le marqueur trouvé, vérification du contenu (prénom du
+  chauffeur).
+
+**Résultat** : ce test échoue désormais réellement s'il est cassé (vérifié en le faisant
+échouer intentionnellement à 3 reprises pendant le débogage ci-dessus, avant le correctif
+final), et couvre exactement ce que Point 3 demandait.
+
+## Vérification finale — 2026-09-22
+
+Depuis un état propre : `npm ci --ignore-scripts` (+ `npx prisma generate`), puis lint,
+typecheck, suite de tests complète, build de production — tous verts. Suite E2E carte complète
+contre ce build (`maplibre-migration.spec.ts`, `fleetmap-validation.spec.ts`,
+`maplibre-worker-exemption.spec.ts`) — zéro 404, zéro erreur console, zéro violation CSP,
+aucun filtre d'exclusion. Détail des commandes et résultats exacts dans le rapport final envoyé
+à l'utilisateur à l'issue de cette mission.

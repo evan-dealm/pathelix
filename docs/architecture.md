@@ -151,17 +151,11 @@ créés par un superadmin.
 ## 9. Cartographie (MapLibre GL JS)
 
 Migré depuis Leaflet le 2026-09-22 (voir `MIGRATION_MAPLIBRE_LOG.md` à la racine pour
-l'historique complet de la migration).
-
-> ⚠️ **Défaut connu, non résolu** : `FleetMap.tsx` (onglet Tournées) ne rend actuellement
-> **aucun pixel** dans un vrai navigateur — confirmé en dev ET en production, cause non
-> identifiée malgré une investigation exhaustive (réseau OK, WebGL OK, dimensions OK,
-> aucune erreur). `LiveTrackingMap.tsx` (même hook partagé) fonctionne correctement. Test de
-> régression qui documente ce défaut : `e2e/maplibre-migration.spec.ts`. **Ne pas merger en
-> production tant que ce point n'est pas résolu** — voir `MIGRATION_MAPLIBRE_LOG.md` pour le
-> détail complet de l'investigation et les pistes non explorées. Deux cartes dans l'app, toutes deux `'use client'` et
-chargées via `next/dynamic({ ssr: false })` depuis leur onglet (MapLibre dépend de `window` et
-de WebGL, jamais de rendu serveur) :
+l'historique complet de la migration — 3 investigations : worker Web Worker non résolu par
+webpack, icônes emoji rendues via glyphes au lieu d'images, et couverture du test
+LiveTrackingMap). Deux cartes dans l'app, toutes deux `'use client'` et chargées via
+`next/dynamic({ ssr: false })` depuis leur onglet (MapLibre dépend de `window` et de WebGL,
+jamais de rendu serveur) :
 
 | Composant | Où | Rôle |
 |---|---|---|
@@ -225,3 +219,77 @@ n'a pas besoin d'être dupliquée.
    avec un élément HTML, comme dans `FleetMap.tsx`/`LiveTrackingMap.tsx`.
 5. Convertir toute coordonnée `{lat,lng}` via `toLngLat()` avant de l'utiliser dans MapLibre.
 6. Échapper toute chaîne issue de la base avant de l'interpoler dans un `Popup.setHTML()`.
+
+### Web Worker — pourquoi il est servi statiquement, et versionné
+
+MapLibre GL JS résout normalement l'URL de son Web Worker via `import.meta.url` à l'intérieur
+de son propre module bundlé. Une fois ce module re-bundlé par le webpack de Next.js, cette
+résolution échoue silencieusement (pas d'erreur, pas de warning) — le Worker créé pointe vers
+un script vide et le chargement des tuiles vectorielles ne se termine jamais (voir
+`MIGRATION_MAPLIBRE_LOG.md`, "Investigation 2", pour la preuve complète en instrumentant
+`window.Worker`).
+
+Le correctif : `maplibregl.setWorkerUrl(MAPLIBRE_WORKER_URL)` (dans `useMapLibreMap.ts`, appelé
+avant toute instanciation de `maplibregl.Map`) pointe vers deux fichiers statiques servis depuis
+`public/maplibre/<version>/` — des copies verbatim de `node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs`
+et `maplibre-gl-shared.mjs`. Le segment `<version>` est **dérivé automatiquement** de la version
+installée de `maplibre-gl` (jamais codé en dur) : `next.config.mjs` lit
+`node_modules/maplibre-gl/package.json` au build et injecte `NEXT_PUBLIC_MAPLIBRE_VERSION` ;
+`src/lib/maplibre/config.ts` construit `MAPLIBRE_WORKER_URL` à partir de cette variable et lève
+une erreur explicite si elle est absente (échec bruyant, pas de repli silencieux).
+
+**Mettre à jour `maplibre-gl`** :
+
+1. `npm install maplibre-gl@<nouvelle-version>` (ou `npm update maplibre-gl`).
+2. `node scripts/sync-maplibre-worker.js` — recopie les deux fichiers dans
+   `public/maplibre/<nouvelle-version>/` et supprime l'ancien dossier de version. Ce script
+   tourne aussi automatiquement en `postinstall`, donc une simple étape 1 suffit en pratique ;
+   l'étape 2 n'est nécessaire qu'après un `npm install --ignore-scripts`.
+3. `npx vitest run src/lib/maplibre/__tests__/workerSync.test.ts` — vérifie par hash SHA-256 que
+   les fichiers commités sous `public/maplibre/` correspondent bien, octet pour octet, à ceux de
+   `node_modules/maplibre-gl/dist/`. Échoue avec un message nommant la commande exacte à lancer
+   si oubli.
+4. `git add public/maplibre .gitattributes` puis committer — ces fichiers sont marqués `-text`
+   dans `.gitattributes` (binaires, pas de conversion de fin de ligne) : nécessaire car
+   `core.autocrlf=true` sous Windows réécrirait sinon silencieusement LF en CRLF au checkout et
+   casserait la comparaison de hash.
+5. Lancer `npm run build && npm run start` puis `npx playwright test e2e/maplibre-worker-exemption.spec.ts e2e/maplibre-migration.spec.ts --project=chromium` contre ce build de production — confirme que le nouveau chemin versionné répond bien sans session, et que la carte se charge toujours.
+
+Ces deux fichiers sont exemptés de l'authentification dans `src/middleware.ts` (`matcher`),
+scopé **exactement** à `maplibre/<n'importe-quelle-version>/maplibre-gl-(worker|shared).mjs` —
+jamais un préfixe `maplibre/` ouvert. `e2e/maplibre-worker-exemption.spec.ts` prouve cette
+portée exacte (200 sans cookie sur ces deux fichiers, 307→`/login` sur une route voisine non
+exemptée, échec sur un nom de fichier inventé sous le même préfixe).
+
+`npm ci --ignore-scripts` (utilisé par CI et le build Docker) saute `postinstall`, donc ne
+relance jamais `sync-maplibre-worker.js` — sans conséquence, puisque les fichiers versionnés
+sont déjà commités dans le dépôt et que `workerSync.test.ts` est la seule garantie nécessaire
+qu'ils sont à jour.
+
+### Ajouter une nouvelle icône de marqueur
+
+Deux mécanismes de rendu coexistent, selon le nombre de marqueurs :
+
+- **Peu de marqueurs (dépôts, exutoires, positions live)** : `maplibregl.Marker` avec un
+  élément HTML (`makeDivIconEl()` dans `FleetMap.tsx`). Un emoji ou une icône SVG placé en
+  `textContent`/`innerHTML` s'affiche via le rendu HTML/CSS natif du navigateur — aucune
+  contrainte particulière, aucun rapport avec le pipeline de glyphes MapLibre. Pour ajouter une
+  icône ici, il suffit de modifier la fonction qui construit le HTML de l'élément.
+- **Beaucoup de marqueurs (missions, via `fleetmap-missions-label`)** : une couche `symbol` avec
+  `icon-image`, jamais `text-field`. Le serveur de glyphes public d'OpenFreeMap (et la plupart
+  des serveurs de glyphes tiers) n'a **aucune couverture pictographique/emoji** — un `text-field`
+  contenant un emoji littéral déclenche un 404 sur la plage Unicode correspondante et s'affiche
+  vide (voir `MIGRATION_MAPLIBRE_LOG.md`, "Investigation 3"). `src/lib/maplibre/emojiIcon.ts`
+  fournit :
+  - `ensureEmojiImage(map, emoji)` — dessine l'emoji sur un `<canvas>` offscreen à
+    `devicePixelRatio` et l'enregistre via `map.addImage(emoji, imageData, { pixelRatio })`.
+    Idempotent (`map.hasImage()` fait foi, pas de cache local), donc peut être appelé à chaque
+    mise à jour de la source sans coût significatif.
+  - `installEmojiImageFallback(map)` — filet de sécurité `styleimagemissing` pour tout id
+    référencé avant que `ensureEmojiImage` n'ait tourné pour lui.
+
+  Pour ajouter un nouveau type d'icône dans une couche `symbol` à fort volume : appeler
+  `ensureEmojiImage(map, monEmoji)` avant chaque `source.setData()` qui référence cet emoji
+  (voir l'effet « Mission points source data » de `FleetMap.tsx`), et s'assurer que la couche
+  utilise `layout: { 'icon-image': ['get', 'monChamp'] }` — jamais `text-field` pour un
+  pictogramme.
