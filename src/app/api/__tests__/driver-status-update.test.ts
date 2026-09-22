@@ -35,14 +35,29 @@ vi.mock('@/lib/integrationEvents',   () => ({ emitEvent:                  mockEm
 vi.mock('@/lib/metricCollector',     () => ({ collectInterventionMetric:  mockCollect  }))
 vi.mock('@/lib/integrationERP',      () => ({ syncMissionToERP:           mockSyncERP  }))
 
+// Only exercised by requests carrying an Idempotency-Key header (see idempotency.test.ts for
+// full unit coverage of withIdempotency itself) — a plain in-memory fake is enough here to prove
+// the real route wiring actually prevents a duplicate side effect (double ERP sync/audit log).
+const idempotencyStore = vi.hoisted(() => new Map<string, { status: number; response: unknown }>())
+const mockIdemFindUnique = vi.hoisted(() => vi.fn(async ({ where }: { where: { tenantId_key: { tenantId: string; key: string } } }) =>
+  idempotencyStore.get(`${where.tenantId_key.tenantId}:${where.tenantId_key.key}`) ?? null))
+const mockIdemCreate = vi.hoisted(() => vi.fn(async ({ data }: { data: { key: string; status: number; response: unknown } }) => {
+  idempotencyStore.set(`t1:${data.key}`, { status: data.status, response: data.response })
+  return data
+}))
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({ idempotencyKey: { findUnique: mockIdemFindUnique, create: mockIdemCreate } }),
+}))
+
 import { POST } from '@/app/api/driver-status/update/route'
 
 const SESSION_DRIVER = { sub: 'd1', driverRef: 'd1', role: 'driver', tenantId: 't1', exp: 9999999999, iat: 0 }
 const SESSION_ADMIN  = { sub: 'u1', driverRef: undefined, role: 'admin', tenantId: 't1', exp: 9999999999, iat: 0 }
 
-function makeReq(body: unknown, sessionCookie?: string) {
+function makeReq(body: unknown, sessionCookie?: string, idempotencyKey?: string) {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (sessionCookie !== undefined) headers['cookie'] = `session=${sessionCookie}`
+  if (idempotencyKey !== undefined) headers['idempotency-key'] = idempotencyKey
   return new NextRequest('http://localhost/api/driver-status/update', {
     method: 'POST',
     headers,
@@ -59,6 +74,7 @@ const VALID_BODY = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  idempotencyStore.clear()
   // Default: transaction executes the callback
   mockTransaction.mockImplementation(async (fn: (_tx: unknown) => Promise<unknown>) => {
     const tx = {
@@ -194,5 +210,43 @@ describe('POST /api/driver-status/update', () => {
     mockDriverFindUnique.mockRejectedValueOnce(new Error('DB crash'))
     const res = await POST(makeReq(VALID_BODY, 'tok'))
     expect(res.status).toBe(500)
+  })
+})
+
+describe('POST /api/driver-status/update — idempotent replay (offline queue duplicate flush)', () => {
+  it('a "done" status sent twice with the same Idempotency-Key only syncs to ERP once', async () => {
+    mockVerifySession.mockResolvedValue(SESSION_DRIVER)
+    mockDriverFindUnique.mockResolvedValue({ tenantId: 't1', firstName: 'A', lastName: 'B' })
+    mockPlanFindFirst.mockResolvedValue({ id: 'plan-1', statuses: {} })
+    mockMissionFindFirst.mockResolvedValue({ type: 'POSER', clientName: 'Client A', wasteTypeLabel: 'OM', address: '1 Rue' })
+
+    const body = { ...VALID_BODY, status: 'done' }
+    const req1 = makeReq(body, 'tok', 'idem-key-1')
+    const res1 = await POST(req1)
+    expect(res1.status).toBe(200)
+    expect(mockSyncERP).toHaveBeenCalledTimes(1)
+    expect(mockAuditLogCreate).toHaveBeenCalledTimes(1)
+
+    const req2 = makeReq(body, 'tok', 'idem-key-1')
+    const res2 = await POST(req2)
+    expect(res2.status).toBe(200)
+    expect(await res2.json()).toEqual(await res1.clone().json())
+
+    // The real bug this closes: without idempotency, replaying the request re-runs the whole
+    // handler — a second ERP sync and a second audit log row for the same physical action.
+    expect(mockSyncERP).toHaveBeenCalledTimes(1)
+    expect(mockAuditLogCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('two different Idempotency-Keys are treated as two genuinely different actions', async () => {
+    mockVerifySession.mockResolvedValue(SESSION_DRIVER)
+    mockDriverFindUnique.mockResolvedValue({ tenantId: 't1', firstName: 'A', lastName: 'B' })
+    mockPlanFindFirst.mockResolvedValue({ id: 'plan-1', statuses: {} })
+    mockMissionFindFirst.mockResolvedValue({ type: 'POSER', clientName: 'Client A', wasteTypeLabel: 'OM', address: '1 Rue' })
+
+    await POST(makeReq({ ...VALID_BODY, status: 'done' }, 'tok', 'idem-key-a'))
+    await POST(makeReq({ ...VALID_BODY, status: 'done' }, 'tok', 'idem-key-b'))
+
+    expect(mockSyncERP).toHaveBeenCalledTimes(2)
   })
 })

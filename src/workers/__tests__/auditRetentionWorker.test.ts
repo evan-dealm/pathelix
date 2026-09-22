@@ -6,9 +6,11 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/env', () => ({ validateEnv: vi.fn() }))
 
 const mockDeleteMany = vi.hoisted(() => vi.fn())
+const mockIdempotencyDeleteMany = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/db', () => ({
   default: {
-    auditLog: { deleteMany: mockDeleteMany },
+    auditLog:       { deleteMany: mockDeleteMany },
+    idempotencyKey: { deleteMany: mockIdempotencyDeleteMany },
   },
 }))
 
@@ -22,7 +24,7 @@ vi.mock('bullmq', () => ({
 }))
 vi.spyOn(process, 'exit').mockImplementation((() => {}) as never)
 
-import { purgeExpiredAuditLogs } from '../auditRetentionWorker'
+import { purgeExpiredAuditLogs, purgeExpiredIdempotencyKeys } from '../auditRetentionWorker'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -75,5 +77,32 @@ describe('purgeExpiredAuditLogs', () => {
   it('propagates DB error (does not swallow)', async () => {
     mockDeleteMany.mockRejectedValue(new Error('DB connection lost'))
     await expect(purgeExpiredAuditLogs()).rejects.toThrow('DB connection lost')
+  })
+})
+
+describe('purgeExpiredIdempotencyKeys', () => {
+  it('deletes idempotency keys older than 48h', async () => {
+    mockIdempotencyDeleteMany.mockResolvedValue({ count: 7 })
+
+    const result = await purgeExpiredIdempotencyKeys()
+
+    expect(mockIdempotencyDeleteMany).toHaveBeenCalledOnce()
+    const cutoff = mockIdempotencyDeleteMany.mock.calls[0][0].where.createdAt.lt as Date
+    const diffHours = (Date.now() - cutoff.getTime()) / (1000 * 60 * 60)
+    expect(diffHours).toBeGreaterThan(47.9)
+    expect(diffHours).toBeLessThan(48.1)
+
+    expect(result.deleted).toBe(7)
+  })
+
+  it('returns deleted count 0 when nothing to purge', async () => {
+    mockIdempotencyDeleteMany.mockResolvedValue({ count: 0 })
+    const result = await purgeExpiredIdempotencyKeys()
+    expect(result.deleted).toBe(0)
+  })
+
+  it('propagates DB error (does not swallow)', async () => {
+    mockIdempotencyDeleteMany.mockRejectedValue(new Error('DB connection lost'))
+    await expect(purgeExpiredIdempotencyKeys()).rejects.toThrow('DB connection lost')
   })
 })

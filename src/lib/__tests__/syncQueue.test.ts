@@ -165,6 +165,47 @@ describe('flushSyncQueue', () => {
   })
 })
 
+describe('flushSyncQueue — Web Locks coordination with the Service Worker (N23)', () => {
+  it('serializes the actual flush through navigator.locks.request when available', async () => {
+    const action = { id: 'sync-q:1', url: '/api/test', body: {}, timestamp: 1, retryCount: 0 }
+    mockIdb.keys.mockResolvedValue(['sync-q:1'])
+    mockIdb.get.mockResolvedValue(action)
+    mockIdb.del.mockResolvedValue(undefined)
+    mockFetch.mockResolvedValue({ ok: true, status: 200 })
+
+    const requestSpy = vi.fn((_name: string, cb: () => Promise<number>) => cb())
+    // Patch just the one missing property on the real navigator object (jsdom has no Web Locks
+    // API) rather than replacing `navigator` wholesale — a full vi.stubGlobal('navigator', ...)
+    // replacement leaked into and broke every later test in this file (its own
+    // {...globalThis.navigator} spread only copies own enumerable props, of which Navigator
+    // instances have almost none — everything else, including things unrelated code in this
+    // module reads, silently vanished for the rest of the run).
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      value: { request: requestSpy }, configurable: true,
+    })
+
+    try {
+      const count = await flushSyncQueue()
+      expect(count).toBe(1)
+      expect(requestSpy).toHaveBeenCalledWith('pathelix-offline-sync-queue', expect.any(Function))
+    } finally {
+      // @ts-expect-error removing a test-only patched property
+      delete globalThis.navigator.locks
+    }
+  })
+
+  it('falls back to a direct flush when navigator.locks is unavailable (old browser)', async () => {
+    const action = { id: 'sync-q:1', url: '/api/test', body: {}, timestamp: 1, retryCount: 0 }
+    mockIdb.keys.mockResolvedValue(['sync-q:1'])
+    mockIdb.get.mockResolvedValue(action)
+    mockIdb.del.mockResolvedValue(undefined)
+    mockFetch.mockResolvedValue({ ok: true, status: 200 })
+
+    const count = await flushSyncQueue() // jsdom has no navigator.locks by default
+    expect(count).toBe(1)
+  })
+})
+
 describe('flushSyncQueue — advanced scenarios', () => {
   it('prevents concurrent flushes — second call returns 0 immediately', async () => {
     const action = { id: 'sync-q:1', url: '/api/test', body: {}, timestamp: 1, retryCount: 0 }

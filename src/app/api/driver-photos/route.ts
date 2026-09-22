@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import { createLogger } from '@/lib/logger'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import prisma from '@/lib/db'
+import { withIdempotency } from '@/lib/idempotency'
 
 const log = createLogger('/api/driver-photos')
 
@@ -125,25 +126,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  if (useMock) {
-    _mockPhotos.set(photoKey(driverId, date, missionId), dataUrl)
-    return NextResponse.json({ url: dataUrl })
-  }
+  return withIdempotency(req, check.tenantId, 'POST /api/driver-photos', async () => {
+    if (useMock) {
+      _mockPhotos.set(photoKey(driverId, date, missionId), dataUrl)
+      return NextResponse.json({ url: dataUrl })
+    }
 
-  try {
-    await ensureUploadDir()
+    try {
+      await ensureUploadDir()
 
-    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
-    const buffer     = Buffer.from(base64Data, 'base64')
+      const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+      const buffer     = Buffer.from(base64Data, 'base64')
 
-    const filename = photoFilename(driverId, date, missionId)
-    await fs.writeFile(path.join(UPLOAD_DIR, filename), buffer)
+      const filename = photoFilename(driverId, date, missionId)
+      await fs.writeFile(path.join(UPLOAD_DIR, filename), buffer)
 
-    return NextResponse.json({ url: `/uploads/photos/${filename}` })
-  } catch (err) {
-    log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
-  }
+      return NextResponse.json({ url: `/uploads/photos/${filename}` })
+    } catch (err) {
+      log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
+      return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    }
+  })
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {

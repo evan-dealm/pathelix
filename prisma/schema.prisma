@@ -55,6 +55,7 @@ model Tenant {
   aiJobs                 AiJob[]
   trackdechetsAccount    TrackdechetsAccount?
   bsds                   Bsd[]
+  idempotencyKeys        IdempotencyKey[]
 
   @@index([slug])
 }
@@ -894,4 +895,24 @@ model Bsd {
   @@index([tenantId, status])
   @@index([tdId])
   @@index([missionId])
+}
+
+// ─── Idempotence des actions chauffeur hors-ligne ────────────────────────────────
+// Chaque action mise en file côté chauffeur (src/lib/syncQueue.ts) porte un UUID généré au
+// moment de l'action, envoyé en en-tête Idempotency-Key. Une requête rejouée (double envoi
+// réseau, ou double flush malgré la coordination Web Locks — voir syncQueue.ts) renvoie la
+// réponse déjà enregistrée au lieu de retraiter/dupliquer l'action.
+model IdempotencyKey {
+  id         String   @id @default(cuid())
+  tenantId   String
+  key        String   // l'UUID généré côté client, jamais réutilisé pour une autre action
+  route      String   // ex: "POST /api/driver-status/update" — diagnostic uniquement
+  status     Int      // code HTTP de la réponse d'origine, rejoué tel quel
+  response   Json     // corps de la réponse d'origine, rejoué tel quel
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([createdAt])
 }

@@ -68,7 +68,20 @@ self.addEventListener('message', (event) => {
   }
 })
 
+const SYNC_LOCK_NAME = 'pathelix-offline-sync-queue'
+
 async function flushQueue() {
+  // Same named Web Locks lock as src/lib/syncQueue.ts's flushSyncQueue() — `navigator.locks` is
+  // shared across every same-origin context including this Service Worker, so this serializes
+  // against the page's own flush instead of racing it (N23: two concurrent flushers could both
+  // read and POST the same not-yet-deleted queued action).
+  if (self.navigator && self.navigator.locks) {
+    return self.navigator.locks.request(SYNC_LOCK_NAME, () => _doFlushQueue())
+  }
+  return _doFlushQueue()
+}
+
+async function _doFlushQueue() {
   // We need to use the raw IndexedDB API here since we can't import modules in SW
   const db = await openDB()
   const keys = await getAllKeys(db)
@@ -84,7 +97,9 @@ async function flushQueue() {
     try {
       const res = await fetch(action.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // Same idempotency key as src/lib/syncQueue.ts's flush — the queued action's own id,
+        // stable across retries. See src/lib/idempotency.ts.
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
         body: JSON.stringify(action.body),
         credentials: 'same-origin',
       })

@@ -7,6 +7,7 @@ import { publishStatusUpdate } from '@/lib/driverStatusPubSub'
 import { collectInterventionMetric } from '@/lib/metricCollector'
 import { emitEvent } from '@/lib/integrationEvents'
 import { syncMissionToERP } from '@/lib/integrationERP'
+import { withIdempotency } from '@/lib/idempotency'
 
 const log = createLogger('/api/driver-status/update')
 
@@ -52,6 +53,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!isOwnDriver && !isAdminOrDispatcher) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
+
+    return await withIdempotency(req, tenantId, 'POST /api/driver-status/update', () => handleStatusUpdate({
+      tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, driverFullName,
+    }))
+  } catch (err) {
+    log.error('Status update failed', { err: err instanceof Error ? err.message : String(err) })
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+  }
+}
+
+interface StatusUpdateParams {
+  tenantId: string
+  driverId: string
+  missionId: string
+  date: string
+  status: 'todo' | 'en_route' | 'arrived' | 'started' | 'done'
+  timestamp?: string
+  latitude?: number
+  longitude?: number
+  driverFullName: string
+}
+
+async function handleStatusUpdate({
+  tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, driverFullName,
+}: StatusUpdateParams): Promise<NextResponse> {
+  try {
     const ts = timestamp || new Date().toISOString()
 
     let capturedStatuses: Record<string, unknown> | null = null

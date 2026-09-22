@@ -16,8 +16,9 @@ if (isMainEntry) validateEnv()
 
 const log = createLogger('auditRetentionWorker')
 
-const QUEUE_NAME           = 'audit-retention'
-const AUDIT_RETENTION_DAYS = parseInt(process.env.AUDIT_RETENTION_DAYS ?? '365', 10)
+const QUEUE_NAME             = 'audit-retention'
+const AUDIT_RETENTION_DAYS   = parseInt(process.env.AUDIT_RETENTION_DAYS ?? '365', 10)
+const IDEMPOTENCY_RETENTION_HOURS = 48
 
 export async function purgeExpiredAuditLogs(): Promise<{ deleted: number; cutoff: string }> {
   const cutoff = new Date()
@@ -36,8 +37,33 @@ export async function purgeExpiredAuditLogs(): Promise<{ deleted: number; cutoff
   return { deleted: result.count, cutoff: cutoff.toISOString() }
 }
 
+// Idempotency keys (src/lib/idempotency.ts) only need to survive long enough to catch a
+// realistic replay window (offline queue retries, duplicate flush) — 48h, not the long-term
+// audit trail retention. Reuses this same daily worker rather than standing up a dedicated one
+// for a single extra deleteMany.
+export async function purgeExpiredIdempotencyKeys(): Promise<{ deleted: number; cutoff: string }> {
+  const cutoff = new Date()
+  cutoff.setHours(cutoff.getHours() - IDEMPOTENCY_RETENTION_HOURS)
+
+  const result = await prisma.idempotencyKey.deleteMany({
+    where: { createdAt: { lt: cutoff } },
+  })
+
+  log.info('Idempotency key retention purge complete', {
+    deleted: result.count,
+    cutoffHours: IDEMPOTENCY_RETENTION_HOURS,
+    cutoff: cutoff.toISOString(),
+  })
+
+  return { deleted: result.count, cutoff: cutoff.toISOString() }
+}
+
 async function processAuditRetention(_job: Job) {
-  return purgeExpiredAuditLogs()
+  const [auditLogs, idempotencyKeys] = await Promise.all([
+    purgeExpiredAuditLogs(),
+    purgeExpiredIdempotencyKeys(),
+  ])
+  return { auditLogs, idempotencyKeys }
 }
 
 async function main() {

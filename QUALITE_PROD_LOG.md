@@ -246,3 +246,72 @@ du tout, et aucun des 4 workers (`vrpWorker.ts`, `mlProfileWorker.ts`,
 large — les scripts `prisma/seed*.ts` et `scripts/*.ts` n'appellent pas `validateEnv()` (hors
 périmètre : ce sont des scripts ponctuels passant déjà par `db-guard.sh` pour leur propre garde-
 fou dédié, pas des process longue durée comme les 4 workers BullMQ).
+
+## Phase 3 — Interface chauffeur et mode offline (partielle)
+
+### Idempotence
+
+Nouveau modèle Prisma `IdempotencyKey` (`tenantId`, `key`, `route`, `status`, `response` JSON,
+`createdAt`, `@@unique([tenantId, key])`) — migration `20260922193350_add_idempotency_key`
+créée et appliquée contre la sandbox (`scripts/db-guard.sh npx prisma migrate dev`, jamais
+`migrate deploy` — à appliquer en production après sauvegarde, voir rapport final).
+
+`src/lib/idempotency.ts` — `withIdempotency(req, tenantId, route, handler)` : sans en-tête
+`Idempotency-Key`, comportement inchangé (transparent pour tout appelant non hors-ligne). Avec
+l'en-tête : cherche une réponse déjà enregistrée pour `(tenantId, key)` et la rejoue telle
+quelle si trouvée ; sinon exécute le handler, enregistre sa réponse (sauf 5xx — une erreur
+serveur doit rester rejouable, pas gelée), avale silencieusement une contrainte unique violée
+en cas de course concurrente (la réponse retournée reste correcte, juste pas celle qui sera
+rejouée au prochain essai).
+
+Câblé sur les 2 routes réellement utilisées par `enqueueAction()` (vérifié par grep dans
+`src/app/driver/[id]/page.tsx` — seules ces 2 routes sont mises en file hors-ligne aujourd'hui,
+`incidents`/`mission-comments` sont soumis en ligne directement) :
+- `POST /api/driver-status/update` — risque réel avant correctif : rejeu = double `syncMission
+  ToERP`, doublon `AuditLog`. Test de bout en bout ajouté (`driver-status-update.test.ts`) :
+  même clé deux fois → 1 seul appel ERP/audit log ; deux clés différentes → 2 appels distincts
+  (preuve que ce n'est pas juste un no-op global).
+- `POST /api/driver-photos` — risque de duplication plus faible par construction (nom de
+  fichier déterministe, écriture idempotente de fait), câblé pour cohérence/complétude.
+
+`src/lib/syncQueue.ts` (page) et `public/sw.js` (Service Worker) envoient tous deux l'en-tête
+`Idempotency-Key` avec l'id de l'action déjà généré une fois à la mise en file (jamais régénéré
+au retry) — même valeur des deux côtés pour la même action.
+
+Purge après 48h via le worker de rétention existant (`auditRetentionWorker.ts`, CRON déjà en
+place, étendu plutôt que dupliqué) — `purgeExpiredIdempotencyKeys()`, nouveau, testé.
+
+### Race condition sync-queue (N23) — Web Locks API
+
+**Root cause confirmée dans le code** (pas supposée) : `src/lib/syncQueue.ts` (page,
+`flushSyncQueue`) et `public/sw.js` (Service Worker, `flushQueue`) sont deux boucles de flush
+**indépendantes** lisant/écrivant la **même** file IndexedDB (`idb-keyval`, store `sync-q:*`) —
+rien ne les coordonne. Un déclenchement simultané (message `FORCE_SYNC` de la page + événement
+`sync` du SW) peut faire lire et POSTer la même action non encore supprimée par les deux à la
+fois.
+
+Corrigé avec la Web Locks API (`navigator.locks`), choisie plutôt qu'une alternative parce
+qu'elle est **partagée nativement entre la page et le Service Worker de même origine** — un seul
+verrou nommé (`pathelix-offline-sync-queue`) posé des deux côtés suffit, sans mécanisme de
+message/coordination explicite à construire. Repli silencieux vers le comportement précédent si
+`navigator.locks` est absent (très vieux navigateur). Nouveaux tests dans `syncQueue.test.ts`
+prouvant que `navigator.locks.request()` est réellement appelé (pas juste documenté) et que le
+repli fonctionne sans lui.
+
+### Non fait dans cette phase (scope trop large pour le temps restant de cette session)
+
+- **Validation E2E réelle B1-B9** (`TEST_MANUEL_PROGRESSION.md` §B, jamais testé à ce jour même
+  en session manuelle antérieure) : tournée du jour, transitions de statut avec persistance
+  vérifiée en base, upload photo avec rejet de faux type par magic bytes, commentaire/incident/
+  scan ticket, mode offline avec coupure réseau réelle (`context.setOffline`) et vérification
+  d'absence de doublon en base même en forçant un double envoi. Nécessite un chauffeur et une
+  tournée réellement seedés + `next build && next start` + Playwright, dans l'esprit de la
+  validation carte MapLibre de la session précédente — un travail de plusieurs heures à lui
+  seul, non commencé. **Risque concret de cette lacune** : le correctif idempotence/Web Locks
+  ci-dessus est vérifié unitairement (mocks) et son mécanisme de fond (extension Prisma, verrou
+  partagé) vérifié en conditions réelles séparément, mais jamais le scénario complet "vraie
+  coupure réseau navigateur → vraie file IndexedDB → vrai flush concurrent double" de bout en
+  bout.
+- **Saisie en langage naturel, repli si Ollama indisponible** : non vérifié cette session (accès
+  Ollama non confirmé dans cet environnement, comme documenté par la session de test manuel
+  précédente — "Ollama non démarré" déjà noté comme limitation d'environnement, pas un bug).

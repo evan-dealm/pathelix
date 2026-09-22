@@ -53,7 +53,7 @@ const TENANT_SCOPED_MODELS = new Set([
   'Plan', 'TourHistory', 'Vehicle', 'MaintenanceRecord', 'FuelRecord', 'DriverPosition',
   'AuditLog', 'Holiday', 'TenantSettings', 'DriverUnavailability', 'UserPermission', 'ApiKey',
   'WeeklyPlan', 'Integration', 'InterventionMetric', 'TenantMLProfile', 'MissionTemplate',
-  'DeliveryProof', 'PushSubscription', 'AiJob', 'TrackdechetsAccount', 'Bsd',
+  'DeliveryProof', 'PushSubscription', 'AiJob', 'TrackdechetsAccount', 'Bsd', 'IdempotencyKey',
 ])
 
 const READ_OR_DELETE_WHERE_OPS = new Set([
