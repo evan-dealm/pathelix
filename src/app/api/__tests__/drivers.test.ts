@@ -19,12 +19,20 @@ vi.mock('@/lib/redisCache', () => ({
   },
 }))
 
+// @/lib/db: still used directly (unmigrated, by design — see permissions.ts) by hasPermission()
+// for userPermission.findMany. @/lib/tenantDb: used by the route itself for tenant.findUnique
+// (unscopedPrisma — Tenant isn't tenant-scoped) and driver.count (getTenantDb).
 vi.mock('@/lib/db', () => ({
   default: {
-    tenant: { findUnique: vi.fn(() => Promise.resolve(null)) },
-    driver: { count: vi.fn(() => Promise.resolve(0)) },
     userPermission: { findMany: vi.fn(() => Promise.resolve([])) },
   },
+}))
+const mockTenantDb = vi.hoisted(() => ({
+  driver: { count: vi.fn(() => Promise.resolve(0)) },
+}))
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: { tenant: { findUnique: vi.fn(() => Promise.resolve(null)) } },
+  getTenantDb:    vi.fn(() => mockTenantDb),
 }))
 
 vi.mock('@/lib/logger', () => ({

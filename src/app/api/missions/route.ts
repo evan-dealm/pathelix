@@ -9,7 +9,7 @@ import { auditAsync }                     from '@/lib/audit'
 import { createTenantRateLimiter }        from '@/lib/rateLimit'
 import { metrics, METRIC }               from '@/lib/metrics'
 import { hasPermission }                  from '@/lib/permissions'
-import prisma                             from '@/lib/db'
+import { unscopedPrisma, getTenantDb }    from '@/lib/tenantDb'
 
 const _missionsWriteRl = createTenantRateLimiter(100, 60_000, 'missions-write')
 
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { tenantId, role } = getRequestContext(req)
     if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
     try {
-      const result = await prisma.mission.updateMany({ where: { tenantId, archived: false }, data: { archived: true } })
+      const result = await getTenantDb(tenantId).mission.updateMany({ where: { archived: false }, data: { archived: true } })
       await redisCache.invalidateAll('missions', tenantId)
       return NextResponse.json({ ok: true, archived: result.count })
     } catch (err) {
@@ -104,8 +104,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const tenantId = getTenantId(req)
 
     const [tenant, count] = await Promise.all([
-      prisma.tenant.findUnique({ where: { id: tenantId }, select: { maxMissions: true } }),
-      prisma.mission.count({ where: { tenantId, archived: false } }),
+      unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { maxMissions: true } }),
+      getTenantDb(tenantId).mission.count({ where: { archived: false } }),
     ])
     if (tenant?.maxMissions !== null && tenant?.maxMissions !== undefined) {
       if (count >= tenant.maxMissions) {

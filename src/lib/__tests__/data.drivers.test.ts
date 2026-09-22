@@ -5,6 +5,11 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import type * as DriversModule from '../data/drivers'
 
+// getTenantDb(tenantId) itself is unit-tested exhaustively in tenantDb.test.ts (it always
+// injects tenantId into `where`/`data`) — this file only needs to prove drivers.ts calls it
+// with the right tenantId and passes everything else through correctly, so the mock returns
+// the same fake client regardless of which tenantId getTenantDb was called with, and tests
+// assert on `getTenantDbMock` separately from the Prisma call shape.
 const mockPrisma = vi.hoisted(() => ({
   driver: {
     findMany:   vi.fn(),
@@ -14,8 +19,9 @@ const mockPrisma = vi.hoisted(() => ({
     updateMany: vi.fn(),
   },
 }))
+const getTenantDbMock = vi.hoisted(() => vi.fn(() => mockPrisma))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: getTenantDbMock }))
 vi.mock('@/lib/prismaMappers', () => ({
   prismaRowToDriver: vi.fn((row: Record<string, unknown>) => ({
     id: row.id, firstName: row.firstName, lastName: row.lastName,
@@ -50,11 +56,12 @@ afterAll(() => {
 })
 
 describe('getAllDrivers (DB path)', () => {
-  it('calls prisma.driver.findMany with tenantId filter', async () => {
+  it('scopes to the tenant via getTenantDb, filters archived', async () => {
     mockPrisma.driver.findMany.mockResolvedValueOnce([])
     await getAllDrivers('t-1')
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
     expect(mockPrisma.driver.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ tenantId: 't-1', archived: false }) }),
+      expect.objectContaining({ where: expect.objectContaining({ archived: false }) }),
     )
   })
 
@@ -95,11 +102,12 @@ describe('getAllDrivers (DB path)', () => {
 })
 
 describe('getDriver (DB path)', () => {
-  it('calls prisma.driver.findFirst with id and tenantId', async () => {
+  it('scopes to the tenant via getTenantDb, filters by id', async () => {
     mockPrisma.driver.findFirst.mockResolvedValueOnce(null)
     await getDriver('t-1', 'd-1')
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
     expect(mockPrisma.driver.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ id: 'd-1', tenantId: 't-1' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ id: 'd-1' }) }),
     )
   })
 
@@ -117,11 +125,12 @@ describe('getDriver (DB path)', () => {
 })
 
 describe('createDriver (DB path)', () => {
-  it('calls prisma.driver.create with tenantId', async () => {
+  it('creates via getTenantDb, scoped to the tenant', async () => {
     mockPrisma.driver.create.mockResolvedValueOnce({ id: 'd-new', firstName: 'Bob', lastName: 'C' })
     await createDriver('t-1', { firstName: 'Bob', lastName: 'C', sector: 'N', depotName: 'Depot', depotLat: 45.9, depotLng: 6.1 })
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
     expect(mockPrisma.driver.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ tenantId: 't-1' }) }),
+      expect.objectContaining({ data: expect.objectContaining({ firstName: 'Bob' }) }),
     )
   })
 

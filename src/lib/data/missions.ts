@@ -2,7 +2,7 @@ import type { Mission } from '@/lib/types'
 import type { MissionInput } from '@/lib/schemas'
 import { prismaRowToMission } from '@/lib/prismaMappers'
 import { getMissionStore } from '@/app/api/missions/_store'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
@@ -41,11 +41,12 @@ export async function getAllMissions(
     return filtered.slice(skip, skip + take)
   }
 
-  const where: Record<string, unknown> = { tenantId, archived: false }
+  const where: Record<string, unknown> = { archived: false }
   if (options.date) where.date = options.date
 
-  const rows = await prisma.mission.findMany({
-    where:   where as NonNullable<Parameters<typeof prisma.mission.findMany>[0]>['where'],
+  const db   = getTenantDb(tenantId)
+  const rows = await db.mission.findMany({
+    where:   where as NonNullable<Parameters<typeof db.mission.findMany>[0]>['where'],
     select:  MISSION_LIST_SELECT,
     orderBy: { date: 'asc' },
     take,
@@ -93,8 +94,8 @@ export async function getMissionsByDate(tenantId: string, date: string): Promise
     return getMissionStore().filter(m => !m.archived && m.date === date)
   }
 
-  const rows = await prisma.mission.findMany({
-    where:   { tenantId, date, archived: false },
+  const rows = await getTenantDb(tenantId).mission.findMany({
+    where:   { date, archived: false },
     select:  MISSION_LIST_SELECT,
     orderBy: { priority: 'asc' },
   })
@@ -105,8 +106,8 @@ export async function getMission(tenantId: string, id: string): Promise<Mission 
   if (useMock) {
     return getMissionStore().find(m => m.id === id) ?? null
   }
-  const row = await prisma.mission.findFirst({
-    where:  { id, tenantId },
+  const row = await getTenantDb(tenantId).mission.findFirst({
+    where:  { id },
     select: MISSION_SELECT,
   })
   return row ? prismaRowToMission(row as unknown as Record<string, unknown>) : null
@@ -119,8 +120,9 @@ export async function createMission(tenantId: string, data: MissionInput): Promi
     return mission
   }
   const flat = flattenTimeWindow(data)
-  const row  = await prisma.mission.create({
-    data: { tenantId, ...flat } as Parameters<typeof prisma.mission.create>[0]['data'],
+  const db   = getTenantDb(tenantId)
+  const row  = await db.mission.create({
+    data: { ...flat } as Parameters<typeof db.mission.create>[0]['data'],
   })
   return prismaRowToMission(row as unknown as Record<string, unknown>)
 }
@@ -140,9 +142,10 @@ export async function updateMission(
   }
   try {
 
-    const row = await prisma.mission.update({
-      where: { id, tenantId },
-      data:  flattenTimeWindow(data) as Parameters<typeof prisma.mission.update>[0]['data'],
+    const db  = getTenantDb(tenantId)
+    const row = await db.mission.update({
+      where: { id },
+      data:  flattenTimeWindow(data) as Parameters<typeof db.mission.update>[0]['data'],
     })
     return prismaRowToMission(row as unknown as Record<string, unknown>)
   } catch (err) {
@@ -161,8 +164,8 @@ export async function deleteMission(tenantId: string, id: string): Promise<boole
     return true
   }
   try {
-    const result = await prisma.mission.updateMany({
-      where: { id, tenantId },
+    const result = await getTenantDb(tenantId).mission.updateMany({
+      where: { id },
       data:  { archived: true },
     })
     return result.count > 0

@@ -1,3 +1,8 @@
+// NOT migrated to getTenantDb() — `userId` here always comes from the JWT-verified request
+// context (never client-supplied), and a User row belongs to exactly one tenant, so filtering
+// by `userId` alone cannot cross a tenant boundary; adding `tenantId` would be redundant, not a
+// fix for a real gap. Left on the raw client rather than changing hasPermission()'s signature
+// (used at ~40 call sites) for a purely defense-in-depth gain with no real exposure today.
 import prisma from '@/lib/db'
 
 export const ALL_PERMISSIONS = [

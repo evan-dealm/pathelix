@@ -7,7 +7,7 @@ import { redisCache }                  from '@/lib/redisCache'
 import { auditAsync }                  from '@/lib/audit'
 import { metrics, METRIC }             from '@/lib/metrics'
 import { hasPermission }               from '@/lib/permissions'
-import prisma                          from '@/lib/db'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/drivers')
 
@@ -62,8 +62,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const tenantId = getTenantId(req)
 
     const [tenant, count] = await Promise.all([
-      prisma.tenant.findUnique({ where: { id: tenantId }, select: { maxDrivers: true } }),
-      prisma.driver.count({ where: { tenantId, archived: false } }),
+      unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { maxDrivers: true } }),
+      getTenantDb(tenantId).driver.count({ where: { archived: false } }),
     ])
     if (tenant?.maxDrivers !== null && tenant?.maxDrivers !== undefined) {
       if (count >= tenant.maxDrivers) {

@@ -107,6 +107,10 @@ const mockPrisma = vi.hoisted(() => {
   }
 })
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+// Routes migrated to getTenantDb()/unscopedPrisma (drivers, missions) resolve both to the same
+// mockPrisma object as @/lib/db above — same assertions (mockPrisma.driver.count, etc.) work
+// unchanged regardless of which of the two a given route now goes through.
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

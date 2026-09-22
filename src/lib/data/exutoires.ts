@@ -8,7 +8,7 @@ import {
   updateExutoire as mockUpdate,
   deleteExutoire as mockDelete,
 } from '@/app/api/exutoires/_store'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
@@ -23,8 +23,7 @@ export async function getAllExutoires(tenantId: string): Promise<Exutoire[]> {
   if (useMock) {
     return getExutoireStore()
   }
-  const rows = await prisma.exutoire.findMany({
-    where:   { tenantId },
+  const rows = await getTenantDb(tenantId).exutoire.findMany({
     select:  EXUTOIRE_LIST_SELECT,
     orderBy: { name: 'asc' },
   })
@@ -35,7 +34,7 @@ export async function getExutoire(tenantId: string, id: string): Promise<Exutoir
   if (useMock) {
     return findExutoire(id) ?? null
   }
-  const row = await prisma.exutoire.findFirst({ where: { id, tenantId } })
+  const row = await getTenantDb(tenantId).exutoire.findFirst({ where: { id } })
   return row ? prismaRowToExutoire(row as unknown as Record<string, unknown>) : null
 }
 
@@ -45,12 +44,11 @@ export async function createExutoire(tenantId: string, data: ExutoireInput): Pro
     addExutoire(exutoire)
     return exutoire
   }
-  const row = await prisma.exutoire.create({
+  const db  = getTenantDb(tenantId)
+  const row = await db.exutoire.create({
     data: {
-      tenantId,
       ...data,
-
-    } as Parameters<typeof prisma.exutoire.create>[0]['data'],
+    } as Parameters<typeof db.exutoire.create>[0]['data'],
   })
   return prismaRowToExutoire(row as unknown as Record<string, unknown>)
 }
@@ -65,9 +63,10 @@ export async function updateExutoire(
   }
   try {
 
-    const row = await prisma.exutoire.update({
-      where: { id, tenantId },
-      data:  data as Parameters<typeof prisma.exutoire.update>[0]['data'],
+    const db  = getTenantDb(tenantId)
+    const row = await db.exutoire.update({
+      where: { id },
+      data:  data as Parameters<typeof db.exutoire.update>[0]['data'],
     })
     return prismaRowToExutoire(row as unknown as Record<string, unknown>)
   } catch (err) {
@@ -83,9 +82,9 @@ export async function deleteExutoire(tenantId: string, id: string): Promise<bool
   }
   try {
 
-    return await prisma.$transaction(async (tx) => {
+    return await getTenantDb(tenantId).$transaction(async (tx) => {
 
-      const existing = await tx.exutoire.findFirst({ where: { id, tenantId } })
+      const existing = await tx.exutoire.findFirst({ where: { id } })
       if (!existing) return false
 
       await Promise.all([

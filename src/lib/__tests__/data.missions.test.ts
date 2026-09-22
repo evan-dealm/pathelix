@@ -14,7 +14,8 @@ const mockPrisma = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+const getTenantDbMock = vi.hoisted(() => vi.fn(() => mockPrisma))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: getTenantDbMock }))
 vi.mock('@/lib/prismaMappers', () => ({
   prismaRowToMission: vi.fn((row: Record<string, unknown>) => ({
     id: row.id, type: row.type ?? 'POSER', date: row.date ?? '2025-06-15',
@@ -51,12 +52,10 @@ afterAll(() => {
 })
 
 describe('getAllMissions (DB path)', () => {
-  it('queries prisma with tenantId', async () => {
+  it('scopes to the tenant via getTenantDb', async () => {
     mockPrisma.mission.findMany.mockResolvedValueOnce([])
     await getAllMissions('t-1')
-    expect(mockPrisma.mission.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ tenantId: 't-1' }) }),
-    )
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
   })
 
   it('applies date filter when provided', async () => {
@@ -83,11 +82,12 @@ describe('getAllMissions (DB path)', () => {
 })
 
 describe('getMissionsByDate (DB path)', () => {
-  it('filters by date and tenantId', async () => {
+  it('scopes to the tenant via getTenantDb, filters by date', async () => {
     mockPrisma.mission.findMany.mockResolvedValueOnce([])
     await getMissionsByDate('t-1', '2025-06-15')
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
     expect(mockPrisma.mission.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ tenantId: 't-1', date: '2025-06-15' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ date: '2025-06-15' }) }),
     )
   })
 
@@ -107,11 +107,12 @@ describe('getMission (DB path)', () => {
     expect(result).toBeNull()
   })
 
-  it('queries with id and tenantId', async () => {
+  it('scopes to the tenant via getTenantDb, filters by id', async () => {
     mockPrisma.mission.findFirst.mockResolvedValueOnce(null)
     await getMission('t-1', 'm-1')
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
     expect(mockPrisma.mission.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ id: 'm-1', tenantId: 't-1' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ id: 'm-1' }) }),
     )
   })
 })

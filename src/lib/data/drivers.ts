@@ -2,7 +2,7 @@ import type { Driver } from '@/lib/types'
 import type { DriverInput } from '@/lib/schemas'
 import { prismaRowToDriver } from '@/lib/prismaMappers'
 import { getDriverStore } from '@/app/api/drivers/_store'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
@@ -33,8 +33,8 @@ export async function getAllDrivers(tenantId: string): Promise<Driver[]> {
   if (useMock) {
     return getDriverStore().filter(d => !d.archived)
   }
-  const rows = await prisma.driver.findMany({
-    where:   { tenantId, archived: false },
+  const rows = await getTenantDb(tenantId).driver.findMany({
+    where:   { archived: false },
     select:  DRIVER_SELECT,
     orderBy: { createdAt: 'asc' },
   })
@@ -45,8 +45,8 @@ export async function getDriver(tenantId: string, id: string): Promise<Driver | 
   if (useMock) {
     return getDriverStore().find(d => d.id === id) ?? null
   }
-  const row = await prisma.driver.findFirst({
-    where:  { id, tenantId },
+  const row = await getTenantDb(tenantId).driver.findFirst({
+    where:  { id },
     select: DRIVER_SELECT,
   })
   return row ? prismaRowToDriver(row as unknown as Record<string, unknown>) : null
@@ -58,8 +58,9 @@ export async function createDriver(tenantId: string, data: DriverInput): Promise
     getDriverStore().push(driver)
     return driver
   }
-  const row = await prisma.driver.create({
-    data: { tenantId, ...data } as Parameters<typeof prisma.driver.create>[0]['data'],
+  const db  = getTenantDb(tenantId)
+  const row = await db.driver.create({
+    data: { ...data } as Parameters<typeof db.driver.create>[0]['data'],
   })
   return prismaRowToDriver(row as unknown as Record<string, unknown>)
 }
@@ -77,9 +78,10 @@ export async function updateDriver(
     return store[idx]
   }
   try {
-    const row = await prisma.driver.update({
-      where: { id, tenantId },
-      data:  data as Parameters<typeof prisma.driver.update>[0]['data'],
+    const db  = getTenantDb(tenantId)
+    const row = await db.driver.update({
+      where: { id },
+      data:  data as Parameters<typeof db.driver.update>[0]['data'],
     })
     return prismaRowToDriver(row as unknown as Record<string, unknown>)
   } catch (err) {
@@ -97,8 +99,8 @@ export async function deleteDriver(tenantId: string, id: string): Promise<boolea
     return true
   }
   try {
-    const updated = await prisma.driver.updateMany({
-      where: { id, tenantId },
+    const updated = await getTenantDb(tenantId).driver.updateMany({
+      where: { id },
       data:  { archived: true },
     })
     return updated.count > 0

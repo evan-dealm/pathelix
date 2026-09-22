@@ -14,7 +14,8 @@ const mockPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+const getTenantDbMock = vi.hoisted(() => vi.fn(() => mockPrisma))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: getTenantDbMock }))
 vi.mock('@/lib/prismaMappers', () => ({
   prismaRowToExutoire: vi.fn((row: Record<string, unknown>) => ({
     id: row.id, name: row.name ?? 'Centre',
@@ -55,12 +56,10 @@ afterAll(() => {
 })
 
 describe('getAllExutoires (DB path)', () => {
-  it('queries prisma with tenantId', async () => {
+  it('scopes to the tenant via getTenantDb', async () => {
     mockPrisma.exutoire.findMany.mockResolvedValueOnce([])
     await getAllExutoires('t-1')
-    expect(mockPrisma.exutoire.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ tenantId: 't-1' }) }),
-    )
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
   })
 
   it('orders by name ascending', async () => {
@@ -98,11 +97,12 @@ describe('getAllExutoires (DB path)', () => {
 })
 
 describe('getExutoire (DB path)', () => {
-  it('queries with id and tenantId', async () => {
+  it('scopes to the tenant via getTenantDb, filters by id', async () => {
     mockPrisma.exutoire.findFirst.mockResolvedValueOnce(null)
     await getExutoire('t-1', 'e-1')
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
     expect(mockPrisma.exutoire.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ id: 'e-1', tenantId: 't-1' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ id: 'e-1' }) }),
     )
   })
 
@@ -119,11 +119,12 @@ describe('getExutoire (DB path)', () => {
 })
 
 describe('createExutoire (DB path)', () => {
-  it('includes tenantId in create call', async () => {
+  it('creates via getTenantDb, scoped to the tenant', async () => {
     mockPrisma.exutoire.create.mockResolvedValueOnce({ id: 'e-new', name: 'Nouveau' })
     await createExutoire('t-1', { name: 'Nouveau', address: 'Rue de test', lat: 45.9, lng: 6.1, openingHoursOpen: 480, openingHoursClose: 1080, closedDays: [], acceptedWasteTypes: [], serviceTimeMin: 20 })
+    expect(getTenantDbMock).toHaveBeenCalledWith('t-1')
     expect(mockPrisma.exutoire.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ tenantId: 't-1' }) }),
+      expect.objectContaining({ data: expect.objectContaining({ name: 'Nouveau' }) }),
     )
   })
 
