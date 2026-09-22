@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Prevent the top-level computeProfilesWithRetry() call from running on import
 vi.mock('dotenv/config', () => ({}))
+vi.mock('@/lib/env', () => ({ validateEnv: vi.fn() }))
 
 vi.mock('@prisma/adapter-pg', () => ({
   PrismaPg: vi.fn(() => ({})),

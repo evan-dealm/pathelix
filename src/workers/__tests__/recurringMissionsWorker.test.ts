@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
+vi.mock('@/lib/env', () => ({ validateEnv: vi.fn() }))
 
 const mockFindMany   = vi.hoisted(() => vi.fn())
 const mockFindFirst  = vi.hoisted(() => vi.fn())

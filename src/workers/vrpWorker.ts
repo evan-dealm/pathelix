@@ -1,6 +1,8 @@
 import dotenv from 'dotenv'
 dotenv.config({ path: '.env' })
 dotenv.config({ path: '.env.local', override: true })
+import { validateEnv } from '@/lib/env'
+validateEnv()
 import { Worker, type Job } from 'bullmq'
 import { PrismaClient } from '@/generated/prisma'
 import { PrismaPg } from '@prisma/adapter-pg'

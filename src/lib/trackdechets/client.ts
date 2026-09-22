@@ -5,8 +5,38 @@ const log = createLogger('trackdechets/client')
 
 const DEFAULT_TD_URL = 'https://sandbox.trackdechets.beta.gouv.fr/'
 
+// HALT: no call ever reaches the real Trackdéchets production API without an explicit,
+// separate opt-in — the sandbox default alone (docs/deploiement.md §5, .env.example comment)
+// was only a convention, easy to defeat by a single misconfigured TRACKDECHETS_API_URL. This
+// makes it structural: pointing at production without TRACKDECHETS_HALT_LIFTED=true throws
+// before any network call, on every single request, not just at startup — see
+// docs/deploiement.md §5 for the manual validation checklist required before setting that flag.
+export class TdHaltError extends Error {
+  constructor() {
+    super(
+      'HALT Trackdéchets actif : TRACKDECHETS_API_URL pointe vers la production sans ' +
+      'TRACKDECHETS_HALT_LIFTED=true. Voir docs/deploiement.md §5 pour la checklist de ' +
+      'validation manuelle requise avant de lever ce HALT.',
+    )
+    this.name = 'TdHaltError'
+  }
+}
+
+function isProductionTdUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'api.trackdechets.beta.gouv.fr'
+  } catch {
+    return false
+  }
+}
+
 function getTdApiUrl(): string {
-  return process.env.TRACKDECHETS_API_URL ?? DEFAULT_TD_URL
+  const url = process.env.TRACKDECHETS_API_URL ?? DEFAULT_TD_URL
+  if (isProductionTdUrl(url) && process.env.TRACKDECHETS_HALT_LIFTED !== 'true') {
+    log.error('HALT Trackdéchets: appel bloqué — TRACKDECHETS_API_URL de production sans TRACKDECHETS_HALT_LIFTED=true', { url })
+    throw new TdHaltError()
+  }
+  return url
 }
 
 export class TdApiError extends Error {

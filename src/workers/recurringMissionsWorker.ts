@@ -6,6 +6,16 @@ import { createLogger }                       from '@/lib/logger'
 import { getRedisClient }                     from '@/lib/redisClient'
 import { MissionType }                        from '@/generated/prisma'
 import prisma                                 from '@/lib/db'
+import { validateEnv }                        from '@/lib/env'
+
+// This file is also imported as a library for toRRule()/RecurrenceRule by
+// recurringTemplateBackfill.ts — validateEnv() (which can process.exit) must only run when
+// this file is genuinely being executed as the worker entry point, same guard as isDirectRun
+// below (computed early since it's needed here, ahead of its other use at the bottom).
+const isMainEntry = process.argv[1]
+  ? /recurringMissionsWorker\.(ts|js)$/.test(process.argv[1].replace(/\\/g, '/'))
+  : false
+if (isMainEntry) validateEnv()
 
 const log = createLogger('recurringMissionsWorker')
 
@@ -162,10 +172,6 @@ async function main() {
   log.info('Recurring missions worker started (CRON 01:00 daily)')
 }
 
-const isDirectRun = process.argv[1]
-  ? /recurringMissionsWorker\.(ts|js)$/.test(process.argv[1].replace(/\\/g, '/'))
-  : false
-
-if (isDirectRun) {
+if (isMainEntry) {
   main().catch(err => { log.error('Worker crashed', { err: err instanceof Error ? err.message : String(err) }); process.exit(1) })
 }

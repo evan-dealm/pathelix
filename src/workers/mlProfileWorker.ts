@@ -1,4 +1,6 @@
 import 'dotenv/config'
+import { validateEnv } from '@/lib/env'
+validateEnv()
 import { PrismaClient } from '@/generated/prisma'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { createLogger } from '@/lib/logger'

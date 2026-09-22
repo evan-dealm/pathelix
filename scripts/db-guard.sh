@@ -19,7 +19,7 @@
 #
 # The test sandbox DB name is deliberately unrelated to the real DB's name (no shared
 # substring with "pathelix_fleet") specifically so no truncation/typo/fallback bug can
-# accidentally produce a string that passes this check. See .env.production.local.
+# accidentally produce a string that passes this check. See .env.sandbox.local (formerly .env.production.local, renamed 2026-09-22 for clarity).
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ if [ -z "${DATABASE_URL:-}" ]; then
   echo "❌ DB GUARD: DATABASE_URL is not set in this shell's environment." >&2
   echo "   This guard does NOT read env files for you — that ambiguity is the exact bug" >&2
   echo "   it exists to prevent. Export it explicitly first, e.g.:" >&2
-  echo "     export DATABASE_URL=\$(grep '^DATABASE_URL=' .env.production.local | cut -d= -f2-)" >&2
+  echo "     export DATABASE_URL=\$(grep '^DATABASE_URL=' .env.sandbox.local | cut -d= -f2-)" >&2
   exit 1
 fi
 

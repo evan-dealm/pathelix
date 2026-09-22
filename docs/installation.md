@@ -89,6 +89,12 @@ toute commande si `DATABASE_URL` n'est pas explicitement exportée ou si le nom 
 contient pas le marqueur attendu :
 
 ```bash
-export DATABASE_URL=$(grep '^DATABASE_URL=' .env.production.local | cut -d= -f2-)
+export DATABASE_URL=$(grep '^DATABASE_URL=' .env.sandbox.local | cut -d= -f2-)
 scripts/db-guard.sh npx tsx prisma/seed-superadmin.ts
 ```
+
+> **Nom de fichier** (2026-09-22) : ce fichier de config sandbox s'appelait `.env.production.
+> local` — un nom trompeur (il ne contient aucune config de production, seulement la sandbox),
+> corrigé dans cette documentation vers `.env.sandbox.local`. **Action requise** : renommer le
+> fichier réel sur disque en conséquence (non fait automatiquement — voir le rapport final de
+> la mission "Mise en qualité production").

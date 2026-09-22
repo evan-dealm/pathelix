@@ -19,6 +19,9 @@ const ServerEnvSchema = z.object({
   OLLAMA_URL:         z.string().optional(),
   AI_ENGINE_URL:      z.string().optional(),
   SENTRY_DSN:         z.string().optional(),
+  USE_MOCK_DATA:               z.string().optional(),
+  TRACKDECHETS_API_URL:        z.string().optional(),
+  TRACKDECHETS_HALT_LIFTED:    z.string().optional(),
 })
 
 export type ServerEnv = z.infer<typeof ServerEnvSchema>
@@ -38,6 +41,15 @@ export function validateEnv(): ServerEnv {
   const env = result.data
 
   if (env.NODE_ENV === 'production') {
+    // Same convention as everywhere else in the codebase: mock is ON unless USE_MOCK_DATA is
+    // literally 'false'. A production deploy running against the in-memory mock stores instead
+    // of the real database is never intentional — fail loudly at startup instead of silently
+    // serving fake data.
+    if (env.USE_MOCK_DATA !== 'false') {
+      log.error('USE_MOCK_DATA actif en production — arrêt du démarrage. Définir USE_MOCK_DATA=false explicitement.')
+      process.exit(1)
+    }
+
     const warnings: string[] = []
 
     if (!env.METRICS_TOKEN) {

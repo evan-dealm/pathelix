@@ -198,3 +198,51 @@ n'est de toute façon pas un échappement JSON valide dans un fichier `.eslintrc
 
 Voir section dédiée ajoutée dans `docs/authentification-securite.md` §14 (Phase 9) : faisabilité
 avec `@prisma/adapter-pg`, coût perf, plan de migration.
+
+## Phase 2 — Configuration fail-safe
+
+**Constat vérifié avant d'agir (règle 12)** : `src/lib/env.ts` existait déjà (Zod, appelé depuis
+`src/instrumentation.ts` au démarrage de Next) — contrairement à ce que le prompt supposait
+("s'il n'existe pas déjà"), il existait mais était incomplet : ne validait pas `USE_MOCK_DATA`
+du tout, et aucun des 4 workers (`vrpWorker.ts`, `mlProfileWorker.ts`,
+`recurringMissionsWorker.ts`, `auditRetentionWorker.ts`) ne l'appelait.
+
+**Fait** :
+- `validateEnv()` échoue désormais explicitement (`process.exit(1)`) si `NODE_ENV=production` et
+  `USE_MOCK_DATA !== 'false'` (même convention que partout ailleurs dans le code — jamais
+  `=== 'true'`). `SESSION_SECRET` absent/< 32 caractères était déjà couvert par le schéma Zod
+  existant (vérifié, rien à ajouter).
+- `validateEnv()` appelé dans les 4 workers. Piège trouvé en le faisant : `recurringMissionsWorker.
+  ts` est aussi importé comme bibliothèque pure (`toRRule`/`RecurrenceRule`) par
+  `recurringTemplateBackfill.ts`, dont le test (`recurringTemplateBackfill.test.ts`, zéro mock)
+  a immédiatement révélé le problème — un appel `validateEnv()` inconditionnel en haut de fichier
+  s'exécutait à l'import, faisait `process.exit(1)` dans l'environnement de test, et faisait
+  planter un test sans rapport. Corrigé en réutilisant le garde `isDirectRun`/`isMainEntry` déjà
+  présent dans ce fichier (et dans `auditRetentionWorker.ts`, même précaution appliquée par
+  cohérence) — `validateEnv()` ne s'exécute que si le fichier est vraiment lancé comme worker
+  (`tsx src/workers/xWorker.ts`), jamais au simple import d'un helper. `vrpWorker.ts` et
+  `mlProfileWorker.ts` n'ont pas ce garde (aucun autre fichier ne les importe pour un helper,
+  vérifié par grep) — cohérent avec leur comportement déjà inconditionnel préexistant.
+- **HALT Trackdéchets implémenté en code**, pas seulement en convention/documentation — vérifié
+  au préalable qu'aucune garde n'existait dans le code (`grep -rn "HALT"` sur tout
+  `src/lib/trackdechets/` et `src/app/api/trackdechets/`/`bsds/` : zéro résultat). `src/lib/
+  trackdechets/client.ts` : `getTdApiUrl()` refuse désormais (lève `TdHaltError`, avant tout
+  appel réseau) si l'URL résolue pointe vers `api.trackdechets.beta.gouv.fr` (production) sans
+  `TRACKDECHETS_HALT_LIFTED=true` explicite. Nouvelle variable ajoutée à `.env.example`, sans
+  valeur, commentée, renvoyant vers `docs/deploiement.md` §5. 3 nouveaux tests (bloque en prod
+  sans le flag, autorise avec le flag, jamais bloqué sur le sandbox).
+- `docs/installation.md` et `scripts/db-guard.sh` : références à `.env.production.local`
+  (nom trompeur) remplacées par `.env.sandbox.local`. **Le fichier réel sur disque n'a pas été
+  renommé** (règle 8 : ne jamais modifier les fichiers `.env*` existants) — listé comme action
+  requise dans le rapport final. `TEST_MANUEL_PROGRESSION.md` contient aussi la référence mais
+  est un fichier temporaire déjà prévu pour suppression en Phase 9 après intégration de son
+  contenu — non touché ici pour éviter un double traitement.
+
+**Tests ajoutés** : `src/lib/__tests__/env.test.ts` (nouveau, 8 tests — n'existait pas avant),
+3 tests HALT dans `src/lib/trackdechets/__tests__/client.test.ts`, mocks `@/lib/env` ajoutés aux
+3 tests worker concernés. 214 fichiers / 3847 tests verts.
+
+**Non fait** : le prompt suggère aussi de valider l'environnement "de chaque worker" au sens
+large — les scripts `prisma/seed*.ts` et `scripts/*.ts` n'appellent pas `validateEnv()` (hors
+périmètre : ce sont des scripts ponctuels passant déjà par `db-guard.sh` pour leur propre garde-
+fou dédié, pas des process longue durée comme les 4 workers BullMQ).

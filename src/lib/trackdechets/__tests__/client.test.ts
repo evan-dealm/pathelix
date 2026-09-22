@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { callTdGraphQL, TdApiError } from '../client'
+import { callTdGraphQL, TdApiError, TdHaltError } from '../client'
 
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -135,6 +135,39 @@ describe('callTdGraphQL', () => {
     const body = JSON.parse(opts.body as string)
     expect(body.query).toBe('query { x }')
     expect(body.variables).toEqual({ param: 42 })
+  })
+})
+
+describe('HALT Trackdéchets — TRACKDECHETS_API_URL de production', () => {
+  it('blocks the call with TdHaltError when pointed at production without the lift flag', async () => {
+    vi.stubEnv('TRACKDECHETS_API_URL', 'https://api.trackdechets.beta.gouv.fr/')
+    vi.stubEnv('TRACKDECHETS_HALT_LIFTED', '')
+
+    await expect(callTdGraphQL('token', '{ form }')).rejects.toThrowError(TdHaltError)
+    expect(mockFetch).not.toHaveBeenCalled()
+
+    vi.unstubAllEnvs()
+  })
+
+  it('allows the call when TRACKDECHETS_HALT_LIFTED=true', async () => {
+    vi.stubEnv('TRACKDECHETS_API_URL', 'https://api.trackdechets.beta.gouv.fr/')
+    vi.stubEnv('TRACKDECHETS_HALT_LIFTED', 'true')
+    mockFetch.mockResolvedValueOnce(makeResponse({ data: { x: 1 } }))
+
+    await expect(callTdGraphQL('token', '{ form }')).resolves.toEqual({ x: 1 })
+    expect(mockFetch).toHaveBeenCalledOnce()
+
+    vi.unstubAllEnvs()
+  })
+
+  it('never blocks the sandbox URL, lift flag or not', async () => {
+    vi.stubEnv('TRACKDECHETS_API_URL', 'https://sandbox.trackdechets.beta.gouv.fr/')
+    vi.stubEnv('TRACKDECHETS_HALT_LIFTED', '')
+    mockFetch.mockResolvedValueOnce(makeResponse({ data: { x: 1 } }))
+
+    await expect(callTdGraphQL('token', '{ form }')).resolves.toEqual({ x: 1 })
+
+    vi.unstubAllEnvs()
   })
 })
 

@@ -4,6 +4,15 @@ import { Worker, Queue, Job } from 'bullmq'
 import { createLogger }       from '@/lib/logger'
 import { getRedisClient }     from '@/lib/redisClient'
 import prisma                 from '@/lib/db'
+import { validateEnv }        from '@/lib/env'
+
+// purgeExpiredAuditLogs() below is also usable as a plain library function — validateEnv()
+// (which can process.exit) must only run when this file is genuinely the worker entry point,
+// same guard as isDirectRun further down (computed early since it's needed here too).
+const isMainEntry = process.argv[1]
+  ? /auditRetentionWorker\.(ts|js)$/.test(process.argv[1].replace(/\\/g, '/'))
+  : false
+if (isMainEntry) validateEnv()
 
 const log = createLogger('auditRetentionWorker')
 
@@ -60,11 +69,7 @@ async function main() {
   log.info(`Audit retention worker started (CRON 02:00 UTC, retention ${AUDIT_RETENTION_DAYS} days)`)
 }
 
-const isDirectRun = process.argv[1]
-  ? /auditRetentionWorker\.(ts|js)$/.test(process.argv[1].replace(/\\/g, '/'))
-  : false
-
-if (isDirectRun) {
+if (isMainEntry) {
   main().catch(err => {
     log.error('Worker crashed', { err: err instanceof Error ? err.message : String(err) })
     process.exit(1)
