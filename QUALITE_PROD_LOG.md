@@ -134,28 +134,67 @@ restent simplement à migrer) :
 
 ### Migration des routes — sous-ensemble réel et testé cette session
 
-**Fait** (voir commits) : *(rempli au fur et à mesure de la migration, section mise à jour dans
-un commit ultérieur — ne pas se fier à cette ligne seule pour l'état final, voir le rapport final
-de la mission pour le décompte exact)*
+**Fait** (4 commits, voir `git log` sur cette branche) :
+- `src/lib/data/{drivers,missions,exutoires}.ts` — les 3 fichiers qui centralisent l'essentiel
+  des lectures/écritures de ces modèles ; migrer ces 3 fichiers protège structurellement tout
+  ce qui passe par eux (`drivers/[id]/route.ts`, `missions/[id]/route.ts`, `exutoires/[id]/
+  route.ts` n'ont eu **aucune** modification à faire, ils délèguent déjà entièrement).
+- `src/app/api/{drivers,missions}/route.ts` — les 2 appels Prisma inline restants (vérification
+  de plafond de plan tenant + `archive-all`).
+- `src/app/api/vehicles/route.ts` + `vehicles/[id]/route.ts` — migration complète, **et un 4e
+  bug cross-tenant réel trouvé et corrigé au passage** (pas cherché spécifiquement, trouvé en
+  migrant) : `assignedDriverId` n'a aucune contrainte FK tenant-aware (`Driver.id` est
+  globalement unique), donc rien ne vérifiait qu'un id de chauffeur fourni dans le corps de la
+  requête appartenait bien au tenant courant avant de lier un véhicule dessus. Corrigé : les
+  deux routes vérifient désormais l'appartenance au tenant via `getTenantDb(tenantId).driver.
+  findFirst` avant de connecter, 422 sinon.
+- `src/lib/permissions.ts` — **délibérément non migré**, documenté inline dans le fichier :
+  `hasPermission(userId, role, permission)` filtre uniquement par `userId`, qui vient toujours
+  du contexte de requête vérifié par JWT (jamais fourni par le client) ; un `User` appartient à
+  exactement un tenant, donc ce filtre ne peut structurellement pas franchir une frontière de
+  tenant. Migrer aurait exigé de changer la signature de cette fonction sur ~40 sites d'appel
+  pour un gain de défense en profondeur sans faille réelle corrigée — jugé disproportionné.
 
-**Restant** : la majorité des 89 routes API + quelques fichiers `src/lib`/`src/workers`
-n'utilisant pas encore `getTenantDb`. Liste exacte des fichiers important encore `prisma`/
-`default` depuis `@/lib/db` en dehors de la liste blanche ci-dessus : reproductible avec
-`grep -rl "from '@/lib/db'" src/app/api src/lib src/workers --include="*.ts" | grep -v
-__tests__`, puis en retirant la liste blanche ci-dessus — migration mécanique (remplacer l'accès
-`prisma.<modèle>` par `getTenantDb(tenantId).<modèle>` pour tout modèle tenant-scoped, mettre à
-jour le mock `vi.mock('@/lib/db', ...)` du test associé en `vi.mock('@/lib/tenantDb', ...)`),
-mais à faire fichier par fichier pour vérifier quel identifiant de tenant est réellement en
-portée à chaque site d'appel — pas automatisable sans risque de régression silencieuse.
+**Nouveau test réel** : `src/app/api/__tests__/tenant-isolation.test.ts` — 4 tests qui exécutent
+les vrais handlers de route (`drivers` GET liste/par id, `vehicles` POST) contre la **vraie**
+extension `getTenantDb()` câblée à un faux client Prisma en mémoire (pas un mock de
+`getTenantDb` lui-même) : preuve de bout en bout — liste jamais polluée par l'autre tenant, 404
+sur lecture cross-tenant par id, et le bug `assignedDriverId` explicitement rejeté (+ cas
+positif : assignation intra-tenant toujours acceptée).
 
-### Règle ESLint — accès direct au client brut
+**Restant** (89 routes API totales − celles migrées ci-dessus, + quelques fichiers `src/lib`) :
+liste exacte reproductible avec `grep -rl "from '@/lib/db'" src/app/api src/lib src/workers
+--include="*.ts" | grep -v __tests__` — cette même liste, moins la liste blanche légitime, est
+maintenant **gelée dans `.eslintrc.json`** (voir section suivante) comme override explicite
+« en attente de migration », donc reproductible aussi en lisant ce fichier directement.
+Migration mécanique par fichier (remplacer `prisma.<modèle>` par `getTenantDb(tenantId).
+<modèle>`, mettre à jour le mock de test associé), mais chaque fichier doit être vérifié
+individuellement pour l'identifiant de tenant réellement en portée à chaque site d'appel — pas
+automatisable sans risque de régression silencieuse (deux formes de régression trouvées en le
+faisant à la main cette session : un test dont le mock `@/lib/db` ne fournissait pas l'export
+nommé `prisma` attendu par `tenantDb.ts`, et un test asserting `where.tenantId` littéralement,
+cassé une fois ce filtre déplacé dans l'extension).
 
-*(ajoutée avec la migration des routes, voir commit dédié — reste alignée avec la liste
-blanche légitime ci-dessus + un override explicite, distinctement commenté, pour les fichiers
-encore en attente de migration, afin de ne jamais casser le gate lint pendant que Phase 1 reste
-partielle)*
+### Règle ESLint — accès direct au client brut (`.eslintrc.json`)
+
+`no-restricted-imports` interdit `import ... from '@/lib/db'` partout, avec un message pointant
+vers `getTenantDb`/`unscopedPrisma`. Deux groupes d'exceptions, **distincts et non ambigus** :
+1. Liste blanche légitime (accès cross-tenant par conception — webhooks, superadmin, workers
+   batch, `permissions.ts`, health check) — ne changera jamais.
+2. Override « en attente de migration » — la liste exacte des fichiers non encore migrés listée
+   ci-dessus. **Doit rétrécir à mesure que Phase 1 continue** ; une régression (fichier migré
+   puis quelqu'un réintroduit un import brut) serait immédiatement détectée par lint, puisque
+   retirer un fichier de cette liste sans le migrer casse le gate.
+
+Piège rencontré en l'écrivant : les segments de route dynamiques Next.js (`[id]`) contiennent
+des crochets littéraux, que `minimatch` (utilisé par ESLint pour les globs `files`) interprète
+comme une classe de caractères plutôt que du texte littéral — `src/app/api/clients/[id]/
+route.ts` en tant que glob ne matchait jamais le vrai chemin de fichier. Corrigé en remplaçant
+le segment `[id]` par un wildcard `*` (matche le même unique segment de chemin, sans ambiguïté
+de classe de caractères) — plus simple et plus robuste qu'échapper les crochets (`\\[id\\]`
+n'est de toute façon pas un échappement JSON valide dans un fichier `.eslintrc.json`).
 
 ### RLS PostgreSQL — conception évaluée, non implémentée (comme demandé)
 
-Voir section dédiée dans `docs/authentification-securite.md` (ajoutée en Phase 9/1) : faisabilité
+Voir section dédiée ajoutée dans `docs/authentification-securite.md` §14 (Phase 9) : faisabilité
 avec `@prisma/adapter-pg`, coût perf, plan de migration.

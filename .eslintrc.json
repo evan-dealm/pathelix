@@ -8,14 +8,21 @@
     "no-var": "warn",
     "eqeqeq": ["warn", "always"],
     "curly": ["warn", "multi-line"],
-    "no-throw-literal": "warn"
+    "no-throw-literal": "warn",
+    "no-restricted-imports": ["error", {
+      "paths": [{
+        "name": "@/lib/db",
+        "message": "Direct access to the raw Prisma client bypasses tenant isolation. Import getTenantDb(tenantId) from '@/lib/tenantDb' for tenant-scoped models, or unscopedPrisma from the same file for the reviewed cross-tenant whitelist (see QUALITE_PROD_LOG.md 'Phase 1'). If this file is genuinely on that whitelist, add it to the matching override in .eslintrc.json instead of importing @/lib/db directly."
+      }]
+    }]
   },
   "overrides": [
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
       "rules": {
         "no-console": "off",
-        "no-unused-vars": "off"
+        "no-unused-vars": "off",
+        "no-restricted-imports": "off"
       }
     },
     {
@@ -24,6 +31,92 @@
         "no-unused-vars": "off",
         "no-console": "off"
       }
+    },
+    {
+      "files": [
+        "src/app/api/webhooks/**/route.ts",
+        "src/app/api/superadmin/**/route.ts",
+        "src/app/api/health/route.ts",
+        "src/lib/permissions.ts",
+        "src/lib/superadminAudit.ts",
+        "src/workers/auditRetentionWorker.ts",
+        "src/workers/recurringMissionsWorker.ts"
+      ],
+      "rules": { "no-restricted-imports": "off" }
+    },
+    {
+      "files": [
+        "src/app/api/admin/geocoding-audit/route.ts",
+        "src/app/api/ai/callback/route.ts",
+        "src/app/api/ai/jobs/*/route.ts",
+        "src/app/api/ai/jobs/route.ts",
+        "src/app/api/ai/ocr/route.ts",
+        "src/app/api/api-keys/route.ts",
+        "src/app/api/audit/route.ts",
+        "src/app/api/auth/change-password/route.ts",
+        "src/app/api/benchmark/route.ts",
+        "src/app/api/clients/*/route.ts",
+        "src/app/api/clients/route.ts",
+        "src/app/api/delivery-proof/route.ts",
+        "src/app/api/driver-list/route.ts",
+        "src/app/api/driver-photos/route.ts",
+        "src/app/api/driver-plan/*/route.ts",
+        "src/app/api/drivers/compliance/route.ts",
+        "src/app/api/driver-status/route.ts",
+        "src/app/api/driver-status/update/route.ts",
+        "src/app/api/driver-unavailability/*/route.ts",
+        "src/app/api/driver-unavailability/route.ts",
+        "src/app/api/features/route.ts",
+        "src/app/api/fuel-records/*/route.ts",
+        "src/app/api/fuel-records/route.ts",
+        "src/app/api/history/*/route.ts",
+        "src/app/api/history/route.ts",
+        "src/app/api/holidays/*/route.ts",
+        "src/app/api/holidays/route.ts",
+        "src/app/api/import/route.ts",
+        "src/app/api/incidents/route.ts",
+        "src/app/api/integrations/route.ts",
+        "src/app/api/kpi-history/route.ts",
+        "src/app/api/maintenance/*/route.ts",
+        "src/app/api/maintenance/route.ts",
+        "src/app/api/mission-comments/*/route.ts",
+        "src/app/api/mission-comments/route.ts",
+        "src/app/api/missions/*/proof/route.ts",
+        "src/app/api/navigation/route.ts",
+        "src/app/api/onboarding/route.ts",
+        "src/app/api/optimize/live/route.ts",
+        "src/app/api/optimize/resequence/route.ts",
+        "src/app/api/optimize/route.ts",
+        "src/app/api/permissions/route.ts",
+        "src/app/api/plans/p1-risk/route.ts",
+        "src/app/api/plans/route.ts",
+        "src/app/api/push/notify/route.ts",
+        "src/app/api/push/subscribe/route.ts",
+        "src/app/api/redistribute/route.ts",
+        "src/app/api/reports/co2/route.ts",
+        "src/app/api/reports/pdf/route.ts",
+        "src/app/api/reports/route.ts",
+        "src/app/api/settings/route.ts",
+        "src/app/api/site-products/*/route.ts",
+        "src/app/api/site-products/route.ts",
+        "src/app/api/sites/*/route.ts",
+        "src/app/api/sites/route.ts",
+        "src/app/api/templates/*/route.ts",
+        "src/app/api/templates/route.ts",
+        "src/app/api/tours/pdf/route.ts",
+        "src/app/api/tracking/route.ts",
+        "src/app/api/users/*/reset-password/route.ts",
+        "src/app/api/users/*/route.ts",
+        "src/app/api/users/route.ts",
+        "src/app/api/weekly-plan/route.ts",
+        "src/lib/audit.ts",
+        "src/lib/data/customTrades.ts",
+        "src/lib/delayScoring.ts",
+        "src/lib/demandPrediction.ts",
+        "src/lib/featureFlags.ts",
+        "src/lib/metricCollector.ts"
+      ],
+      "rules": { "no-restricted-imports": "off" }
     }
   ],
   "ignorePatterns": ["src/generated/**"]
