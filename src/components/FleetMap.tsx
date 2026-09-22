@@ -301,9 +301,12 @@ function FleetMapInner({
       id: MISSIONS_LABEL_LAYER, type: 'symbol', source: MISSIONS_SOURCE,
       layout: {
         'text-field': ['get', 'emoji'],
-        'text-size': [
-          'case', ['boolean', ['feature-state', 'hovered'], false], 16, 11,
-        ],
+        // `text-size` is a layout property — layout properties cannot read feature-state
+        // (only paint properties can; confirmed via a real MapLibre 'error' event during
+        // Investigation 2, see MIGRATION_MAPLIBRE_LOG.md). Kept constant; the circle
+        // layer's radius/stroke-width (paint properties, feature-state-driven) already
+        // carry the hover feedback.
+        'text-size': 13,
         'text-allow-overlap': true, 'text-ignore-placement': true,
       },
       paint: { 'text-opacity': ['get', 'fillOpacity'] },
@@ -586,7 +589,7 @@ function FleetMapInner({
   }, [map, isStyleLoaded, livePositions, drivers])
 
   return (
-    <div className="relative w-full h-full" role="application" aria-label="Carte de la flotte">
+    <div className="relative w-full h-full" role="application" aria-label="Carte de la flotte" data-maplibre-loaded={isStyleLoaded}>
       {!isStyleLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#09090f] text-gray-600 text-sm z-10 pointer-events-none">
           Chargement carte…

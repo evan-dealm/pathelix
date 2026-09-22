@@ -93,6 +93,7 @@ vi.mock('maplibre-gl', () => ({
   NavigationControl:  vi.fn(function NavigationControl() { return {} }),
   AttributionControl: vi.fn(function AttributionControl() { return {} }),
   ScaleControl:       vi.fn(function ScaleControl() { return {} }),
+  setWorkerUrl:       vi.fn(),
 }))
 
 const { default: FleetMap } = await import('@/components/FleetMap')

@@ -5,10 +5,11 @@ import { createRef } from 'react'
 
 // A minimal but behaviorally faithful fake of the maplibre-gl surface this hook touches.
 // Kept self-contained in this file (project convention: inline vi.mock, no shared __mocks__).
-const addControlMock = vi.fn()
+const addControlMock  = vi.fn()
 const removeMock      = vi.fn()
-const resizeMock       = vi.fn()
-const onMock            = vi.fn()
+const resizeMock      = vi.fn()
+const onMock          = vi.fn()
+const setWorkerUrlMock = vi.fn()
 
 class FakeMap {
   static lastInstance: FakeMap | null = null
@@ -47,6 +48,7 @@ vi.mock('maplibre-gl', () => ({
   NavigationControl:   vi.fn(function NavigationControl() { return {} }),
   AttributionControl:  vi.fn(function AttributionControl() { return {} }),
   ScaleControl:        vi.fn(function ScaleControl() { return {} }),
+  setWorkerUrl:        setWorkerUrlMock,
 }))
 
 // Imported after the mock so it picks up the faked module.
@@ -73,6 +75,19 @@ function containerRefWithDiv() {
 }
 
 describe('useMapLibreMap', () => {
+  // Regression test for the real bug found in MIGRATION_MAPLIBRE_LOG.md "Investigation 2":
+  // maplibre-gl's own worker-URL auto-resolution (`import.meta.url`-based) silently breaks
+  // once re-bundled by Next.js's webpack — no error, no console warning, the map's 'load'
+  // event just never fires because its tile-loading Worker never runs real code. The fix is
+  // this one call, made before any Map is constructed; this test exists so a future refactor
+  // that accidentally removes it fails loudly here instead of silently hanging in production.
+  it('calls maplibregl.setWorkerUrl with the statically-served worker script before creating any map', () => {
+    const ref = containerRefWithDiv()
+    renderHook(() => useMapLibreMap(ref, { center: [2.3, 46.8], zoom: 10 }))
+
+    expect(setWorkerUrlMock).toHaveBeenCalledWith('/maplibre-gl-worker.mjs')
+  })
+
   it('creates the map with the given center/zoom and the shared pitch/bearing defaults', () => {
     const ref = containerRefWithDiv()
     renderHook(() => useMapLibreMap(ref, { center: [6.068, 46.310], zoom: 11 }))

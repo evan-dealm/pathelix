@@ -132,5 +132,5 @@ export function LiveTrackingMap({ positions, drivers, height = '300px' }: Props)
     } catch { /* invalid bounds (e.g. single identical point) — keep current view */ }
   }, [map, isStyleLoaded, activePositions])
 
-  return <div ref={containerRef} style={{ height, width: '100%', borderRadius: '12px' }} />
+  return <div ref={containerRef} style={{ height, width: '100%', borderRadius: '12px' }} data-maplibre-loaded={isStyleLoaded} />
 }
