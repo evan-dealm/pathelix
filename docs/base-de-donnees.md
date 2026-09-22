@@ -1,8 +1,9 @@
 # Pathélix — Base de données
 
 > Schéma, modèles, relations, migrations. Vérifié directement contre `prisma/schema.prisma`
-> le 2026-09-21 (33 modèles, 4 énumérations — des documents antérieurs du projet mentionnaient
-> 30 modèles / 3 énumérations, chiffre obsolète, corrigé ici).
+> le 2026-09-22 (34 modèles, 4 énumérations, recompté après l'ajout du modèle `IdempotencyKey`
+> lors de la mission qualité production — des documents antérieurs du projet mentionnaient
+> 30 modèles / 3 énumérations, chiffre déjà obsolète avant cet ajout, corrigé ici).
 
 ## 1. Généralités
 
@@ -15,11 +16,13 @@ PostgreSQL** — chaque requête Prisma doit filtrer explicitement par `tenantId
 l'invariant de sécurité le plus important du projet (voir
 [authentification-securite.md](authentification-securite.md)).
 
-Migrations : `prisma/migrations/` — 19 migrations au 2026-09-21. Toujours `npx prisma migrate
-dev` pour un changement de schéma en développement, `npx prisma migrate deploy` en production
-(après sauvegarde, voir [deploiement.md](deploiement.md)).
+Migrations : `prisma/migrations/` — 19 migrations au 2026-09-22 (dont `20260922193350_add_
+idempotency_key`, ajoutée lors de la mission qualité production — voir §4 et
+`QUALITE_PROD_LOG.md` "Phase 3"). Toujours `npx prisma migrate dev` pour un changement de schéma
+en développement, `npx prisma migrate deploy` en production (après sauvegarde, voir
+[deploiement.md](deploiement.md)).
 
-## 2. Modèles (33)
+## 2. Modèles (34)
 
 ```
 Tenant (1)
@@ -40,13 +43,14 @@ Tenant (1)
   ├─ ApiKey (N) · PushSubscription (N) · Holiday (N) · Integration (N)
   ├─ DriverPosition (N)
   ├─ AiJob (N)                ← jobs OCR
-  ├─ CustomTrade (N)          ← secteurs personnalisés au-delà des 6 intégrés
+  ├─ CustomTrade (N)          ← secteurs personnalisés au-delà des 6 intégrés, GLOBAL (pas de tenantId)
   ├─ TrackdechetsAccount (N)  ← token chiffré AES-256-GCM
-  └─ Bsd (N)
+  ├─ Bsd (N)
+  └─ IdempotencyKey (N)       ← rejeu des actions chauffeur hors-ligne, purge 48h (voir authentification-securite.md §13)
 ```
 
 Modèles listés ici tels qu'ils existent réellement dans `prisma/schema.prisma` au
-2026-09-21 — ne pas se fier à un diagramme d'un document antérieur sans revérifier contre le
+2026-09-22 — ne pas se fier à un diagramme d'un document antérieur sans revérifier contre le
 schéma si une divergence est suspectée.
 
 ## 3. Énumérations (4)

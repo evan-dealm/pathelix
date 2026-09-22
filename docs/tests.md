@@ -1,6 +1,6 @@
 # Pathélix — Tests
 
-> Organisation, exécution, couverture. Vérifié contre une exécution réelle le 2026-09-21.
+> Organisation, exécution, couverture. Vérifié contre une exécution réelle le 2026-09-22.
 
 ## 1. Commandes
 
@@ -11,12 +11,17 @@ npm run test:coverage  # Avec couverture
 npx playwright test    # E2E (serveur :3000 requis)
 ```
 
-## 2. État actuel (2026-09-21, après le fix undo/redo de cette session)
+## 2. État actuel (2026-09-22, après la mission "mise en qualité production")
 
-- **205 fichiers**, **3582 tests unitaires** (Vitest), 100% verts
-- **31 specs E2E** (Playwright, `e2e/*.spec.ts`) — voir §4 pour le détail d'exécution
+- **215 fichiers**, **3867 tests unitaires** (Vitest), 100% verts
+- **34 specs E2E** (Playwright, `e2e/*.spec.ts`) — voir §4 pour le détail d'exécution
 - Typecheck (`tsc --noEmit`) : 0 erreur
 - Lint (`next lint`) : 0 warning/erreur
+
+Historique récent des chiffres, pour contexte (ne pas s'y fier pour l'état courant — toujours
+relancer `npx vitest run` et compter le nombre de specs `e2e/*.spec.ts` directement) :
+199 fichiers/3523 tests (avant 2026-09-21) → 205/3582 (audit du 2026-09-21) → 211/3619
+(migration MapLibre, même journée) → 215/3867 (mission qualité production, 2026-09-22).
 
 ## 3. Règles impératives
 
@@ -61,7 +66,7 @@ protégés.
 
 - **`/api/tours/pdf` et probablement `/api/reports/pdf`** : 500 systématique en production
   (dual package hazard `@react-pdf/renderer` sous le bundler serveur Next.js — voir
-  `TEST_MANUEL_PROGRESSION.md` bug #2). Les tests unitaires mockent le rendu PDF et ne
+  [problemes-connus.md](problemes-connus.md)). Les tests unitaires mockent le rendu PDF et ne
   détectent pas ce type de problème d'intégration bundler ; seul un vrai build de production
   testé en conditions réelles l'a révélé. Non corrigé — nécessite une refonte architecturale
   (worker dédié hors process Next, à l'image de `vrpWorker.ts`), documentée comme limitation
@@ -78,6 +83,6 @@ protégés.
   omet un champ affiché par le tableau) ne sont, par construction, pas détectables par des
   tests unitaires qui mockent `fetch`/Prisma avec des réponses toujours `ok:true` — seul un
   test manuel ou E2E contre une vraie DB et un vrai build les révèle. Onze bugs de cette
-  nature ont été trouvés ainsi lors de la session de test manuel du 16 août 2026
-  (`TEST_MANUEL_PROGRESSION.md`), dont plusieurs déjà corrigés (voir commits `e39bccd`,
-  `ea48707`, `8c2031d`, `2dbfb27`, `c00ecdb`, `7215ed8`).
+  nature ont été trouvés ainsi lors de la session de test manuel du 16 août 2026, dont
+  plusieurs déjà corrigés (voir commits `e39bccd`, `ea48707`, `8c2031d`, `2dbfb27`, `c00ecdb`,
+  `7215ed8`) — reste ouvert : [problemes-connus.md](problemes-connus.md).

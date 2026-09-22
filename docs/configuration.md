@@ -121,12 +121,14 @@ l'authentification — voir [authentification-securite.md](authentification-secu
 | `LOAD_MAX_CONCURRENT` | 100 | Requêtes concurrentes avant délestage |
 | `LOAD_NORMAL_THRESHOLD` | 50 | Seuil de début de throttling |
 | `LOAD_THROTTLE_MS` | 500 | Délai de throttle sous charge |
-| `SSE_MAX_CONNECTIONS_PER_TENANT` | 200 en usage réel (`.env.example` documente 50 comme valeur de départ historique — voir note ci-dessous) | Connexions SSE simultanées par tenant |
+| `SSE_MAX_CONNECTIONS_PER_TENANT` | 200 (code et `.env.example` alignés depuis 2026-09-22 — voir note ci-dessous) | Connexions SSE simultanées par tenant |
 
-> **Note** : la valeur par défaut codée dans `.env.example` (50) est la valeur d'origine ;
-> elle a été relevée à 200 en usage réel lors du dimensionnement à 150 chauffeurs (voir
-> [deploiement.md](deploiement.md) §8) pour éviter un blocage dès le 51e chauffeur connecté —
-> mettre `SSE_MAX_CONNECTIONS_PER_TENANT=200` explicitement en production.
+> **Note** : `.env.example` documentait encore 50 (la valeur d'origine, avant le dimensionnement
+> à 150 chauffeurs — voir [deploiement.md](deploiement.md) §3 — qui l'a relevée à 200 en usage
+> réel pour éviter un blocage dès le 51e chauffeur connecté) alors que le code par défaut était
+> déjà 200 : quiconque copiait `.env.example` tel quel obtenait silencieusement l'ancienne
+> valeur, pas celle validée en charge. Corrigé le 2026-09-22 — `.env.example` documente
+> désormais 200 directement.
 
 ## Autres
 

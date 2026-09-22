@@ -9,7 +9,7 @@ Stack: Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prism
 
 ## Critical invariants — never break these
 
-1. **Multi-tenant isolation**: every Prisma query must filter by `tenantId`. No cross-tenant data leaks.
+1. **Multi-tenant isolation**: use `getTenantDb(tenantId)` from `src/lib/tenantDb.ts` for every tenant-scoped model — it injects `tenantId` structurally (Prisma Client Extension), rather than relying on each call site to remember `where: { tenantId }` by hand. Migration in progress (see `QUALITE_PROD_LOG.md` "Phase 1" for exactly which files still use the raw client) — `.eslintrc.json`'s `no-restricted-imports` bans importing `@/lib/db` directly outside a reviewed whitelist, and fails the lint gate if a migrated file regresses. Raw `prisma`/`unscopedPrisma` access is reserved for the documented cross-tenant whitelist (webhooks resolving tenant by secret, superadmin routes, batch workers, health checks) — never for a normal tenant-scoped query.
 2. **Auth header chain**: middleware strips `x-user-id`, `x-user-role`, `x-tenant-id` from inbound requests then re-injects them from the verified JWT. Route handlers read context only via `getRequestContext(req)` in `src/lib/data/context.ts` — never `req.headers.get('x-user-role')` directly.
 3. **CSP canonical source**: `next.config.mjs` is the single source of truth for all security headers. Do not add security headers in `middleware.ts`.
 4. **Mock mode flag**: `process.env.USE_MOCK_DATA !== 'false'` (default ON). All API routes must use this pattern, not `=== 'true'`.
@@ -23,7 +23,10 @@ Stack: Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prism
 | `src/middleware.ts` | Route guard: strips spoofed headers, verifies JWT, RBAC by role |
 | `src/lib/session.ts` | JWT HMAC-SHA256 sign/verify, `SessionPayload` interface |
 | `src/lib/data/context.ts` | `getRequestContext(req)` — canonical way to read tenantId + role |
-| `src/lib/db.ts` | Prisma singleton with PrismaPg adapter (pool from `DB_POOL_SIZE`) |
+| `src/lib/db.ts` | Prisma singleton with PrismaPg adapter (pool from `DB_POOL_SIZE`) — raw client, see invariant #1 |
+| `src/lib/tenantDb.ts` | `getTenantDb(tenantId)` — the tenant-scoped Prisma Client Extension, see invariant #1 |
+| `src/lib/env.ts` | Zod env validation, called from `instrumentation.ts` + every BullMQ worker — hard-fails on prod+mock or a short `SESSION_SECRET` |
+| `src/lib/idempotency.ts` | `withIdempotency()` — replays a stored response for a repeated `Idempotency-Key`, used by the offline driver queue |
 | `src/lib/schemas.ts` | Shared Zod schemas (Mission, Driver, Vehicle, Exutoire, Plan…) |
 | `src/lib/rateLimit.ts` | Redis sliding-window rate limiter + in-memory fallback |
 | `src/lib/permissions.ts` | Granular permission check, 60s cache, `ALL_PERMISSIONS` list |
@@ -36,7 +39,7 @@ Stack: Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prism
 | `src/stores/planningStore.ts` | Central Zustand store for planning state |
 | `src/app/admin/page.tsx` | Admin UI (13+ tabs) |
 | `src/app/driver/[id]/page.tsx` | Mobile driver interface |
-| `prisma/schema.prisma` | 30 models, 3 enums, full index set |
+| `prisma/schema.prisma` | 34 models, 4 enums, full index set |
 | `next.config.mjs` | CSP, HSTS, security headers, Sentry config |
 
 ## Auth model
@@ -154,3 +157,19 @@ npx prisma studio              # DB GUI
 - **T1** `src/lib/importExportColumns.ts` — 7 typed interfaces, type predicates replacing `filter(Boolean)`
 - **A2** CSP consolidated to `next.config.mjs`, `applySecurityHeaders()` removed from middleware
 - **Phase 4** `src/types/maplibre-gl.d.ts` removed (dead type stub, package not installed)
+
+## What was audited and fixed (September 2026 — mise en qualité production)
+
+- **Q1** `src/app/api/vehicles/route.ts`/`[id]/route.ts` — `assignedDriverId` had no tenant-aware
+  FK, a driver id from another tenant could be linked to a vehicle unverified. Now checked via
+  `getTenantDb(tenantId).driver.findFirst` before connecting.
+- **Q2** `src/lib/env.ts` — production startup now hard-fails if `USE_MOCK_DATA !== 'false'`
+  (previously unchecked); all 4 BullMQ workers call `validateEnv()` at startup.
+- **Q3** `src/lib/trackdechets/client.ts` — Trackdéchets HALT moved from documentation
+  convention to an actual code gate (`TdHaltError`), see `docs/deploiement.md` §5.
+- **Q4** `src/lib/syncQueue.ts` / `public/sw.js` — N23 sync-queue race fixed with the Web Locks
+  API (shared lock between page and Service Worker); offline driver actions are now idempotent
+  (`src/lib/idempotency.ts`, new `IdempotencyKey` model) — a replayed action no longer
+  double-fires ERP sync / duplicates an audit log row.
+- Full detail, decisions, and what's still open (Phases 4-8 of that mission largely untouched):
+  `QUALITE_PROD_LOG.md`.

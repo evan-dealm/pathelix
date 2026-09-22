@@ -82,7 +82,7 @@ permissions totalement inertes pour ce rôle (leur onglet cible est bloqué en a
 gating client trouvé — **le backend reste correctement protégé** (`manage_missions` vérifié en
 code : `missions/route.ts` retourne 403), donc pas de faille de sécurité, seulement une UX
 trompeuse (bouton actif qui échoue silencieusement au lieu d'être grisé). Détail complet et
-méthode de vérification : `TEST_MANUEL_PROGRESSION.md` section D à la racine. Non corrigé
+méthode de vérification : [problemes-connus.md](problemes-connus.md). Non corrigé
 intentionnellement — refonte UX/produit, pas un bug ponctuel, nécessite une décision produit
 sur l'ampleur du gating souhaité.
 

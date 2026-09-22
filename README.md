@@ -20,6 +20,7 @@ La documentation complète vit dans [`docs/`](docs/) :
 9. **[docs/tests.md](docs/tests.md)** — organisation des tests, comment les lancer, ce qui n'est pas couvert
 10. **[docs/deploiement.md](docs/deploiement.md)** — build, déploiement, runbook d'incidents, HALT Trackdéchets
 11. **[docs/audit-2026-09-21.md](docs/audit-2026-09-21.md)** — synthèse de l'audit complet le plus récent
+12. **[docs/problemes-connus.md](docs/problemes-connus.md)** — ce qui est cassé/incomplet aujourd'hui, volontairement
 
 `CLAUDE.md` (racine) est un fichier séparé — instructions opérationnelles pour les sessions
 Claude Code, pas de la documentation produit. Il n'est pas remplacé par ces fichiers.
