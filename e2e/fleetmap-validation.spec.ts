@@ -46,17 +46,19 @@ async function grabMapHandle(page: import('@playwright/test').Page) {
 test.describe('FleetMap — full-data validation (real tenant, real tournée)', () => {
   test('renders drivers, missions, routes, interactions and heatmap correctly against real data', async ({ page }) => {
     const consoleErrors: string[] = []
-    const fontGlyph404s: string[] = []
-    page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()) })
+    const failedResponses: string[] = []
+    const cspViolations: string[] = []
+    page.on('console', msg => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.text().includes('Content Security Policy')) cspViolations.push(msg.text())
+    })
     page.on('pageerror', err => consoleErrors.push(err.message))
-    // OpenFreeMap's public font/glyph server (tiles.openfreemap.org/fonts/...) does not have
-    // full emoji coverage for every Unicode range — mission markers use literal emoji as
-    // text-field (['get', 'emoji']), and MapLibre 404s fetching the .pbf glyph range for
-    // codepoints it can't serve, then falls back to a visible-but-glyphless box. Pre-existing
-    // third-party style/font-server limitation, unrelated to this migration's own bug (the
-    // worker-URL/middleware fix documented in MIGRATION_MAPLIBRE_LOG.md "Investigation 2") —
-    // tracked separately, not silently ignored: see that file's "Known residual issue" note.
-    page.on('response', res => { if (res.status() === 404 && res.url().includes('tiles.openfreemap.org/fonts/')) fontGlyph404s.push(res.url()) })
+    // Mission emoji are now rendered via registered icon-image (not a text-field glyph — see
+    // MIGRATION_MAPLIBRE_LOG.md "Investigation 3"), so no 404 is expected from OpenFreeMap's
+    // font server at all. Track every 4xx/5xx response with zero tolerance below.
+    page.on('response', res => {
+      if (res.status() >= 400) failedResponses.push(`${res.status()} ${res.url()}`)
+    })
 
     // The 'chromium' project preloads a storageState session cookie for a DIFFERENT tenant
     // (excoffier-test, from e2e/global-setup.ts) — login()'s early-return-if-already-has-a-
@@ -128,6 +130,27 @@ test.describe('FleetMap — full-data validation (real tenant, real tournée)', 
     expect(missionOneCoords![0]).toBeCloseTo(MISSION_ONE.lng, 2)
     expect(missionOneCoords![1]).toBeCloseTo(MISSION_ONE.lat, 2)
 
+    // ── 2b. Mission emoji are genuinely rendered as icon-image, not blank text-field glyphs ──
+    // See MIGRATION_MAPLIBRE_LOG.md "Investigation 3": OpenFreeMap's font server has no emoji
+    // coverage, so a literal emoji text-field renders as an empty box. Proof requires both that
+    // the image was actually registered (map.hasImage) AND that the rendered features reference
+    // it via icon-image (queryRenderedFeatures) — either alone could pass on a stale/half-wired
+    // setup.
+    const iconProof = await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const map = (window as any).__e2eMap
+      const features = map.queryRenderedFeatures(undefined, { layers: ['fleetmap-missions-circle'] })
+      const emojis = [...new Set(features.map((f: { properties: { emoji: string } }) => f.properties.emoji))] as string[]
+      return {
+        emojis,
+        allRegistered: emojis.every(e => map.hasImage(e)),
+        iconImageLayout: map.getLayoutProperty('fleetmap-missions-label', 'icon-image'),
+      }
+    })
+    expect(iconProof.emojis.length, 'Expected at least one mission emoji in the rendered data').toBeGreaterThan(0)
+    expect(iconProof.allRegistered, `Not all rendered emoji are registered images: ${JSON.stringify(iconProof.emojis)}`).toBe(true)
+    expect(iconProof.iconImageLayout).toEqual(['get', 'emoji'])
+
     // ── 3. Route line rendered for Alice's tournée ──────────────────────────────────────────
     const routeFeatureCount = await page.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -196,18 +219,11 @@ test.describe('FleetMap — full-data validation (real tenant, real tournée)', 
     const canvasWidthAfter = await getCanvasWidth()
     expect(canvasWidthAfter).not.toBe(canvasWidthBefore)
 
-    // ── 9. Zero real console/page errors across the whole scenario ─────────────────────────
-    // Swallow exactly as many generic "Failed to load resource...404" console lines as we
-    // independently confirmed (via the response listener above) came from OpenFreeMap's font
-    // glyph server — never more. Any 404/error beyond that known, counted, documented set
-    // still fails the test; this is not a blanket text-match that could hide a real future bug.
-    const GENERIC_RESOURCE_404 = 'Failed to load resource: the server responded with a status of 404 ()'
-    let explainedBy404 = fontGlyph404s.length
-    const realErrors = consoleErrors.filter(e => {
-      if (e.includes('favicon') || e.includes('ERR_BLOCKED_BY_CLIENT')) return false
-      if (e === GENERIC_RESOURCE_404 && explainedBy404 > 0) { explainedBy404--; return false }
-      return true
-    })
-    expect(realErrors, `Console/page errors during the full validation scenario:\n${realErrors.join('\n')}`).toEqual([])
+    // ── 9. Zero console/page errors, zero failed responses, zero CSP violations ────────────
+    // No exclusion filter of any kind — the font-glyph 404 that used to be counted and swallowed
+    // here is fixed (see the icon-image proof above), so nothing is expected to fail anymore.
+    expect(consoleErrors, `Console/page errors during the full validation scenario:\n${consoleErrors.join('\n')}`).toEqual([])
+    expect(failedResponses, `Failed (4xx/5xx) responses during the full validation scenario:\n${failedResponses.join('\n')}`).toEqual([])
+    expect(cspViolations, `CSP violations during the full validation scenario:\n${cspViolations.join('\n')}`).toEqual([])
   })
 })

@@ -8,6 +8,7 @@ import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
 import { useMapLibreMap } from '@/hooks/useMapLibreMap'
 import { toLngLat } from '@/lib/maplibre/coords'
 import { escapeHtml } from '@/lib/maplibre/escapeHtml'
+import { ensureEmojiImage, installEmojiImageFallback } from '@/lib/maplibre/emojiIcon'
 import type { Driver, Exutoire } from '@/lib/types'
 import { MISSION_TYPE_HEX } from '@/lib/types'
 import { useTrade } from '@/providers/TradeProvider'
@@ -297,19 +298,26 @@ function FleetMapInner({
         'circle-stroke-opacity': ['get', 'strokeOpacity'],
       },
     })
+    // Mission emoji are rendered as `icon-image`, not `text-field`: OpenFreeMap's font glyph
+    // server has zero pictographic coverage, so a literal emoji in text-field 404s per Unicode
+    // range and renders blank (see MIGRATION_MAPLIBRE_LOG.md, "Investigation 3"). Each emoji is
+    // canvas-drawn and registered via `ensureEmojiImage` before it's ever referenced here (in
+    // the mission-data effect below); `installEmojiImageFallback` is the safety net for any
+    // gap between the two.
+    installEmojiImageFallback(map)
     map.addLayer({
       id: MISSIONS_LABEL_LAYER, type: 'symbol', source: MISSIONS_SOURCE,
       layout: {
-        'text-field': ['get', 'emoji'],
-        // `text-size` is a layout property — layout properties cannot read feature-state
+        'icon-image': ['get', 'emoji'],
+        // `icon-size` is a layout property — layout properties cannot read feature-state
         // (only paint properties can; confirmed via a real MapLibre 'error' event during
         // Investigation 2, see MIGRATION_MAPLIBRE_LOG.md). Kept constant; the circle
         // layer's radius/stroke-width (paint properties, feature-state-driven) already
         // carry the hover feedback.
-        'text-size': 13,
-        'text-allow-overlap': true, 'text-ignore-placement': true,
+        'icon-size': 1,
+        'icon-allow-overlap': true, 'icon-ignore-placement': true,
       },
-      paint: { 'text-opacity': ['get', 'fillOpacity'] },
+      paint: { 'icon-opacity': ['get', 'fillOpacity'] },
     })
 
     const tooltip = tooltipPopup()
@@ -440,6 +448,8 @@ function FleetMapInner({
       }
     }
     missionIdToFeatureId.current = idMap
+    const uniqueEmojis = new Set(features.map(f => (f.properties as { emoji: string }).emoji))
+    for (const e of uniqueEmojis) ensureEmojiImage(map, e)
     source.setData({ type: 'FeatureCollection', features })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, isStyleLoaded, drivers, calcResults, driverIndex, isolated, hasIsolation, tradeMissionIcon])

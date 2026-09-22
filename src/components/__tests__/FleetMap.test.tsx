@@ -32,6 +32,8 @@ class FakeMap {
   setLayoutProperty = setLayoutPropertyMock
   setFeatureState   = setFeatureStateMock
   getCanvas = () => ({ style: {} as Record<string, string> })
+  hasImage = vi.fn(() => false)
+  addImage = vi.fn()
 
   on(event: string, arg2: unknown, arg3?: unknown) {
     if (typeof arg2 === 'string' && typeof arg3 === 'function') {
