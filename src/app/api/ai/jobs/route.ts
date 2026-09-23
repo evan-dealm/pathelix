@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/ai/jobs')
 
@@ -14,9 +14,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '50', 10) || 50, 100)
 
   try {
-    const jobs = await prisma.aiJob.findMany({
+    const jobs = await getTenantDb(tenantId).aiJob.findMany({
       where: {
-        tenantId,
         ...(statusFilter ? { status: statusFilter } : {}),
       },
       orderBy: { createdAt: 'desc' },

@@ -6,7 +6,7 @@ import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { hasPermission }             from '@/lib/permissions'
 import { auditAsync }                from '@/lib/audit'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/users/[id]')
 type Params = { params: Promise<{ id: string }> }
@@ -22,8 +22,8 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   const tenantId = getTenantId(req)
 
   try {
-    const user = await prisma.user.findFirst({
-      where: { id, tenantId },
+    const user = await getTenantDb(tenantId).user.findFirst({
+      where: { id },
       select: selectWithoutPassword,
     })
     if (!user) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
@@ -54,7 +54,8 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   }
 
   try {
-    const existing = await prisma.user.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.user.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
 
     const { password, ...rest } = parsed.data
@@ -63,8 +64,8 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       data.passwordHash = await bcrypt.hash(password, 12)
     }
 
-    const user = await prisma.user.update({
-      where: { id, tenantId },
+    const user = await db.user.update({
+      where: { id },
       data,
       select: selectWithoutPassword,
     })
@@ -94,10 +95,11 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   }
 
   try {
-    const existing = await prisma.user.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.user.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
 
-    await prisma.user.delete({ where: { id, tenantId } })
+    await db.user.delete({ where: { id } })
     log.warn('User deleted', { deletedUserId: id, deletedEmail: existing.email, deletedBy: userId, tenantId })
     auditAsync(req, 'user.delete', 'User', id, { email: existing.email, role: existing.role })
 

@@ -5,7 +5,7 @@ import { createLogger }              from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { createRateLimiter }         from '@/lib/rateLimit'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/users/[id]/reset-password')
 const _resetRl = createRateLimiter(10, 60_000)
@@ -37,11 +37,12 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   }
 
   try {
-    const existing = await prisma.user.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.user.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
 
     const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12)
-    await prisma.user.update({ where: { id, tenantId }, data: { passwordHash } })
+    await db.user.update({ where: { id }, data: { passwordHash } })
 
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/users/[id]/reset-password', method: 'POST', status: '200' })
     return NextResponse.json({ ok: true })

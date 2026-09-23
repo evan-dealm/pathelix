@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { unscopedPrisma } from '@/lib/tenantDb'
 
 const log = createLogger('/api/ai/callback')
 
@@ -73,7 +73,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const job = await prisma.aiJob.findUnique({ where: { id: jobId } })
+    // Webhook authenticated by AI_CALLBACK_SECRET (HMAC), not by tenant context — the AI engine
+    // knows only jobId, so this must stay unscoped, same as the Nessy/OBD/Geotab webhooks.
+    const job = await unscopedPrisma.aiJob.findUnique({ where: { id: jobId } })
     if (!job) {
       return NextResponse.json({ error: 'Job introuvable' }, { status: 404 })
     }
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ ok: true, ignored: true })
     }
 
-    await prisma.aiJob.update({
+    await unscopedPrisma.aiJob.update({
       where: { id: jobId },
       data: {
         status,

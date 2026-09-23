@@ -3,7 +3,7 @@ import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { logSuperadminAction }       from '@/lib/superadminAudit'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/audit')
 
@@ -18,18 +18,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const entityId   = params.get('entityId')   ?? undefined
 
   try {
-    const where: Record<string, unknown> = { tenantId }
+    const db = getTenantDb(tenantId)
+    const where: Record<string, unknown> = {}
     if (entityType) where.entityType = entityType
     if (entityId)   where.entityId   = entityId
 
     const [logs, total] = await Promise.all([
-      prisma.auditLog.findMany({
+      db.auditLog.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
       }),
-      prisma.auditLog.count({ where }),
+      db.auditLog.count({ where }),
     ])
 
     // AuditLog only stores userId (superadmin impersonation entries prefix it "sa:<id>"),
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const rawIds  = logs.map(l => l.userId).filter((id): id is string => Boolean(id))
     const realIds = [...new Set(rawIds.map(realUserId))]
     const users = realIds.length > 0
-      ? await prisma.user.findMany({ where: { id: { in: realIds } }, select: { id: true, firstName: true, lastName: true, email: true } })
+      ? await db.user.findMany({ where: { id: { in: realIds } }, select: { id: true, firstName: true, lastName: true, email: true } })
       : []
     const nameById = new Map(users.map(u => [u.id, `${u.firstName} ${u.lastName}`.trim() || u.email]))
     const withNames = logs.map(l => ({
@@ -100,9 +101,8 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await prisma.auditLog.deleteMany({
+    const result = await getTenantDb(tenantId).auditLog.deleteMany({
       where: {
-        tenantId,
         createdAt: { gte: afterDate, lte: beforeDate },
       },
     })

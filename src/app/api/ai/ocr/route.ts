@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { createTenantRateLimiter } from '@/lib/rateLimit'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRedisClient } from '@/lib/redisClient'
 
 const log = createLogger('/api/ai/ocr')
@@ -71,10 +71,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
+  const db = getTenantDb(tenantId)
+
   // IDOR: missionId must belong to this tenant
   if (missionId && typeof missionId === 'string') {
-    const mission = await prisma.mission.findFirst({
-      where: { id: missionId, tenantId },
+    const mission = await db.mission.findFirst({
+      where: { id: missionId },
       select: { id: true },
     })
     if (!mission) {
@@ -85,9 +87,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const redis = await getRedisClient()
 
-    const job = await prisma.aiJob.create({
+    const job = await db.aiJob.create({
       data: {
-        tenantId,
         type: 'ocr',
         status: 'pending',
         missionId: missionId && typeof missionId === 'string' ? missionId : undefined,
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           submittedBy: userId,
         },
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      },
+      } as Parameters<typeof db.aiJob.create>[0]['data'],
     })
 
     // Push to AI engine queue via Redis LPUSH

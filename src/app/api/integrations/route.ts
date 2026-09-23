@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { encryptConfig } from '@/lib/configCrypto'
@@ -41,8 +41,7 @@ const IntegrationConfigSchema = z.object({
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { tenantId } = getRequestContext(req)
 
-  const configured = await prisma.integration.findMany({
-    where: { tenantId },
+  const configured = await getTenantDb(tenantId).integration.findMany({
     select: { id: true, type: true, name: true, enabled: true, lastSyncAt: true, lastError: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
@@ -77,17 +76,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const plainConfig = parsed.data.config ?? {}
     const encryptedConfig = encryptConfig(plainConfig)
 
-    const integration = await prisma.integration.upsert({
+    const db = getTenantDb(tenantId)
+    const integration = await db.integration.upsert({
+      // The compound unique key structurally requires tenantId here — this is not a manual
+      // tenant-scope check to remove, it's part of the DB constraint's shape.
       where: { tenantId_type: { tenantId, type: parsed.data.type } },
       create: {
-        tenantId,
         type: parsed.data.type,
         name: typeInfo.name,
-        config: (encryptedConfig as unknown) as Parameters<typeof prisma.integration.create>[0]['data']['config'],
+        config: (encryptedConfig as unknown) as Parameters<typeof db.integration.create>[0]['data']['config'],
         enabled: parsed.data.enabled ?? true,
-      },
+      } as Parameters<typeof db.integration.upsert>[0]['create'],
       update: {
-        config: parsed.data.config ? ((encryptedConfig as unknown) as Parameters<typeof prisma.integration.update>[0]['data']['config']) : undefined,
+        config: parsed.data.config ? ((encryptedConfig as unknown) as Parameters<typeof db.integration.update>[0]['data']['config']) : undefined,
         enabled: parsed.data.enabled,
         lastError: null,
       },

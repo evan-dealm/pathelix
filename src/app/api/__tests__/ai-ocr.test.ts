@@ -18,11 +18,11 @@ vi.mock('@/lib/data/context', () => ({
 
 const mockMissionFindFirst = vi.hoisted(() => vi.fn())
 const mockAiJobCreate      = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     mission: { findFirst: mockMissionFindFirst },
     aiJob:   { create: mockAiJobCreate },
-  },
+  }),
 }))
 
 const mockGetRedis = vi.hoisted(() => vi.fn())
@@ -116,7 +116,6 @@ describe('POST /api/ai/ocr', () => {
     const createData = mockAiJobCreate.mock.calls[0][0].data
     expect(createData.type).toBe('ocr')
     expect(createData.status).toBe('pending')
-    expect(createData.tenantId).toBe('t1')
   })
 
   it('returns 202 with PNG file and missionId, pushes to Redis', async () => {

@@ -12,14 +12,16 @@ vi.mock('@/lib/data/context', () => ({
 const mockAiJobFindFirst  = vi.hoisted(() => vi.fn())
 const mockAiJobFindUnique = vi.hoisted(() => vi.fn())
 const mockAiJobUpdate     = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    aiJob: {
-      findFirst:  mockAiJobFindFirst,
-      findUnique: mockAiJobFindUnique,
-      update:     mockAiJobUpdate,
-    },
+const mockAiJobsCallbackDb = vi.hoisted(() => ({
+  aiJob: {
+    findFirst:  mockAiJobFindFirst,
+    findUnique: mockAiJobFindUnique,
+    update:     mockAiJobUpdate,
   },
+}))
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: mockAiJobsCallbackDb,
+  getTenantDb:    () => mockAiJobsCallbackDb,
 }))
 
 import { GET } from '@/app/api/ai/jobs/[id]/route'
@@ -108,14 +110,9 @@ describe('POST /api/ai/callback — with secret', () => {
     vi.mock('@/lib/logger', () => ({
       createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
     }))
-    vi.mock('@/lib/db', () => ({
-      default: {
-        aiJob: {
-          findFirst:  mockAiJobFindFirst,
-          findUnique: mockAiJobFindUnique,
-          update:     mockAiJobUpdate,
-        },
-      },
+    vi.mock('@/lib/tenantDb', () => ({
+      unscopedPrisma: mockAiJobsCallbackDb,
+      getTenantDb:    () => mockAiJobsCallbackDb,
     }))
     const mod = await import('@/app/api/ai/callback/route')
     POST = mod.POST

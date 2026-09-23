@@ -46,6 +46,11 @@ vi.mock('@/lib/db', () => ({
     missionTemplate: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() },
   },
 }))
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
+    user: { findFirst: mockUserFindFirst, update: mockUserUpdate },
+  }),
+}))
 
 vi.mock('@/lib/superadminAudit', () => ({
   logSuperadminAction: vi.fn(),
@@ -139,7 +144,7 @@ describe('POST /api/auth/change-password', () => {
     expect(body.ok).toBe(true)
     expect(mockHash).toHaveBeenCalledWith('mynewpassword12', 12)
     expect(mockUserUpdate).toHaveBeenCalledWith({
-      where: { id: 'u1', tenantId: 't1' },
+      where: { id: 'u1' },
       data:  { passwordHash: 'new-hash' },
     })
   })

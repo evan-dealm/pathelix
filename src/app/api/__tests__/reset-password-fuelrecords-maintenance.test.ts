@@ -23,13 +23,9 @@ const mockUserFindFirst  = vi.hoisted(() => vi.fn())
 const mockUserUpdate     = vi.hoisted(() => vi.fn())
 const mockFuelDeleteMany = vi.hoisted(() => vi.fn())
 const mockMaintDeleteMany = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    user:              { findFirst: mockUserFindFirst, update: mockUserUpdate },
-  },
-}))
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
+    user:              { findFirst: mockUserFindFirst, update: mockUserUpdate },
     fuelRecord:        { deleteMany: mockFuelDeleteMany   },
     maintenanceRecord: { deleteMany: mockMaintDeleteMany  },
   }),

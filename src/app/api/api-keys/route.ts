@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createHash, randomBytes } from 'crypto'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { hasPermission } from '@/lib/permissions'
@@ -34,8 +34,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
   }
 
-  const keys = await prisma.apiKey.findMany({
-    where: { tenantId, revoked: false },
+  const keys = await getTenantDb(tenantId).apiKey.findMany({
+    where: { revoked: false },
     select: { id: true, name: true, prefix: true, scopes: true, lastUsedAt: true, expiresAt: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
@@ -63,15 +63,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? new Date(Date.now() + parsed.data.expiresInDays * 86400000)
     : null
 
-  const key = await prisma.apiKey.create({
+  const apiKeyDb = getTenantDb(tenantId)
+  const key = await apiKeyDb.apiKey.create({
     data: {
-      tenantId,
       name: parsed.data.name,
       keyHash,
       prefix,
       scopes: parsed.data.scopes,
       expiresAt,
-    },
+    } as Parameters<typeof apiKeyDb.apiKey.create>[0]['data'],
     select: { id: true, name: true, prefix: true, scopes: true, expiresAt: true, createdAt: true },
   })
 

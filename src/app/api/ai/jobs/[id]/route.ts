@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/ai/jobs/[id]')
 
@@ -17,8 +17,8 @@ export async function GET(
   }
 
   try {
-    const job = await prisma.aiJob.findFirst({
-      where: { id, tenantId },
+    const job = await getTenantDb(tenantId).aiJob.findFirst({
+      where: { id },
     })
     if (!job) {
       return NextResponse.json({ error: 'Job introuvable' }, { status: 404 })

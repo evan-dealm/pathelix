@@ -3,7 +3,7 @@ import { z }                         from 'zod'
 import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { VAPID_PUBLIC_KEY }          from '@/lib/webPush'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/push/subscribe')
 
@@ -32,18 +32,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // PushSubscription.driverId has no DB-level FK — same pattern as
   // DeliveryProof/FuelRecord: must be checked against tenantId here or a subscription could
   // reference a driver belonging to a different tenant.
+  const db = getTenantDb(tenantId)
+
   if (driverId) {
-    const driver = await prisma.driver.findFirst({
-      where:  { id: driverId, tenantId },
+    const driver = await db.driver.findFirst({
+      where:  { id: driverId },
       select: { id: true },
     })
     if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
   }
 
   try {
-    await prisma.pushSubscription.upsert({
+    await db.pushSubscription.upsert({
       where:  { endpoint },
-      create: { tenantId, userId, driverId, endpoint, p256dh: keys.p256dh, auth: keys.auth },
+      create: { userId, driverId, endpoint, p256dh: keys.p256dh, auth: keys.auth } as Parameters<typeof db.pushSubscription.upsert>[0]['create'],
       update: { userId, driverId, p256dh: keys.p256dh, auth: keys.auth },
     })
     log.info('Push subscription saved', { tenantId, userId, endpoint: endpoint.slice(0, 40) })
@@ -60,7 +62,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   if (!endpoint) return NextResponse.json({ error: 'endpoint requis' }, { status: 400 })
 
   try {
-    await prisma.pushSubscription.deleteMany({ where: { endpoint, tenantId } })
+    await getTenantDb(tenantId).pushSubscription.deleteMany({ where: { endpoint } })
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

@@ -3,7 +3,7 @@ import { z }                         from 'zod'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { createRateLimiter } from '@/lib/rateLimit'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/auth/change-password')
 const _pwdRl = createRateLimiter(3, 3600_000)
@@ -42,8 +42,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const { compare, hash } = await import('bcryptjs')
 
-    const user = await prisma.user.findFirst({
-      where: { id: session.sub, tenantId: session.tenantId },
+    const db = getTenantDb(session.tenantId)
+    const user = await db.user.findFirst({
+      where: { id: session.sub },
     })
 
     if (!user) {
@@ -56,8 +57,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const newHash = await hash(newPassword, 12)
-    await prisma.user.update({
-      where: { id: user.id, tenantId: user.tenantId },
+    await db.user.update({
+      where: { id: user.id },
       data:  { passwordHash: newHash },
     })
 

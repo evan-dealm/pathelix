@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, invalidatePermCache } from '@/lib/permissions'
 import { auditAsync } from '@/lib/audit'
@@ -19,12 +19,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ allPermissions: ALL_PERMISSIONS, defaults: DEFAULT_PERMISSIONS })
   }
 
+  const db = getTenantDb(tenantId)
   const [user, customPerms] = await Promise.all([
-    prisma.user.findFirst({
-      where: { id: targetUserId, tenantId },
+    db.user.findFirst({
+      where: { id: targetUserId },
       select: { id: true, role: true },
     }),
-    prisma.userPermission.findMany({
+    db.userPermission.findMany({
       where: { userId: targetUserId },
       select: { permission: true },
     }),
@@ -53,13 +54,14 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
 
   const { userId, permissions } = parsed.data
 
-  const user = await prisma.user.findFirst({ where: { id: userId, tenantId } })
+  const db = getTenantDb(tenantId)
+  const user = await db.user.findFirst({ where: { id: userId } })
   if (!user) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
 
-  await prisma.$transaction([
-    prisma.userPermission.deleteMany({ where: { userId } }),
+  await db.$transaction([
+    db.userPermission.deleteMany({ where: { userId } }),
     ...permissions.map(p =>
-      prisma.userPermission.create({ data: { tenantId, userId, permission: p } }),
+      db.userPermission.create({ data: { userId, permission: p } as Parameters<typeof db.userPermission.create>[0]['data'] }),
     ),
   ])
 

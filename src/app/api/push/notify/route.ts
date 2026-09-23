@@ -3,7 +3,7 @@ import { z }                         from 'zod'
 import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { sendPushNotification }      from '@/lib/webPush'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/push/notify')
 
@@ -31,9 +31,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { driverIds, title, body: msgBody, tag, data } = parsed.data
 
-  const subs = await prisma.pushSubscription.findMany({
+  const db = getTenantDb(tenantId)
+  const subs = await db.pushSubscription.findMany({
     where: {
-      tenantId,
       ...(driverIds ? { driverId: { in: driverIds } } : {}),
     },
   })
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }))
 
   if (expired.length > 0) {
-    await prisma.pushSubscription.deleteMany({ where: { endpoint: { in: expired } } })
+    await db.pushSubscription.deleteMany({ where: { endpoint: { in: expired } } })
     log.info('Expired subscriptions deleted', { tenantId, count: expired.length })
   }
 

@@ -6,7 +6,7 @@ import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { hasPermission }             from '@/lib/permissions'
 import { auditAsync }                from '@/lib/audit'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/users')
 
@@ -23,9 +23,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const limit    = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))
 
   try {
+    const db = getTenantDb(tenantId)
     const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where: { tenantId },
+      db.user.findMany({
         select: {
           id: true, tenantId: true, email: true, role: true,
           firstName: true, lastName: true, driverRef: true,
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         take: limit,
         orderBy: { createdAt: 'desc' },
       }),
-      prisma.user.count({ where: { tenantId } }),
+      db.user.count({}),
     ])
 
     metrics.histogram(METRIC.API_LATENCY_MS, Date.now() - t0, { route: '/api/users', method: 'GET' })
@@ -72,8 +72,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { password, ...rest } = parsed.data
     const passwordHash = await bcrypt.hash(password, 12)
 
-    const user = await prisma.user.create({
-      data: { tenantId, ...rest, passwordHash },
+    const userDb = getTenantDb(tenantId)
+    const user = await userDb.user.create({
+      data: { ...rest, passwordHash } as Parameters<typeof userDb.user.create>[0]['data'],
       select: {
         id: true, tenantId: true, email: true, role: true,
         firstName: true, lastName: true, driverRef: true,

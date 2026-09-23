@@ -318,12 +318,12 @@ describe('Security: AI jobs statusFilter enum validation', () => {
     vi.doMock('@/lib/data/context', () => ({
       getRequestContext: vi.fn(() => ({ tenantId: 'tenant-1', userId: 'u1', role: 'admin' })),
     }))
-    vi.doMock('@/lib/db', () => ({
-      default: { aiJob: { findMany: vi.fn(async (args: { where?: { status?: string } }) => {
+    vi.doMock('@/lib/tenantDb', () => ({
+      getTenantDb: () => ({ aiJob: { findMany: vi.fn(async (args: { where?: { status?: string } }) => {
         // Valid status: should include status in where
         // Invalid status: should NOT include status in where (undefined)
         return [{ status: args.where?.status ?? 'all' }]
-      }) } },
+      }) } }),
     }))
     vi.doMock('@/lib/logger', () => ({
       createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),

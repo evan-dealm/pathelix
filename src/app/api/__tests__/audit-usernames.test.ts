@@ -4,11 +4,13 @@ import { NextRequest } from 'next/server'
 const mockFindMany     = vi.hoisted(() => vi.fn())
 const mockCount        = vi.hoisted(() => vi.fn())
 const mockUserFindMany = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    auditLog: { findMany: mockFindMany, count: mockCount },
-    user:     { findMany: mockUserFindMany },
-  },
+const mockAuditDb = vi.hoisted(() => ({
+  auditLog: { findMany: mockFindMany, count: mockCount },
+  user:     { findMany: mockUserFindMany },
+}))
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: mockAuditDb,
+  getTenantDb:    () => mockAuditDb,
 }))
 vi.mock('@/lib/superadminAudit', () => ({ logSuperadminAction: vi.fn() }))
 
