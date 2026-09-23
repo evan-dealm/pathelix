@@ -1,3 +1,11 @@
+// Unlike the other workers, this one is run via `npm run build:worker:pdf && node
+// dist/workers/pdfWorker.mjs` (see package.json), not `tsx` directly. `tsx`'s tsconfig-paths
+// resolver hook falls back to Node's CJS module resolution algorithm for every import in the
+// process once "paths" is configured — including deep in @react-pdf/renderer's own dependency
+// chain — and @react-pdf/hyphenate's package.json only declares an "import" export condition,
+// so that CJS-style resolution throws ERR_PACKAGE_PATH_NOT_EXPORTED before this file's own code
+// ever runs. esbuild resolves our `@/` aliases and inlines our own source at build time, leaving
+// only real npm packages as bare imports for Node's own (correct) ESM resolver to handle.
 import dotenv from 'dotenv'
 dotenv.config({ path: '.env' })
 dotenv.config({ path: '.env.local', override: true })
