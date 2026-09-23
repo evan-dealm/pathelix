@@ -15,12 +15,14 @@ const mockMissionFindFirst = vi.hoisted(() => vi.fn())
 const mockMissionUpdate    = vi.hoisted(() => vi.fn())
 const mockPlanFindMany     = vi.hoisted(() => vi.fn())
 const mockPosFindFirst     = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    mission:        { findFirst: mockMissionFindFirst, update: mockMissionUpdate },
-    plan:           { findMany:  mockPlanFindMany },
-    driverPosition: { findFirst: mockPosFindFirst },
-  },
+const mockTrackingDb = vi.hoisted(() => ({
+  mission:        { findFirst: mockMissionFindFirst, update: mockMissionUpdate },
+  plan:           { findMany:  mockPlanFindMany },
+  driverPosition: { findFirst: mockPosFindFirst },
+}))
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: mockTrackingDb,
+  getTenantDb:    () => mockTrackingDb,
 }))
 
 import { GET, POST } from '@/app/api/tracking/route'

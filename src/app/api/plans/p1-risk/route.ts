@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/plans/p1-risk')
 
@@ -33,8 +33,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   try {
 
-    const plans = await prisma.plan.findMany({
-      where:  { tenantId, date: dateParam },
+    const db = getTenantDb(tenantId)
+    const plans = await db.plan.findMany({
+      where:  { date: dateParam },
       select: {
         driverId: true,
         missions: true,
@@ -55,9 +56,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().split('T')[0]
-    const metrics = await prisma.interventionMetric.findMany({
+    const metrics = await db.interventionMetric.findMany({
       where: {
-        tenantId,
         date:       { gte: thirtyDaysAgo },
         isReliable: true,
         actualDurationMin:    { gt: 0 },

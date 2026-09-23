@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/navigation')
 
@@ -54,8 +54,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     if (vehicleId) {
-      const vehicle = await prisma.vehicle.findFirst({
-        where: { id: vehicleId, tenantId: session.tenantId },
+      const vehicle = await getTenantDb(session.tenantId).vehicle.findFirst({
+        where: { id: vehicleId },
         select: { weightTon: true, heightM: true, widthM: true, lengthM: true, axleCount: true, hazmat: true },
       })
       if (vehicle) {

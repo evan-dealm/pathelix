@@ -4,7 +4,7 @@ import { createLogger }                 from '@/lib/logger'
 import { createRateLimiter, createTenantRateLimiter, getTenantPlanLimit, getClientIp } from '@/lib/rateLimit'
 import { getRequestContext }             from '@/lib/data/context'
 import { hasPermission }                from '@/lib/permissions'
-import prisma                           from '@/lib/db'
+import { getTenantDb, type TenantDb }   from '@/lib/tenantDb'
 import { getAllDrivers }                from '@/lib/data/drivers'
 import { getMissionsByDate }            from '@/lib/data/missions'
 import { getAllExutoires }              from '@/lib/data/exutoires'
@@ -23,7 +23,7 @@ const _ipRl = createRateLimiter(10, 60_000)
 const PUSH_THROTTLE_TTL_S = 120
 
 async function maybeSendOptimizationPush(
-  db: typeof prisma,
+  db: TenantDb,
   tenantId: string,
   date: string,
   assignedMissions: number,
@@ -42,7 +42,6 @@ async function maybeSendOptimizationPush(
     }
 
     const subs = await db.pushSubscription.findMany({
-      where: { tenantId },
       select: { endpoint: true, p256dh: true, auth: true },
     })
     if (subs.length === 0) return
@@ -105,11 +104,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const { date, driverIds, existingPlans, options } = parsed.data
 
+    const db = getTenantDb(tenantId)
     const [allDrivers, allMissions, allExutoires, tenantSettings] = await Promise.all([
       getAllDrivers(tenantId),
       getMissionsByDate(tenantId, date),
       getAllExutoires(tenantId),
-      prisma.tenantSettings.findUnique({ where: { tenantId } }),
+      db.tenantSettings.findUnique({ where: { tenantId } }),
     ])
 
     const drivers = (driverIds
@@ -209,7 +209,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       const result = await runVRP(missions, drivers, allExutoires, date, syncOptions)
 
-      void maybeSendOptimizationPush(prisma, tenantId, date, result.stats.assignedMissions, missions.length)
+      void maybeSendOptimizationPush(db, tenantId, date, result.stats.assignedMissions, missions.length)
 
       return NextResponse.json(
         { status: 'completed', mode: 'sync', result, missions: missions.length, drivers: drivers.length },

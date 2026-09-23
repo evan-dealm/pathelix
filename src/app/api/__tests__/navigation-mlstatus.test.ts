@@ -22,6 +22,7 @@ const { mockPrisma } = vi.hoisted(() => {
 })
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/session', () => ({
   SESSION_COOKIE: 'session',
@@ -199,7 +200,7 @@ describe('POST /api/navigation', () => {
     })
     await navigationPost(req)
     expect(mockPrisma.vehicle.findFirst).toHaveBeenCalledWith({
-      where: { id: 'vehicle-1', tenantId: 'tenant-test' },
+      where: { id: 'vehicle-1' },
       select: expect.objectContaining({ weightTon: true }),
     })
   })

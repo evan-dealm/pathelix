@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { getAllDrivers } from '@/lib/data/drivers'
@@ -28,14 +28,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const { tenantId } = getRequestContext(req)
   const weekStart = req.nextUrl.searchParams.get('weekStart')
 
+  const db = getTenantDb(tenantId)
+
   if (weekStart) {
-    const plan = await prisma.weeklyPlan.findUnique({ where: { tenantId_weekStart: { tenantId, weekStart } } })
+    const plan = await db.weeklyPlan.findUnique({ where: { tenantId_weekStart: { tenantId, weekStart } } })
     if (!plan) return NextResponse.json({ error: 'Plan hebdo introuvable' }, { status: 404 })
     return NextResponse.json(plan)
   }
 
-  const plans = await prisma.weeklyPlan.findMany({
-    where: { tenantId },
+  const plans = await db.weeklyPlan.findMany({
     orderBy: { weekStart: 'desc' },
     take: 10,
     select: { id: true, weekStart: true, status: true, createdAt: true, createdBy: true },
@@ -58,10 +59,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { weekStart, settings } = parsed.data
 
   try {
-
-    const weeklyPlan = await prisma.weeklyPlan.upsert({
+    const db = getTenantDb(tenantId)
+    const weeklyPlan = await db.weeklyPlan.upsert({
+      // The compound unique key structurally requires tenantId here — this is not a manual
+      // tenant-scope check to remove, it's part of the DB constraint's shape.
       where: { tenantId_weekStart: { tenantId, weekStart } },
-      create: { tenantId, weekStart, status: 'optimizing', createdBy: userId, settings: settings ?? {} },
+      create: { weekStart, status: 'optimizing', createdBy: userId, settings: settings ?? {} } as Parameters<typeof db.weeklyPlan.upsert>[0]['create'],
       update: { status: 'optimizing', settings: settings ?? {} },
     })
 
@@ -75,8 +78,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     for (let d = 0; d < 5; d++) {
       const date = addDays(weekStart, d)
 
-      const missionRows = await prisma.mission.findMany({
-        where: { tenantId, date, archived: false, needsGeocode: false },
+      const missionRows = await db.mission.findMany({
+        where: { date, archived: false, needsGeocode: false },
       })
 
       const missions: Mission[] = missionRows.map(m => ({
@@ -109,15 +112,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       for (const [driverId, planned] of Object.entries(result.assignments)) {
         if (planned.length === 0) continue
-        await prisma.plan.upsert({
+        await db.plan.upsert({
+          // The compound unique key structurally requires tenantId here — this is not a manual
+          // tenant-scope check to remove, it's part of the DB constraint's shape.
           where: { tenantId_driverId_date: { tenantId, driverId, date } },
           create: {
-            tenantId, driverId, date,
-            missions: planned as unknown as Parameters<typeof prisma.plan.create>[0]['data']['missions'],
+            driverId, date,
+            missions: planned as unknown as Parameters<typeof db.plan.create>[0]['data']['missions'],
             startTime: '07:00', speedKmh: 50,
-          },
+          } as Parameters<typeof db.plan.upsert>[0]['create'],
           update: {
-            missions: planned as unknown as Parameters<typeof prisma.plan.update>[0]['data']['missions'],
+            missions: planned as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
           },
         })
       }
@@ -133,9 +138,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    await prisma.weeklyPlan.update({
+    await db.weeklyPlan.update({
       where: { id: weeklyPlan.id },
-      data: { status: 'published', result: weekResult as unknown as Parameters<typeof prisma.weeklyPlan.update>[0]['data']['result'] },
+      data: { status: 'published', result: weekResult as unknown as Parameters<typeof db.weeklyPlan.update>[0]['data']['result'] },
     })
 
     log.info('Weekly plan completed', { tenantId, weekStart, days: Object.keys(weekResult).length })
@@ -149,8 +154,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     log.error('Weekly plan failed', { err: err instanceof Error ? err.message : String(err) })
 
-    await prisma.weeklyPlan.updateMany({
-      where: { tenantId, weekStart },
+    await getTenantDb(tenantId).weeklyPlan.updateMany({
+      where: { weekStart },
       data: { status: 'failed' },
     }).catch(() => {})
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

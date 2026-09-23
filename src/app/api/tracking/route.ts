@@ -3,7 +3,7 @@ import { z }                         from 'zod'
 import { createLogger }              from '@/lib/logger'
 import { getRequestContext }         from '@/lib/data/context'
 import { signSession }               from '@/lib/session'
-import prisma                        from '@/lib/db'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/tracking')
 
@@ -23,8 +23,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { missionId } = parsed.data
 
-  const mission = await prisma.mission.findFirst({
-    where: { id: missionId, tenantId },
+  const db = getTenantDb(tenantId)
+  const mission = await db.mission.findFirst({
+    where: { id: missionId },
     select: { id: true, trackingToken: true },
   })
   if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     exp:      Math.floor(Date.now() / 1000) + 7 * 86400,
   })
 
-  await prisma.mission.update({
+  await db.mission.update({
     where: { id: missionId },
     data:  { trackingToken: token },
   })
@@ -65,7 +66,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!token) return NextResponse.json({ error: 'token requis' }, { status: 400 })
 
   try {
-    const mission = await prisma.mission.findFirst({
+    // Public tracking link — tenant not yet known here, this lookup is what determines it.
+    const mission = await unscopedPrisma.mission.findFirst({
       where:  { trackingToken: token },
       select: {
         id: true, type: true, address: true, clientName: true,
@@ -83,8 +85,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     if (status === 'in_progress') {
       const today = new Date().toISOString().split('T')[0]
-      const plans = await prisma.plan.findMany({
-        where:  { tenantId: mission.tenantId, date: today },
+      const trackDb = getTenantDb(mission.tenantId)
+      const plans = await trackDb.plan.findMany({
+        where:  { date: today },
         select: { driverId: true, missions: true },
       })
 
@@ -92,7 +95,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const planMissions = plan.missions as Array<{ id: string }>
         if (!Array.isArray(planMissions) || !planMissions.some(m => m.id === mission.id)) continue
 
-        const pos = await prisma.driverPosition.findFirst({
+        const pos = await trackDb.driverPosition.findFirst({
           where:   { driverId: plan.driverId, recordedAt: { gte: new Date(Date.now() - STALE_POSITION_MS) } },
           orderBy: { recordedAt: 'desc' },
           select:  { latitude: true, longitude: true, recordedAt: true },

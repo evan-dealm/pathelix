@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getAllDrivers } from '@/lib/data/drivers'
 import { getMissionsByDate } from '@/lib/data/missions'
 import { getAllExutoires } from '@/lib/data/exutoires'
@@ -24,7 +24,8 @@ async function maybeSendOptimizationPush(
   totalMissions: number,
 ): Promise<void> {
   try {
-    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId } })
+    const db = getTenantDb(tenantId)
+    const settings = await db.tenantSettings.findUnique({ where: { tenantId } })
     if (!settings?.notificationsEnabled) return
 
     const redis = await getRedisClient()
@@ -35,8 +36,7 @@ async function maybeSendOptimizationPush(
       await redis.setex(throttleKey, PUSH_THROTTLE_TTL_S, '1').catch(() => {})
     }
 
-    const subs = await prisma.pushSubscription.findMany({
-      where: { tenantId },
+    const subs = await db.pushSubscription.findMany({
       select: { endpoint: true, p256dh: true, auth: true },
     })
     if (subs.length === 0) return
@@ -90,11 +90,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { date, driverIds: requestedDriverIds, options } = parsed.data
     const startTs = Date.now()
 
+    const db = getTenantDb(tenantId)
     const [allDrivers, allMissions, allExutoires, tenantSettings] = await Promise.all([
       getAllDrivers(tenantId),
       getMissionsByDate(tenantId, date),
       getAllExutoires(tenantId),
-      prisma.tenantSettings.findUnique({ where: { tenantId } }),
+      db.tenantSettings.findUnique({ where: { tenantId } }),
     ])
 
     const drivers = (requestedDriverIds
@@ -106,8 +107,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Aucun chauffeur disponible' }, { status: 422 })
     }
 
-    const plans = await prisma.plan.findMany({
-      where: { tenantId, date, driverId: { in: drivers.map(d => d.id) } },
+    const plans = await db.plan.findMany({
+      where: { date, driverId: { in: drivers.map(d => d.id) } },
       select: { driverId: true, statuses: true, startTime: true },
     })
 
@@ -215,20 +216,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const driverPlan = result.assignments[driver.id]
       if (!driverPlan || driverPlan.length === 0) continue
 
-      await prisma.plan.upsert({
+      await db.plan.upsert({
+        // The compound unique key structurally requires tenantId here — this is not a manual
+        // tenant-scope check to remove, it's part of the DB constraint's shape.
         where: {
           tenantId_driverId_date: { tenantId, driverId: driver.id, date },
         },
         update: {
-          missions: driverPlan as unknown as Parameters<typeof prisma.plan.update>[0]['data']['missions'],
+          missions: driverPlan as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
         },
         create: {
-          tenantId,
           driverId: driver.id,
           date,
-          missions: driverPlan as unknown as Parameters<typeof prisma.plan.create>[0]['data']['missions'],
+          missions: driverPlan as unknown as Parameters<typeof db.plan.create>[0]['data']['missions'],
           startTime: `${Math.floor(currentTimeMin / 60).toString().padStart(2, '0')}:${(currentTimeMin % 60).toString().padStart(2, '0')}`,
-        },
+        } as Parameters<typeof db.plan.upsert>[0]['create'],
       })
     }
 

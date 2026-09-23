@@ -77,12 +77,12 @@ vi.mock('@/lib/metrics', () => ({
   },
 }))
 
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     tenantSettings: {
       findUnique: vi.fn(() => Promise.resolve(null)),
     },
-  },
+  }),
 }))
 
 vi.mock('@/lib/queue/vrpQueue', () => ({

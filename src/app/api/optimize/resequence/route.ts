@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { getDriver } from '@/lib/data/drivers'
 import { runMvAlns } from '@/lib/vrp/mvAlns'
@@ -38,14 +38,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const startTs = Date.now()
 
   try {
-
+    const db = getTenantDb(tenantId)
     const driver = await getDriver(tenantId, driverId)
     if (!driver) {
       return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
     }
 
-    const plan = await prisma.plan.findFirst({
-      where: { tenantId, driverId, date },
+    const plan = await db.plan.findFirst({
+      where: { driverId, date },
     })
     if (!plan) {
       return NextResponse.json({ error: 'Aucun plan existant pour cette date' }, { status: 404 })
@@ -75,8 +75,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       })
     }
 
-    const missionRows = await prisma.mission.findMany({
-      where: { tenantId, id: { in: remainingMissionIds } },
+    const missionRows = await db.mission.findMany({
+      where: { id: { in: remainingMissionIds } },
     })
     const missions: Mission[] = missionRows.map(r =>
       prismaRowToMission(r as unknown as Record<string, unknown>),
@@ -118,10 +118,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const driverPlan = result.assignments[driverId]
 
     if (driverPlan) {
-      await prisma.plan.update({
+      await db.plan.update({
         where: { id: plan.id },
         data: {
-          missions: driverPlan as unknown as Parameters<typeof prisma.plan.update>[0]['data']['missions'],
+          missions: driverPlan as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
         },
       })
     }

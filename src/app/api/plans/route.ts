@@ -3,7 +3,7 @@ import type { PlannedMission }       from '@/lib/types'
 import { PlanSchema }                from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 import { emitEvent }                 from '@/lib/integrationEvents'
 import { redisCache }                from '@/lib/redisCache'
 
@@ -41,8 +41,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'plans',
       tenantId,
       async () => {
-        const records = await prisma.plan.findMany({
-          where: { tenantId, date },
+        const records = await getTenantDb(tenantId).plan.findMany({
+          where: { date },
           select: { id: true, driverId: true, date: true, missions: true, startTime: true, speedKmh: true },
         })
         return records.map(r => {
@@ -116,21 +116,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ saved: plans.length })
     }
 
+    const db = getTenantDb(tenantId)
     const BATCH = 50
     for (let i = 0; i < plans.length; i += BATCH) {
       await Promise.all(plans.slice(i, i + BATCH).map(plan =>
-        prisma.plan.upsert({
+        db.plan.upsert({
+          // The compound unique key structurally requires tenantId here — this is not a manual
+          // tenant-scope check to remove, it's part of the DB constraint's shape.
           where: {
             tenantId_driverId_date: { tenantId, driverId: plan.driverId, date: plan.date },
           },
           create: {
-            tenantId,
             driverId:  plan.driverId,
             date:      plan.date,
             missions:  plan.missions as object[],
             startTime: plan.startTime ?? '07:00',
             speedKmh:  plan.speedKmh  ?? 50,
-          },
+          } as Parameters<typeof db.plan.upsert>[0]['create'],
           update: {
             missions:  plan.missions as object[],
             startTime: plan.startTime ?? '07:00',
@@ -170,7 +172,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await prisma.plan.deleteMany({ where: { tenantId, date } })
+    const result = await getTenantDb(tenantId).plan.deleteMany({ where: { date } })
     void redisCache.invalidate('plans', tenantId, date)
     log.info('Plans purged', { tenantId, date, count: result.count })
     return NextResponse.json({ ok: true, deleted: result.count })

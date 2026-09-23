@@ -48,10 +48,10 @@ vi.mock('@/lib/metrics', () => ({
   METRIC: { VRP_ENQUEUED: 'vrp.enqueued', API_ERRORS: 'api.errors' },
 }))
 
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     tenantSettings: { findUnique: vi.fn(() => Promise.resolve(null)) },
-  },
+  }),
 }))
 
 vi.mock('@/lib/queue/vrpQueue', () => ({

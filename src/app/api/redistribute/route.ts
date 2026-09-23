@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { computeRouteCost, computePrefixStates, computeInsertionDelta } from '@/lib/vrp/routeCost'
 
 const log = createLogger('/api/redistribute')
@@ -28,9 +28,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { driverId, date, apply } = parsed.data
 
   try {
-
-    const allPlans = await prisma.plan.findMany({
-      where: { tenantId, date },
+    const db = getTenantDb(tenantId)
+    const allPlans = await db.plan.findMany({
+      where: { date },
       select: { driverId: true, missions: true, startTime: true, speedKmh: true, locked: true },
     })
 
@@ -59,8 +59,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Aucun chauffeur disponible pour la redistribution' }, { status: 422 })
     }
 
-    const drivers = await prisma.driver.findMany({
-      where: { tenantId, archived: false },
+    const drivers = await db.driver.findMany({
+      where: { archived: false },
       select: {
         id: true, firstName: true, lastName: true, sector: true,
         depotName: true, depotLat: true, depotLng: true,
@@ -70,9 +70,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const driverMap = new Map(drivers.map(d => [d.id, d]))
 
-    const exutoires = await prisma.exutoire.findMany({
-      where: { tenantId },
-    })
+    const exutoires = await db.exutoire.findMany({})
 
     const ctx = {
       depotLat: 0, depotLng: 0,
@@ -149,10 +147,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     if (apply && assignments.length > 0) {
-      await prisma.$transaction(async (tx) => {
+      await db.$transaction(async (tx) => {
 
         await tx.plan.updateMany({
-          where: { tenantId, driverId, date },
+          where: { driverId, date },
           data: { missions: [] },
         })
 
@@ -161,7 +159,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             .filter(([targetDriverId]) => assignments.some(a => a.toDriverId === targetDriverId))
             .map(([targetDriverId, plan]) =>
               tx.plan.updateMany({
-                where: { tenantId, driverId: targetDriverId, date },
+                where: { driverId: targetDriverId, date },
                 data: { missions: plan.missions as object[] },
               }),
             ),
