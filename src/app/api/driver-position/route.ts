@@ -6,6 +6,8 @@ import {
 } from '@/lib/obdStore'
 import { getDriver } from '@/lib/data/drivers'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
+import { getTenantDb } from '@/lib/tenantDb'
+import { persistDriverPositions } from '@/lib/driverPositionPersist'
 
 const _driverIdCache = new Map<string, { ids: Set<string>; expiresAt: number }>()
 const DRIVER_ID_CACHE_TTL_MS = 60_000
@@ -14,9 +16,8 @@ async function getTenantDriverIds(tenantId: string): Promise<Set<string>> {
   const now    = Date.now()
   const cached = _driverIdCache.get(tenantId)
   if (cached && now < cached.expiresAt) return cached.ids
-  const prisma = (await import('@/lib/db')).default
-  const rows   = await prisma.driver.findMany({ where: { tenantId }, select: { id: true } })
-  const ids    = new Set(rows.map((r: { id: string }) => r.id))
+  const rows = await getTenantDb(tenantId).driver.findMany({ select: { id: true } })
+  const ids  = new Set(rows.map((r: { id: string }) => r.id))
   _driverIdCache.set(tenantId, { ids, expiresAt: now + DRIVER_ID_CACHE_TTL_MS })
   return ids
 }
@@ -123,6 +124,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     speedKmh: speedKmh ?? 0,
     ignition: true,
   })
+  void persistDriverPositions(session.tenantId, [{ driverId, lat: latitude, lng: longitude, speedKmh, timestamp: ts }])
 
   void emitEvent(session.tenantId, 'driver.position', {
     driverId, latitude, longitude, speedKmh: speedKmh ?? 0,

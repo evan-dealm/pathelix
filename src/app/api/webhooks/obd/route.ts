@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'crypto'
 import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { recordOBDReading, pruneOldOBDData } from '@/lib/obdStore'
+import { persistDriverPositions, type DriverPositionInput } from '@/lib/driverPositionPersist'
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 import { decryptConfig } from '@/lib/configCrypto'
 import prisma from '@/lib/db'
@@ -96,21 +97,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const validDriverIds = new Set(validDrivers.map(d => d.id))
 
   let recorded = 0
+  const toPersist: DriverPositionInput[] = []
   for (const r of readings) {
     if (!validDriverIds.has(r.driverId)) {
       log.warn('OBD reading skipped — driverId does not belong to this tenant', { tenantId, driverId: r.driverId })
       continue
     }
+    const timestamp = r.timestamp ?? now
     recordOBDReading({
       driverId:  r.driverId,
-      timestamp: r.timestamp ?? now,
+      timestamp,
       lat:       r.lat,
       lng:       r.lng,
       speedKmh:  r.speedKmh,
       ignition:  r.ignition,
     })
+    toPersist.push({ driverId: r.driverId, lat: r.lat, lng: r.lng, speedKmh: r.speedKmh, timestamp })
     recorded++
   }
+  void persistDriverPositions(tenantId, toPersist)
 
   if (++_pruneCounter >= 500) {
     _pruneCounter = 0

@@ -14,13 +14,14 @@ const mockEmitEvent = vi.fn()
 const mockGetAllCurrentPositions = vi.fn(() => [])
 const mockGetAllSpeedHistories = vi.fn(() => ({}))
 
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     driver: {
       findMany:  (args: unknown) => mockFindMany(args),
       findFirst: (args: unknown) => mockFindFirst(args),
     },
-  },
+    driverPosition: { createMany: vi.fn(async () => ({ count: 0 })) },
+  }),
 }))
 vi.mock('@/lib/session', () => ({
   SESSION_COOKIE: 'session',

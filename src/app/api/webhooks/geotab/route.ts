@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { z } from 'zod'
 import { recordOBDReading, pruneOldOBDData } from '@/lib/obdStore'
+import { persistDriverPositions, type DriverPositionInput } from '@/lib/driverPositionPersist'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const validDriverIds = new Set(validDrivers.map(d => d.id))
 
   let recorded = 0
+  const toPersist: DriverPositionInput[] = []
   for (const r of readings) {
     const deviceId = String(r.deviceId ?? r.device ?? r.id ?? '')
     const driverId = deviceMapping.get(deviceId) ?? deviceId
@@ -124,16 +126,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       continue
     }
 
+    const timestamp = r.timestamp ? new Date(r.timestamp).getTime() : Date.now()
+    const speedKmh = r.speed ?? r.speedKmh ?? 0
     recordOBDReading({
       driverId,
-      timestamp: r.timestamp ? new Date(r.timestamp).getTime() : Date.now(),
+      timestamp,
       lat,
       lng,
-      speedKmh: r.speed ?? r.speedKmh ?? 0,
+      speedKmh,
       ignition: r.ignition ?? r.engineRunning ?? true,
     })
+    toPersist.push({ driverId, lat, lng, speedKmh, timestamp })
     recorded++
   }
+  void persistDriverPositions(integration.tenantId, toPersist)
 
   if (++_pruneCounter >= 500) {
     _pruneCounter = 0

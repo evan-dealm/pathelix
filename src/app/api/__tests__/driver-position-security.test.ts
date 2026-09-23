@@ -36,8 +36,12 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-vi.mock('@/lib/db', () => ({
-  default: { driver: { findMany: vi.fn(async () => [{ id: 'driver-a' }]) } },
+const mockDriverFindMany = vi.fn(async () => [{ id: 'driver-a' }])
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
+    driver:         { findMany: mockDriverFindMany },
+    driverPosition: { createMany: vi.fn(async () => ({ count: 0 })) },
+  }),
 }))
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
