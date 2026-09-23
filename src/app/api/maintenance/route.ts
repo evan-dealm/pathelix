@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { redisCache } from '@/lib/redisCache'
@@ -42,8 +42,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const records = await redisCache.getOrSet(
       'maintenance',
       tenantId,
-      () => prisma.maintenanceRecord.findMany({
-        where:   { tenantId, ...(vehicleId ? { vehicleId } : {}) },
+      () => getTenantDb(tenantId).maintenanceRecord.findMany({
+        where:   { ...(vehicleId ? { vehicleId } : {}) },
         orderBy: { doneAt: 'desc' },
         take:    limit,
         skip:    offset,
@@ -72,14 +72,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
 
   try {
-    const vehicle = await prisma.vehicle.findFirst({
-      where:  { id: parsed.data.vehicleId, tenantId },
+    const db = getTenantDb(tenantId)
+    const vehicle = await db.vehicle.findFirst({
+      where:  { id: parsed.data.vehicleId },
       select: { id: true },
     })
     if (!vehicle) return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
 
-    const record = await prisma.maintenanceRecord.create({
-      data:   { tenantId, ...parsed.data },
+    const record = await db.maintenanceRecord.create({
+      data:   parsed.data as Parameters<typeof db.maintenanceRecord.create>[0]['data'],
       select: MAINT_SELECT,
     })
     void redisCache.invalidateAll('maintenance', tenantId)

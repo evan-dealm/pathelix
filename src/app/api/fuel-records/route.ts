@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { redisCache } from '@/lib/redisCache'
@@ -46,8 +46,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const records = await redisCache.getOrSet(
       'fuel-records',
       tenantId,
-      () => prisma.fuelRecord.findMany({
-        where:   { tenantId, ...(vehicleId ? { vehicleId } : {}) },
+      () => getTenantDb(tenantId).fuelRecord.findMany({
+        where:   { ...(vehicleId ? { vehicleId } : {}) },
         orderBy: { filledAt: 'desc' },
         take:    limit,
         skip:    offset,
@@ -76,8 +76,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
 
   try {
-    const vehicle = await prisma.vehicle.findFirst({
-      where:  { id: parsed.data.vehicleId, tenantId },
+    const db = getTenantDb(tenantId)
+    const vehicle = await db.vehicle.findFirst({
+      where:  { id: parsed.data.vehicleId },
       select: { id: true },
     })
     if (!vehicle) return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
@@ -86,15 +87,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // DeliveryProof: must be checked against tenantId here or a record could reference a
     // driver belonging to a different tenant.
     if (parsed.data.driverId) {
-      const driver = await prisma.driver.findFirst({
-        where:  { id: parsed.data.driverId, tenantId },
+      const driver = await db.driver.findFirst({
+        where:  { id: parsed.data.driverId },
         select: { id: true },
       })
       if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
     }
 
-    const record = await prisma.fuelRecord.create({
-      data:   { tenantId, ...parsed.data },
+    const record = await db.fuelRecord.create({
+      data:   parsed.data as Parameters<typeof db.fuelRecord.create>[0]['data'],
       select: FUEL_SELECT,
     })
     void redisCache.invalidateAll('fuel-records', tenantId)

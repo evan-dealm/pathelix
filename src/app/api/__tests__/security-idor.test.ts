@@ -208,19 +208,19 @@ describe('IDOR: /api/missions/* — cross-tenant isolation', () => {
 describe('IDOR: fleet record deletes use tenantId (TOCTOU atomic)', () => {
   beforeEach(() => { vi.clearAllMocks(); setTenant('tenant-A') })
 
-  it('DELETE /api/fuel-records/[id] uses compound {id, tenantId} where clause', async () => {
+  it('DELETE /api/fuel-records/[id] scopes the deleteMany via getTenantDb (see tenant-isolation.test.ts)', async () => {
     mockPrisma.fuelRecord.deleteMany.mockResolvedValue({ count: 0 })
     await fuelDel(makeDelete('http://localhost/api/fuel-records/any-id'), makeParams('any-id'))
     expect(mockPrisma.fuelRecord.deleteMany).toHaveBeenCalledWith({
-      where: { id: 'any-id', tenantId: 'tenant-A' },
+      where: { id: 'any-id' },
     })
   })
 
-  it('DELETE /api/maintenance/[id] uses compound {id, tenantId} where clause', async () => {
+  it('DELETE /api/maintenance/[id] scopes the deleteMany via getTenantDb (see tenant-isolation.test.ts)', async () => {
     mockPrisma.maintenanceRecord.deleteMany.mockResolvedValue({ count: 0 })
     await maintenanceDel(makeDelete('http://localhost/api/maintenance/any-id'), makeParams('any-id'))
     expect(mockPrisma.maintenanceRecord.deleteMany).toHaveBeenCalledWith({
-      where: { id: 'any-id', tenantId: 'tenant-A' },
+      where: { id: 'any-id' },
     })
   })
 })

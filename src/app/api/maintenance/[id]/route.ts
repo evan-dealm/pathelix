@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { redisCache } from '@/lib/redisCache'
@@ -13,7 +13,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
 
   try {
-    const result = await prisma.maintenanceRecord.deleteMany({ where: { id, tenantId } })
+    const result = await getTenantDb(tenantId).maintenanceRecord.deleteMany({ where: { id } })
     if (result.count === 0) return NextResponse.json({ error: 'Enregistrement introuvable' }, { status: 404 })
     void redisCache.invalidateAll('maintenance', tenantId)
     return NextResponse.json({ ok: true })

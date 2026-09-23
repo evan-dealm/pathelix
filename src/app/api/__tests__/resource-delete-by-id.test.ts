@@ -16,6 +16,7 @@ const mockPrisma = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/data/context', () => ({
   getRequestContext: vi.fn(() => ({ tenantId: 'tenant-1', userId: 'user-1', role: 'admin', requestId: 'req-1', trade: null })),
@@ -60,7 +61,7 @@ describe('DELETE /api/fuel-records/[id]', () => {
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
-    expect(mockPrisma.fuelRecord.deleteMany).toHaveBeenCalledWith({ where: { id: 'f-1', tenantId: 'tenant-1' } })
+    expect(mockPrisma.fuelRecord.deleteMany).toHaveBeenCalledWith({ where: { id: 'f-1' } })
   })
 
   it('returns 404 when record not found (count=0)', async () => {
@@ -87,12 +88,12 @@ describe('DELETE /api/fuel-records/[id]', () => {
     expect(res.status).toBe(500)
   })
 
-  it('IDOR: uses tenantId in where clause (cross-tenant isolation)', async () => {
+  it('IDOR: scopes the deleteMany via getTenantDb (cross-tenant isolation, see tenant-isolation.test.ts)', async () => {
     mockPrisma.fuelRecord.deleteMany.mockResolvedValue({ count: 0 })
     vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-A', userId: 'u-A', role: 'admin', requestId: 'req-1', trade: null })
     await fuelDelete(makeDelete('http://localhost/api/fuel-records/f-other-tenant'), makeParams('f-other-tenant'))
     expect(mockPrisma.fuelRecord.deleteMany).toHaveBeenCalledWith({
-      where: { id: 'f-other-tenant', tenantId: 'tenant-A' },
+      where: { id: 'f-other-tenant' },
     })
   })
 })
@@ -108,7 +109,7 @@ describe('DELETE /api/maintenance/[id]', () => {
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
-    expect(mockPrisma.maintenanceRecord.deleteMany).toHaveBeenCalledWith({ where: { id: 'm-1', tenantId: 'tenant-1' } })
+    expect(mockPrisma.maintenanceRecord.deleteMany).toHaveBeenCalledWith({ where: { id: 'm-1' } })
   })
 
   it('returns 404 when record not found', async () => {

@@ -23,7 +23,7 @@ const mockPrisma = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/data/context', () => ({
   getTenantId:       vi.fn(() => 'tenant-test'),
@@ -189,7 +189,7 @@ describe('POST /api/fuel-records', () => {
 
     const res = await fuelPOST(makePost('http://localhost:3000/api/fuel-records', { ...validBody, driverId: 'd-1' }))
     expect(res.status).toBe(201)
-    expect(mockPrisma.driver.findFirst).toHaveBeenCalledWith({ where: { id: 'd-1', tenantId: 'tenant-test' }, select: { id: true } })
+    expect(mockPrisma.driver.findFirst).toHaveBeenCalledWith({ where: { id: 'd-1' }, select: { id: true } })
   })
 
   it('skips driver check when driverId is not provided', async () => {

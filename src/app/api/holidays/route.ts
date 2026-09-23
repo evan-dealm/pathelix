@@ -4,7 +4,7 @@ import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { redisCache }                from '@/lib/redisCache'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/holidays')
 
@@ -21,14 +21,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'holidays',
       tenantId,
       async () => {
+        const db = getTenantDb(tenantId)
         const [holidays, total] = await Promise.all([
-          prisma.holiday.findMany({
-            where: { tenantId },
+          db.holiday.findMany({
             skip: (page - 1) * limit,
             take: limit,
             orderBy: { date: 'asc' },
           }),
-          prisma.holiday.count({ where: { tenantId } }),
+          db.holiday.count({}),
         ])
         return { data: holidays, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
       },
@@ -65,8 +65,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const holiday  = await prisma.holiday.create({
-      data: { tenantId, ...parsed.data },
+    const db = getTenantDb(tenantId)
+    const holiday  = await db.holiday.create({
+      data: parsed.data as Parameters<typeof db.holiday.create>[0]['data'],
     })
 
     void redisCache.invalidateAll('holidays', tenantId)

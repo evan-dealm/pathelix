@@ -26,9 +26,13 @@ const mockMaintDeleteMany = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/db', () => ({
   default: {
     user:              { findFirst: mockUserFindFirst, update: mockUserUpdate },
+  },
+}))
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     fuelRecord:        { deleteMany: mockFuelDeleteMany   },
     maintenanceRecord: { deleteMany: mockMaintDeleteMany  },
-  },
+  }),
 }))
 
 const mockInvalidateAll = vi.hoisted(() => vi.fn())
