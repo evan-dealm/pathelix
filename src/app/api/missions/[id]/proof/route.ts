@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/missions/[id]/proof')
 
@@ -22,8 +22,8 @@ export async function GET(
   const { id } = await params
 
   try {
-    const mission = await prisma.mission.findFirst({
-      where: { id, tenantId },
+    const mission = await getTenantDb(tenantId).mission.findFirst({
+      where: { id },
       select: { id: true, proof: true },
     })
     if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
@@ -53,8 +53,9 @@ export async function POST(
   const { driverId, notes, capturedAt, photoUrl, signatureUrl } = parsed.data
 
   try {
-    const mission = await prisma.mission.findFirst({
-      where: { id, tenantId },
+    const db = getTenantDb(tenantId)
+    const mission = await db.mission.findFirst({
+      where: { id },
       select: { id: true, tenantId: true },
     })
     if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
@@ -65,17 +66,16 @@ export async function POST(
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
 
-    const proof = await prisma.deliveryProof.upsert({
+    const proof = await db.deliveryProof.upsert({
       where:  { missionId: id },
       create: {
-        tenantId,
         missionId: id,
         driverId,
         photoUrl:     photoUrl ?? null,
         signatureUrl: signatureUrl ?? null,
         notes:        notes ?? '',
         capturedAt:   capturedAt ? new Date(capturedAt) : new Date(),
-      },
+      } as Parameters<typeof db.deliveryProof.upsert>[0]['create'],
       update: {
         photoUrl:     photoUrl !== undefined ? photoUrl : undefined,
         signatureUrl: signatureUrl !== undefined ? signatureUrl : undefined,

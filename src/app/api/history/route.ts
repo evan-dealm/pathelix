@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId }               from '@/lib/data/context'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/history')
 
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         if (!entry) return NextResponse.json({ error: 'Introuvable' }, { status: 404 })
         return NextResponse.json({ ...entry, snapshot: parseSnapshot(entry.snapshot) })
       }
-      const entry = await prisma.tourHistory.findFirst({ where: { id: idParam, tenantId } })
+      const entry = await getTenantDb(tenantId).tourHistory.findFirst({ where: { id: idParam } })
       if (!entry) return NextResponse.json({ error: 'Introuvable' }, { status: 404 })
       return NextResponse.json({ ...entry, snapshot: parseSnapshot(entry.snapshot) })
     }
@@ -70,8 +70,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json(sorted)
     }
 
-    const records = await prisma.tourHistory.findMany({
-      where:   { tenantId },
+    const records = await getTenantDb(tenantId).tourHistory.findMany({
       orderBy: { date: 'desc' },
       take:    limit,
       select:  { id: true, date: true, label: true, createdAt: true },
@@ -136,8 +135,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ ...entry, snapshot: undefined }, { status: 201 })
     }
 
-    const entry = await prisma.tourHistory.create({
-      data: { tenantId, date, label: label ?? '', snapshot: snapshotStr },
+    const db = getTenantDb(tenantId)
+    const entry = await db.tourHistory.create({
+      data: { date, label: label ?? '', snapshot: snapshotStr } as Parameters<typeof db.tourHistory.create>[0]['data'],
     })
     const { snapshot: _s, ...rest } = entry
     return NextResponse.json(rest, { status: 201 })

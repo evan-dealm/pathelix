@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 
@@ -11,7 +11,8 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   const { tenantId, userId, role } = getRequestContext(req)
 
   try {
-    const existing = await prisma.missionComment.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.missionComment.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Commentaire introuvable' }, { status: 404 })
 
     if (existing.userId !== userId && role !== 'admin') {
@@ -19,10 +20,10 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     }
 
     const whereClause = role !== 'admin'
-      ? { id, tenantId, userId }
-      : { id, tenantId }
+      ? { id, userId }
+      : { id }
 
-    const result = await prisma.missionComment.deleteMany({ where: whereClause })
+    const result = await db.missionComment.deleteMany({ where: whereClause })
     if (result.count === 0) return NextResponse.json({ error: 'Commentaire introuvable' }, { status: 404 })
     return NextResponse.json({ ok: true })
   } catch (err) {

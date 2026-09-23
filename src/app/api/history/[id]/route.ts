@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 import { getTenantId } from '@/lib/data/context'
 
@@ -32,9 +32,10 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
       return NextResponse.json({ ok: true })
     }
 
-    const existing = await prisma.tourHistory.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.tourHistory.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Historique introuvable' }, { status: 404 })
-    await prisma.tourHistory.delete({ where: { id, tenantId } })
+    await db.tourHistory.delete({ where: { id } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     log.error('DELETE failed', { err: err instanceof Error ? err.message : String(err) })

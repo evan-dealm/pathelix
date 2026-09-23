@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 
@@ -17,8 +17,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!missionId) return NextResponse.json({ error: 'missionId requis' }, { status: 400 })
 
   try {
-    const comments = await prisma.missionComment.findMany({
-      where:   { tenantId, missionId },
+    const comments = await getTenantDb(tenantId).missionComment.findMany({
+      where:   { missionId },
       orderBy: { createdAt: 'asc' },
     })
     return NextResponse.json(comments)
@@ -38,11 +38,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
 
   try {
-    const mission = await prisma.mission.findFirst({ where: { id: parsed.data.missionId, tenantId } })
+    const db = getTenantDb(tenantId)
+    const mission = await db.mission.findFirst({ where: { id: parsed.data.missionId } })
     if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
 
-    const comment = await prisma.missionComment.create({
-      data: { tenantId, userId, role, ...parsed.data },
+    const comment = await db.missionComment.create({
+      data: { userId, role, ...parsed.data } as Parameters<typeof db.missionComment.create>[0]['data'],
     })
     return NextResponse.json(comment, { status: 201 })
   } catch (err) {

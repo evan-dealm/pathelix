@@ -9,7 +9,7 @@ const mockPrisma = vi.hoisted(() => ({
   deliveryProof: { upsert: vi.fn() },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/data/context', () => ({
   getRequestContext: vi.fn(() => ({
