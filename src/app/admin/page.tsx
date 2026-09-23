@@ -63,6 +63,7 @@ import { GlobalSearch } from '@/components/GlobalSearch'
 import { useToast } from '@/components/ui/Toast'
 import { useTrade } from '@/providers/TradeProvider'
 import { OnboardingGuide } from '@/components/ui/OnboardingGuide'
+import { usePermissions, hasPerm } from '@/hooks/usePermissions'
 
 export default function AdminPage() {
   const { vocab } = useTrade()
@@ -90,6 +91,7 @@ export default function AdminPage() {
   const isUnavailable    = usePlanningStore(s => s.isUnavailable)
   const [userRole, setUserRole]           = useState<'admin' | 'dispatcher' | 'driver' | null>(null)
   const isAdmin = userRole !== 'dispatcher'
+  const { permissions } = usePermissions()
   const [tenantSettings, setTenantSettings] = useState<{
     defaultSpeedKmh: number; defaultStartTime: string
     costPerKm: number; fuelCostPerLiter: number; consumptionLPer100: number
@@ -532,7 +534,7 @@ export default function AdminPage() {
     [missions],
   )
   // NAV_ITEMS rebuilt only when vocab or mission badge changes — avoids re-creating JSX every render
-  const NAV_ITEMS = useMemo<{ id: AppTab; label: string; icon: React.ReactNode; section?: string; adminOnly?: boolean; badge?: number }[]>(() => [
+  const NAV_ITEMS = useMemo<{ id: AppTab; label: string; icon: React.ReactNode; section?: string; adminOnly?: boolean; permission?: string; badge?: number }[]>(() => [
 
     { id: 'dashboard', label: 'Dashboard', section: 'Dispatch', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="10" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="10" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/></svg> },
     { id: 'missions',  label: vocab.missions, badge: missionCount > 0 ? missionCount : undefined, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M6 2v2M12 2v2M2.5 7h13M4 3.5h10a1.5 1.5 0 011.5 1.5v10a1.5 1.5 0 01-1.5 1.5H4A1.5 1.5 0 012.5 15V5A1.5 1.5 0 014 3.5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
@@ -541,16 +543,16 @@ export default function AdminPage() {
     { id: 'history',   label: 'Historique', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 3v12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M6 12l3-4 3 2 3-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
 
     { id: 'catalogue', label: 'Catalogue', section: 'Ressources', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4h12M3 8h12M3 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="14" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M16 14l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'drivers',   label: vocab.drivers, adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 15.5c0-2.5 2.5-4.5 6-4.5s6 2 6 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'vehicles',  label: vocab.vehicles, adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="5" width="14" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="5.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="12.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg> },
-    { id: 'exutoires', label: vocab.exutoires, adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L2 7v8a1 1 0 001 1h12a1 1 0 001-1V7L9 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg> },
-    { id: 'templates', label: 'Recurrentes', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 1012 0A6 6 0 003 9z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 6v3l2 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M1 9h2M15 9h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'drivers',   label: vocab.drivers, adminOnly: true, permission: 'manage_drivers', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 15.5c0-2.5 2.5-4.5 6-4.5s6 2 6 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'vehicles',  label: vocab.vehicles, adminOnly: true, permission: 'manage_vehicles', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="5" width="14" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="5.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="12.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg> },
+    { id: 'exutoires', label: vocab.exutoires, adminOnly: true, permission: 'manage_exutoires', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L2 7v8a1 1 0 001 1h12a1 1 0 001-1V7L9 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg> },
+    { id: 'templates', label: 'Recurrentes', adminOnly: true, permission: 'manage_missions', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 1012 0A6 6 0 003 9z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 6v3l2 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M1 9h2M15 9h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
 
-    { id: 'users',     label: 'Utilisateurs', section: 'Administration', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="7" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/><path d="M1.5 15c0-2.2 2.2-4 5.5-4s5.5 1.8 5.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'users',     label: 'Utilisateurs', section: 'Administration', adminOnly: true, permission: 'manage_users', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="7" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/><path d="M1.5 15c0-2.2 2.2-4 5.5-4s5.5 1.8 5.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
     { id: 'audit',     label: 'Audit', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 3h8a2 2 0 012 2v10l-3-2-3 2-3-2-3 2V5a2 2 0 012-2z" stroke="currentColor" strokeWidth="1.5"/></svg> },
-    { id: 'telematics',label: 'Telematique', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 15v-3M5 12l4 3 4-3M3 9l6 3 6-3M1 6l8 3 8-3-8-3-8 3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg> },
-    { id: 'settings',  label: 'Parametres', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.4 3.4l1.4 1.4M13.2 13.2l1.4 1.4M3.4 14.6l1.4-1.4M13.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
-    { id: 'weekly-plan', label: 'Planning semaine', section: 'Planification', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6 2v2M12 2v2M2 7h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5 11h2M8.5 11h2M12 11h1M5 13.5h2M8.5 13.5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
+    { id: 'telematics',label: 'Telematique', adminOnly: true, permission: 'manage_integrations', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 15v-3M5 12l4 3 4-3M3 9l6 3 6-3M1 6l8 3 8-3-8-3-8 3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg> },
+    { id: 'settings',  label: 'Parametres', adminOnly: true, permission: 'manage_settings', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.4 3.4l1.4 1.4M13.2 13.2l1.4 1.4M3.4 14.6l1.4-1.4M13.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
+    { id: 'weekly-plan', label: 'Planning semaine', section: 'Planification', adminOnly: true, permission: 'optimize', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6 2v2M12 2v2M2 7h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5 11h2M8.5 11h2M12 11h1M5 13.5h2M8.5 13.5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [vocab, missionCount])
 
@@ -576,7 +578,7 @@ export default function AdminPage() {
 
         {}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5" aria-label="Navigation principale">
-          {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item, i) => (
+          {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin || (item.permission && hasPerm(permissions, item.permission))).map((item, i) => (
             <div key={item.id}>
               {item.section && (
                 <div className={`nav-label text-[10px] font-semibold text-surface-400 uppercase tracking-wider px-3 ${i > 0 ? 'mt-5' : ''} mb-1.5`}>

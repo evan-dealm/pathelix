@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/logger'
 import { getAllDrivers } from '@/lib/data/drivers'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { runVRP } from '@/lib/vrp/index'
+import { hasPermission } from '@/lib/permissions'
 import type { Mission } from '@/lib/types'
 
 const log = createLogger('/api/weekly-plan')
@@ -48,6 +49,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tenantId, role, userId } = getRequestContext(req)
   if (role !== 'admin' && role !== 'dispatcher' && role !== 'superadmin') {
     return NextResponse.json({ error: 'Admin ou dispatcher requis' }, { status: 403 })
+  }
+  if (!(await hasPermission(userId, role, 'optimize'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let raw: unknown

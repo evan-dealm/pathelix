@@ -11,6 +11,8 @@ import { useDebounce, today, displayShort, mTitle, logErr } from '../hooks'
 import { ImportExportBar } from '../ImportExportBar'
 import { MISSION_COLUMNS, parseMissionRows, missionExportData } from '@/lib/importExportColumns'
 import { loadAllMissionsIntoStore } from '@/lib/loadAllMissions'
+import { usePermissions } from '@/hooks/usePermissions'
+import { PermissionGate } from '../PermissionGate'
 
 export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onImportCSV }: {
   onEdit: (_m: Mission) => void
@@ -21,6 +23,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
   onImportCSV: (_missions: Array<Omit<Mission, 'id'>>) => Promise<void>
 }) {
   const { missionIcon, missionLabel, enabledTypes, vocab } = useTrade()
+  const { permissions } = usePermissions()
 
   const poolTypes = enabledTypes.filter(t => !SYNTHETIC_TYPES.includes(t))
 
@@ -238,10 +241,14 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
               📊 Kanban
             </button>
           </div>
-          <Btn onClick={onNew} variant="primary" size="sm">
-            <span className="hidden sm:inline">+ Nouvelle mission</span>
-            <span className="sm:hidden">+</span>
-          </Btn>
+          <PermissionGate permissions={permissions} permission="manage_missions">
+            {(allowed, title) => (
+              <Btn onClick={onNew} variant="primary" size="sm" disabled={!allowed} title={title}>
+                <span className="hidden sm:inline">+ Nouvelle mission</span>
+                <span className="sm:hidden">+</span>
+              </Btn>
+            )}
+          </PermissionGate>
         </div>
       </div>
 
