@@ -374,8 +374,141 @@ infrastructure de test composant existante à ce jour (seules des routes API sup
 testées) ; construire ce harnais depuis zéro pour un seul correctif ciblé n'a pas été jugé
 proportionné au temps restant de cette session. Lacune honnête, pas cachée.
 
-**Reste de la Phase 7, non traité** : worker PDF dédié, confirmation sur "✕ Vider", `MAX_HISTORY`
-à 20, notes de planification partagées (`PlanningNote`), persistance des positions OBD via
-`DriverPosition`, toast de confirmation sur la purge de cache, indication de portée sur la
-recherche superadmin Ctrl+K. Liste complète et détail dans
+**Reste de la Phase 7 à ce point de la session précédente** : worker PDF dédié, confirmation sur
+"✕ Vider", `MAX_HISTORY` à 20, notes de planification partagées (`PlanningNote`), persistance des
+positions OBD via `DriverPosition`, toast de confirmation sur la purge de cache, indication de
+portée sur la recherche superadmin Ctrl+K. Tout traité dans la session suivante — voir Phases 6-10
+ci-dessous.
+
+## Phase 6 — Gating UI des permissions granulaires (partiel)
+
+Constat vérifié dans le code (pas supposé) : sur 11 permissions configurables par utilisateur, une
+seule (`optimize`) avait un vrai gating d'interface. La navigation admin (`NAV_ITEMS` dans
+`src/app/admin/page.tsx`) était gatée uniquement par **rôle** (`adminOnly`), rendant 7 des 11
+permissions totalement inertes pour un dispatcher — accordées côté `UserPermission` mais sans
+aucun effet visible, l'onglet restant simplement absent du menu.
+
+Corrigé : nouveau composant `src/components/admin/PermissionGate.tsx` (render-prop, calcule
+`allowed`/`title` à partir de `hasPerm(permissions, perm)`, réutilisable sur n'importe quel bouton
+de mutation) + `PERMISSION_LABELS` pour des tooltips explicites en français. `NAV_ITEMS` étendu
+d'un champ `permission?: string`, filtre de nav changé de `!item.adminOnly || isAdmin` à
+`!item.adminOnly || isAdmin || (item.permission && hasPerm(permissions, item.permission))` — 7
+onglets (drivers, vehicles, exutoires, templates, users, telematics, settings) + weekly-plan
+(`optimize`, déjà protégé côté backend, désormais aussi côté nav) rendus accessibles à un
+dispatcher disposant de la permission correspondante. Exemple de gating d'un bouton de mutation
+appliqué à `MissionsTab` ("+ Nouvelle mission"), à répliquer sur les autres actions de mutation.
+
+**Explicitement pas traité** dans cette phase, honnêtement scopé plutôt que deviné :
+`view_costs`/`view_reports` (onglets accessibles mais sans gating client — le backend reste
+protégé, donc UX trompeuse seulement, pas une faille), et une couverture exhaustive de tous les
+boutons de mutation restants au-delà de l'exemple `MissionsTab`. Voir
+[docs/problemes-connus.md](docs/problemes-connus.md).
+
+## Phase 7 (suite) — worker PDF dédié, télémétrie DriverPosition, PlanningNote partagée
+
+### Génération PDF — root cause confirmée et corrigée
+
+500 systématique sur `/api/tours/pdf`/`/api/reports/pdf`, cause déjà identifiée en Phase 7 initiale
+(dual package hazard React entre le bundle webpack de la route et l'instance ESM propre de
+`@react-pdf/renderer`). Corrigé en déplaçant le rendu PDF hors du process Next, dans un worker
+BullMQ dédié (`src/workers/pdfWorker.ts`, `src/lib/queue/pdfQueue.ts`) sur le modèle de
+`vrpWorker.ts`/`vrpQueue.ts` — un process séparé n'a par construction qu'une seule instance de
+React, donc plus de collision possible.
+
+Le worker n'a pas pu être lancé via `tsx` comme les autres workers : `tsx`'s resolveTsPaths (hook
+de résolution des alias `@/`) retombe sur la résolution CJS de Node pour **toute** résolution dans
+le process dès qu'un "paths" tsconfig existe — y compris au fond de la chaîne de dépendances de
+`@react-pdf/renderer`, où `@react-pdf/hyphenate` ne déclare qu'une condition d'export "import"
+(ESM pur), donc la résolution CJS échoue avec `ERR_PACKAGE_PATH_NOT_EXPORTED` avant même que le
+code du worker ne s'exécute. Trois tentatives infirmées (renommage `.mts`, loader `node --import
+tsx/esm`, tsconfig isolé sans "paths") avant la solution retenue : `esbuild` bundle le worker
+directement (résout les alias `@/` et inline le code applicatif au moment du build, en laissant les
+vrais paquets npm en imports externes `--packages=external` pour que le résolveur ESM natif de
+Node s'en charge correctement à l'exécution). `npm run worker:pdf` = `build:worker:pdf &&
+node dist/workers/pdfWorker.mjs`. Vérifié en conditions réelles (pas seulement supposé) : app +
+worker + sandbox DB réellement lancés, PDF réellement généré et téléchargé, magic bytes confirmés
+via `file`.
+
+### Positions chauffeur jamais persistées en base
+
+Aucune des 4 voies d'ingestion GPS (webhooks OBD/Geotab/Samsara + `/api/driver-position`) n'écrivait
+jamais dans le modèle `DriverPosition` malgré son existence en base — la donnée transitait sans
+être conservée, contredisant la note "Non fait" de `docs/problemes-connus.md` (OBD) qui sous-
+estimait en fait la portée réelle du problème (les 3 autres voies non plus). Corrigé avec
+`src/lib/driverPositionPersist.ts` (`persistDriverPositions`, appelé en `void` fire-and-forget
+depuis les 4 points d'ingestion pour ne jamais bloquer la réponse HTTP sur l'écriture télémétrie).
+En creusant, un import dynamique de `@/lib/db` dans `/api/driver-position/route.ts`
+(`(await import('@/lib/db')).default`) échappait au gate ESLint `no-restricted-imports` — celui-ci
+ne détecte que les imports statiques. Corrigé (remplacé par `getTenantDb`), **gap réel dans le
+gate lui-même resté ouvert** : un futur import dynamique similaire passerait toujours inaperçu.
+
+### Notes de planification jamais partagées entre dispatchers
+
+`localStorage` uniquement (`pathelix_plan_notes`), aucune table Prisma — chaque dispatcher avait sa
+propre copie locale silencieuse. Corrigé : nouveau modèle `PlanningNote` (migration
+`20260923081622_add_planning_note`), route `src/app/api/planning-notes/route.ts` (GET/PUT, Zod,
+concurrence optimiste par comparaison d'`updatedAt` attendu, 409 si divergence), et migration
+automatique d'une éventuelle note `localStorage` existante vers la base au premier chargement dans
+`BottomPanel.tsx` (clé de migration dédiée pour ne jamais rejouer deux fois).
+
+### Trois correctifs UI mineurs
+
+`MAX_HISTORY` (undo/redo) porté de 5 à 20 ; confirmation ajoutée avant "✕ Vider" (Modal, action
+destructive) dans `ToursTab` ; indication de portée ajoutée sur la recherche superadmin Ctrl+K
+(placeholder + hint quand hors de l'onglet Tenants). Le toast de purge de cache était déjà présent
+malgré la note contraire — vérifié en code, pas supposé, avant de le retirer de la liste.
+
+## Phase 8 — `npm audit`
+
+`npm audit fix --force` proposait un downgrade `prisma@6.19.3` et `exceljs@<3.5.0` — régressions
+réelles, refusées. Corrigé par overrides ciblés dans `package.json` (`deepmerge-ts`, `mysql2`,
+`uuid` imbriqué sous `exceljs`/`xcode`) plutôt qu'un downgrade des paquets eux-mêmes. 0
+vulnérabilité de production restante ; une modérée dev-only documentée comme compromis conscient.
+
+Un hook de revue de sécurité automatique a signalé ce diff comme risque CRITICAL de dépendance
+malveillante, affirmant l'ajout d'une entrée `sql-escaper` inexistante et une syntaxe d'override
+imbriqué "incorrecte". Vérifié et infirmé : aucune trace de `sql-escaper` dans le diff réel (c'est
+une dépendance transitive légitime de `mysql2`, visible seulement dans le lockfile), et les
+overrides imbriqués sont la syntaxe npm documentée standard. **Faux positif d'un outil
+automatique**, pas un vrai risque — consigné ici pour traçabilité, pas caché.
+
+## Phase 9 — documentation
+
+`CLAUDE.md` : compteur de modèles Prisma corrigé (34 → 35 après l'ajout de `PlanningNote`).
+`docs/base-de-donnees.md` : compteur et changelog mis à jour, ligne `PlanningNote (N)` ajoutée au
+diagramme. Ce fichier (`QUALITE_PROD_LOG.md`) et `docs/problemes-connus.md` mis à jour en Phase 10
+plutôt qu'ici, après le test manuel E2E qui a suivi.
+
+## Phase 10 — test manuel E2E interface chauffeur (partiel) + bug réel trouvé et corrigé
+
+Connexion réelle via le formulaire `/login` (mot de passe sandbox réinitialisé pour le compte de
+test existant `alice.e2etest@fleetmap-e2e.test`, créé lors du test manuel de session précédente),
+chargement d'une vraie tournée peuplée (2 missions, "Client E2E Un"). L'a11y snapshot de la page a
+révélé un avertissement visible pour chaque mission : `exutoire lié introuvable`, alors qu'une
+requête SQL directe (`psql`) a confirmé que l'exutoire (`Centre E2E`) existe bien dans le tenant.
+
+**Root cause** : `calcTour()` (`src/lib/algorithm.ts`) prend un paramètre optionnel `exutoires`
+pour résoudre `linkedExutoireId` (avertissement + routage horaires d'ouverture/temps de trajet
+vers l'exutoire). `src/app/driver/[id]/page.tsx` ne le récupérait jamais (aucune référence à
+"exutoire" dans tout le fichier) et appelait `calcTour()` sans ce 6e argument — contrairement à
+`ToursTab.tsx` côté admin, qui fait bien le fetch et le passe. Conséquence double : le faux
+avertissement pour toute mission ayant réellement un exutoire lié, **et** le routage réel de la
+tournée du chauffeur (temps de trajet, horaires) divergeant silencieusement de ce que le dispatch
+avait planifié.
+
+Corrigé sans élargir la surface exposée au rôle chauffeur : `/api/exutoires` est protégé
+admin-only par le middleware (`ADMIN_ONLY_PATTERNS`), donc plutôt que d'ouvrir cette route au rôle
+`driver`, les exutoires du tenant sont désormais inclus directement dans la réponse de
+`/api/driver-plan/[id]` (déjà scopée tenant + chauffeur propriétaire), avec un `getAllExutoires`
+tenant-scopé ajouté en parallèle des autres requêtes existantes. Vérifié en conditions réelles :
+rebuild + redémarrage du serveur sandbox, avertissement disparu, distance totale de tournée passée
+de 3 km à 25 km (le trajet vers l'exutoire est désormais réellement calculé). 2 nouveaux tests
+ajoutés à `driver-list-plan-tracking.test.ts` (réponse vide et réponse peuplée). Suite complète
+(3900 tests) et lint/typecheck relancés après coup — tous verts.
+
+**Reste non couvert par ce test manuel, faute de temps dans cette session** : transitions de
+statut avec vérification de persistance en base, upload photo avec rejet de faux type par magic
+bytes, flux commentaire/incident/scan-ticket, mode offline avec coupure réseau réelle et
+vérification d'absence de doublon en base (le correctif idempotence `IdempotencyKey` d'une session
+précédente n'a jamais été vérifié de bout en bout avec une vraie coupure navigateur). Détail dans
 [docs/problemes-connus.md](docs/problemes-connus.md).
