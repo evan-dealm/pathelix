@@ -4,7 +4,7 @@ import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { redisCache }                from '@/lib/redisCache'
-import prisma                        from '@/lib/db'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 import { TRADE_IDS }                 from '@/lib/trades'
 import { customTradeRowToConfig }    from '@/lib/data/customTrades'
 import { hasPermission }             from '@/lib/permissions'
@@ -39,8 +39,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       tenantId,
       async () => {
         const [settings, tenant] = await Promise.all([
-          prisma.tenantSettings.findUnique({ where: { tenantId } }),
-          prisma.tenant.findUnique({ where: { id: tenantId }, select: { trade: true, name: true } }),
+          getTenantDb(tenantId).tenantSettings.findUnique({ where: { tenantId } }),
+          unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { trade: true, name: true } }),
         ])
         const trade = tenant?.trade ?? null
         const tenantName = tenant?.name ?? null
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // browser's own JS bundle never sees it. Ship the resolved config down to the client so
         // TradeProvider can use it directly instead of an empty client-side registry.
         const customTradeConfig = trade && !(TRADE_IDS as readonly string[]).includes(trade)
-          ? await prisma.customTrade.findUnique({ where: { tradeKey: trade } })
+          ? await unscopedPrisma.customTrade.findUnique({ where: { tradeKey: trade } })
               .then(row => row ? customTradeRowToConfig(row) : null)
               .catch(() => null)
           : null
@@ -109,10 +109,11 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const settings = await prisma.tenantSettings.upsert({
+    const settingsDb = getTenantDb(tenantId)
+    const settings = await settingsDb.tenantSettings.upsert({
       where:  { tenantId },
       update: parsed.data,
-      create: { tenantId, ...parsed.data },
+      create: { tenantId, ...parsed.data } as Parameters<typeof settingsDb.tenantSettings.upsert>[0]['create'],
     })
 
     void redisCache.invalidate('settings', tenantId)

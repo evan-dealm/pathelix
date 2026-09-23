@@ -12,8 +12,8 @@ const mockTenantFindMany  = vi.hoisted(() => vi.fn())
 const mockMetricFindMany  = vi.hoisted(() => vi.fn())
 const mockMissionFindMany = vi.hoisted(() => vi.fn())
 const mockMissionCount    = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: {
     tenant:              { findMany: mockTenantFindMany  },
     interventionMetric:  { findMany: mockMetricFindMany  },
     mission:             { findMany: mockMissionFindMany, count: mockMissionCount },

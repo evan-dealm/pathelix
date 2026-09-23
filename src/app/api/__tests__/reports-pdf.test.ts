@@ -18,13 +18,13 @@ const mockTenantFindUnique    = vi.hoisted(() => vi.fn())
 const mockMissionFindMany     = vi.hoisted(() => vi.fn())
 const mockMetricFindMany      = vi.hoisted(() => vi.fn())
 const mockDriverFindMany      = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    tenant:              { findUnique:  mockTenantFindUnique },
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: { tenant: { findUnique: mockTenantFindUnique } },
+  getTenantDb: () => ({
     mission:             { findMany:    mockMissionFindMany  },
     interventionMetric:  { findMany:    mockMetricFindMany   },
     driver:              { findMany:    mockDriverFindMany   },
-  },
+  }),
 }))
 
 import { GET } from '@/app/api/reports/pdf/route'

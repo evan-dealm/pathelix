@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { hasPermission } from '@/lib/permissions'
 
@@ -39,19 +39,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const dateStr = (d: Date) => d.toISOString().slice(0, 10)
 
   try {
+    const db = getTenantDb(tenantId)
 
     const [
       missionsCurrent, missionsPrev,
       plansCurrent, plansPrev,
       driverCount, vehicleCount, exutoireCount,
     ] = await Promise.all([
-      prisma.mission.count({ where: { tenantId, createdAt: { gte: startDate, lte: endDate } } }),
-      prisma.mission.count({ where: { tenantId, createdAt: { gte: prevStartDate, lte: prevEndDate } } }),
-      prisma.plan.count({ where: { tenantId, createdAt: { gte: startDate, lte: endDate } } }),
-      prisma.plan.count({ where: { tenantId, createdAt: { gte: prevStartDate, lte: prevEndDate } } }),
-      prisma.driver.count({ where: { tenantId, archived: false } }),
-      prisma.vehicle.count({ where: { tenantId } }),
-      prisma.exutoire.count({ where: { tenantId } }),
+      db.mission.count({ where: { createdAt: { gte: startDate, lte: endDate } } }),
+      db.mission.count({ where: { createdAt: { gte: prevStartDate, lte: prevEndDate } } }),
+      db.plan.count({ where: { createdAt: { gte: startDate, lte: endDate } } }),
+      db.plan.count({ where: { createdAt: { gte: prevStartDate, lte: prevEndDate } } }),
+      db.driver.count({ where: { archived: false } }),
+      db.vehicle.count({ where: {} }),
+      db.exutoire.count({ where: {} }),
     ])
 
     const [
@@ -59,36 +60,36 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       missionsByDay, plansByDay,
       topClients, byWasteType,
     ] = await Promise.all([
-      prisma.mission.groupBy({
+      db.mission.groupBy({
         by: ['type'],
-        where: { tenantId, createdAt: { gte: startDate, lte: endDate } },
+        where: { createdAt: { gte: startDate, lte: endDate } },
         _count: true,
       }),
-      prisma.mission.groupBy({
+      db.mission.groupBy({
         by: ['priority'],
-        where: { tenantId, createdAt: { gte: startDate, lte: endDate } },
+        where: { createdAt: { gte: startDate, lte: endDate } },
         _count: true,
       }),
-      prisma.mission.groupBy({
+      db.mission.groupBy({
         by: ['date'],
-        where: { tenantId, createdAt: { gte: startDate, lte: endDate } },
+        where: { createdAt: { gte: startDate, lte: endDate } },
         _count: true,
       }),
-      prisma.plan.groupBy({
+      db.plan.groupBy({
         by: ['date'],
-        where: { tenantId, createdAt: { gte: startDate, lte: endDate } },
+        where: { createdAt: { gte: startDate, lte: endDate } },
         _count: true,
       }),
-      prisma.mission.groupBy({
+      db.mission.groupBy({
         by: ['clientName'],
-        where: { tenantId, createdAt: { gte: startDate, lte: endDate }, clientName: { not: null } },
+        where: { createdAt: { gte: startDate, lte: endDate }, clientName: { not: null } },
         _count: true,
         orderBy: { _count: { clientName: 'desc' } },
         take: 10,
       }),
-      prisma.mission.groupBy({
+      db.mission.groupBy({
         by: ['wasteTypeLabel'],
-        where: { tenantId, createdAt: { gte: startDate, lte: endDate }, wasteTypeLabel: { not: null } },
+        where: { createdAt: { gte: startDate, lte: endDate }, wasteTypeLabel: { not: null } },
         _count: true,
         orderBy: { _count: { wasteTypeLabel: 'desc' } },
         take: 10,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTenantId }               from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { redisCache }                from '@/lib/redisCache'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/kpi-history')
 
@@ -29,15 +29,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           dates.push(d.toISOString().slice(0, 10))
         }
 
+        const db = getTenantDb(tenantId)
         const [missionCounts, planCounts] = await Promise.all([
-          prisma.mission.groupBy({
+          db.mission.groupBy({
             by:     ['date'],
-            where:  { tenantId, date: { in: dates }, archived: false },
+            where:  { date: { in: dates }, archived: false },
             _count: { id: true },
           }),
-          prisma.plan.groupBy({
+          db.plan.groupBy({
             by:     ['date'],
-            where:  { tenantId, date: { in: dates } },
+            where:  { date: { in: dates } },
             _count: { id: true },
           }),
         ])

@@ -16,11 +16,11 @@ vi.mock('@/lib/tourPdf',   () => ({ renderTourPdf: mockRenderTourPdf }))
 
 const mockDriverFindFirst = vi.hoisted(() => vi.fn())
 const mockPlanFindFirst   = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     driver: { findFirst: mockDriverFindFirst },
     plan:   { findFirst: mockPlanFindFirst   },
-  },
+  }),
 }))
 
 function makeReq(params: Record<string, string> = {}) {
@@ -72,11 +72,11 @@ describe('GET /api/tours/pdf — real mode', () => {
     }))
     vi.mock('@/lib/algorithm', () => ({ calcTour: mockCalcTour }))
     vi.mock('@/lib/tourPdf',   () => ({ renderTourPdf: mockRenderTourPdf }))
-    vi.mock('@/lib/db', () => ({
-      default: {
+    vi.mock('@/lib/tenantDb', () => ({
+      getTenantDb: () => ({
         driver: { findFirst: mockDriverFindFirst },
         plan:   { findFirst: mockPlanFindFirst   },
-      },
+      }),
     }))
     const mod = await import('@/app/api/tours/pdf/route')
     GET = mod.GET

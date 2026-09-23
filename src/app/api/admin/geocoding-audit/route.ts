@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
-import prisma from '@/lib/db'
+import { unscopedPrisma } from '@/lib/tenantDb'
 
 const log = createLogger('/api/admin/geocoding-audit')
 
@@ -13,7 +13,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const rows = await prisma.mission.groupBy({
+    // Superadmin cross-tenant aggregate by design — one row per tenant, not a leak.
+    const rows = await unscopedPrisma.mission.groupBy({
       by: ['tenantId'],
       where: { needsGeocode: true },
       _count: { id: true },

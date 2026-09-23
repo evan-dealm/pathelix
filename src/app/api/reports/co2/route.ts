@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const USE_MOCK = process.env.USE_MOCK_DATA !== 'false'
 
@@ -39,8 +39,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   try {
 
-    const plans = await prisma.plan.findMany({
-      where: { tenantId, date: { gte: from, lte: to } },
+    const plans = await getTenantDb(tenantId).plan.findMany({
+      where: { date: { gte: from, lte: to } },
       select: {
         driverId: true,
         missions: true,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { signSession, SESSION_COOKIE, COOKIE_OPTIONS } from '@/lib/session'
 import { TRADE_IDS } from '@/lib/trades'
@@ -35,8 +35,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const { trade, companyName, timezone, defaultStartTime, seedData } = parsed.data
 
-    const [tenant] = await prisma.$transaction([
-      prisma.tenant.update({
+    // Tenant.update isn't tenant-scoped (it IS the tenant), so this transaction runs on the
+    // unscoped client — TenantSettings keeps its tenantId explicit here rather than switching
+    // clients mid-transaction (Prisma batches array-form $transaction calls from one client).
+    const [tenant] = await unscopedPrisma.$transaction([
+      unscopedPrisma.tenant.update({
         where: { id: tenantId },
         data:  {
           trade,
@@ -45,7 +48,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         },
         select: { id: true, name: true, trade: true },
       }),
-      prisma.tenantSettings.upsert({
+      unscopedPrisma.tenantSettings.upsert({
         where:  { tenantId },
         create: { tenantId, defaultStartTime: defaultStartTime ?? '07:00' },
         update: {
@@ -56,26 +59,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ])
 
     if (seedData) {
-      const missionCount = await prisma.mission.count({ where: { tenantId } })
+      const db = getTenantDb(tenantId)
+      const missionCount = await db.mission.count({})
       if (missionCount === 0) {
         const tomorrow = new Date()
         tomorrow.setDate(tomorrow.getDate() + 1)
         const dateStr = tomorrow.toISOString().split('T')[0]
 
-        await prisma.$transaction([
-          prisma.driver.createMany({
+        await db.$transaction([
+          db.driver.createMany({
             data: [
-              { tenantId, firstName: 'Jean', lastName: 'Dupont',  sector: 'Nord', depotName: 'Dépôt Nord', depotLat: 45.75, depotLng: 4.85 },
-              { tenantId, firstName: 'Marie', lastName: 'Martin', sector: 'Sud',  depotName: 'Dépôt Sud',  depotLat: 45.72, depotLng: 4.83 },
-            ],
+              { firstName: 'Jean', lastName: 'Dupont',  sector: 'Nord', depotName: 'Dépôt Nord', depotLat: 45.75, depotLng: 4.85 },
+              { firstName: 'Marie', lastName: 'Martin', sector: 'Sud',  depotName: 'Dépôt Sud',  depotLat: 45.72, depotLng: 4.83 },
+            ] as Parameters<typeof db.driver.createMany>[0]['data'],
             skipDuplicates: true,
           }),
-          prisma.mission.createMany({
+          db.mission.createMany({
             data: [
-              { tenantId, type: 'POSER',   date: dateStr, address: '12 rue de la Paix, Lyon',    latitude: 45.767, longitude: 4.833, estimatedDurationMin: 30, maneuverTimeMin: 10, clientName: 'Client A', priority: 2 },
-              { tenantId, type: 'RETIRER', date: dateStr, address: '45 av. Berthelot, Lyon',      latitude: 45.748, longitude: 4.848, estimatedDurationMin: 25, maneuverTimeMin: 10, clientName: 'Client B', priority: 1 },
-              { tenantId, type: 'ECHANGER',date: dateStr, address: '8 pl. Bellecour, Lyon',       latitude: 45.757, longitude: 4.832, estimatedDurationMin: 40, maneuverTimeMin: 15, clientName: 'Client C', priority: 2 },
-            ],
+              { type: 'POSER',   date: dateStr, address: '12 rue de la Paix, Lyon',    latitude: 45.767, longitude: 4.833, estimatedDurationMin: 30, maneuverTimeMin: 10, clientName: 'Client A', priority: 2 },
+              { type: 'RETIRER', date: dateStr, address: '45 av. Berthelot, Lyon',      latitude: 45.748, longitude: 4.848, estimatedDurationMin: 25, maneuverTimeMin: 10, clientName: 'Client B', priority: 1 },
+              { type: 'ECHANGER',date: dateStr, address: '8 pl. Bellecour, Lyon',       latitude: 45.757, longitude: 4.832, estimatedDurationMin: 40, maneuverTimeMin: 15, clientName: 'Client C', priority: 2 },
+            ] as Parameters<typeof db.mission.createMany>[0]['data'],
             skipDuplicates: true,
           }),
         ])
@@ -104,7 +108,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const { tenantId } = getRequestContext(req)
 
   try {
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await unscopedPrisma.tenant.findUnique({
       where: { id: tenantId },
       select: { trade: true },
     })

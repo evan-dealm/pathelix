@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse }           from 'next/server'
-import prisma                                  from '@/lib/db'
+import { unscopedPrisma, getTenantDb }         from '@/lib/tenantDb'
 import { getRequestContext }                   from '@/lib/data/context'
 import { generateMonthlyReportPdf }            from '@/lib/pdfReport'
 import type { MonthlyReportData }              from '@/lib/pdfReport'
@@ -25,22 +25,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const endDate   = new Date(year, month, 0, 23, 59, 59, 999)
 
   try {
-    const tenant = await prisma.tenant.findUnique({
+    const db = getTenantDb(tenantId)
+    const tenant = await unscopedPrisma.tenant.findUnique({
       where: { id: tenantId },
       select: { name: true },
     })
 
     const [missions, metrics, drivers] = await Promise.all([
-      prisma.mission.findMany({
-        where: { tenantId, date: { gte: startDate.toISOString().slice(0, 10), lte: endDate.toISOString().slice(0, 10) } },
+      db.mission.findMany({
+        where: { date: { gte: startDate.toISOString().slice(0, 10), lte: endDate.toISOString().slice(0, 10) } },
         select: { id: true, completedAt: true, cancelledAt: true, type: true },
       }),
-      prisma.interventionMetric.findMany({
-        where: { tenantId, date: { gte: startDate.toISOString().slice(0, 10), lte: endDate.toISOString().slice(0, 10) } },
+      db.interventionMetric.findMany({
+        where: { date: { gte: startDate.toISOString().slice(0, 10), lte: endDate.toISOString().slice(0, 10) } },
         select: { driverId: true, actualDurationMin: true, actualTravelMin: true, distanceKm: true, missionType: true },
       }),
-      prisma.driver.findMany({
-        where: { tenantId, archived: false },
+      db.driver.findMany({
+        where: { archived: false },
         select: { id: true, firstName: true, lastName: true },
       }),
     ])

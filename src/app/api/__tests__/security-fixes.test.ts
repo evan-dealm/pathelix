@@ -166,12 +166,12 @@ describe('Security: delivery-proof — UUID filenames', () => {
     const mockMkdir     = vi.fn(async () => {})
 
     vi.doMock('fs/promises', () => ({ writeFile: mockWriteFile, mkdir: mockMkdir }))
-    vi.doMock('@/lib/db', () => ({
-      default: {
+    vi.doMock('@/lib/tenantDb', () => ({
+      getTenantDb: () => ({
         mission:       { findFirst: vi.fn(async () => ({ id: 'm-1', tenantId: 'tenant-test' })) },
         driver:        { findFirst: vi.fn(async () => ({ id: 'driver-1' })) },
         deliveryProof: { upsert:    vi.fn(async () => ({ id: 'p-1' })) },
-      },
+      }),
     }))
     vi.doMock('@/lib/data/context', () => ({
       getRequestContext: vi.fn(() => ({ tenantId: 'tenant-test', userId: 'u-1', role: 'driver', requestId: 'req-1', trade: null })),

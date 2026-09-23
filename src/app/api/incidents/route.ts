@@ -3,7 +3,7 @@ import { z }                         from 'zod'
 import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { broadcastIncident }         from '@/lib/incidentBroadcast'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/incidents')
 
@@ -27,12 +27,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { missionId, incidentType, notes } = parsed.data
 
-  const mission = await prisma.mission.findFirst({ where: { id: missionId, tenantId }, select: { id: true, address: true, clientName: true } })
+  const db = getTenantDb(tenantId)
+  const mission = await db.mission.findFirst({ where: { id: missionId }, select: { id: true, address: true, clientName: true } })
   if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
 
   try {
-    const updated = await prisma.mission.updateMany({
-      where: { id: missionId, tenantId },
+    const updated = await db.mission.updateMany({
+      where: { id: missionId },
       data:  { incidentAt: new Date(), incidentType, incidentNotes: notes ?? '' },
     })
     if (updated.count === 0) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
@@ -62,9 +63,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const limit    = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))
 
   try {
+    const db = getTenantDb(tenantId)
     const [incidents, total] = await Promise.all([
-      prisma.mission.findMany({
-        where:  { tenantId, incidentAt: { not: null } },
+      db.mission.findMany({
+        where:  { incidentAt: { not: null } },
         select: {
           id: true, address: true, clientName: true,
           incidentAt: true, incidentType: true, incidentNotes: true,
@@ -73,7 +75,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.mission.count({ where: { tenantId, incidentAt: { not: null } } }),
+      db.mission.count({ where: { incidentAt: { not: null } } }),
     ])
     return NextResponse.json({
       incidents,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { calcTour } from '@/lib/algorithm'
 import { renderTourPdf } from '@/lib/tourPdf'
 import type { PlannedMission, Driver } from '@/lib/types'
@@ -24,10 +24,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
+    const db = getTenantDb(tenantId)
     const [dbDriver, dbPlan] = await Promise.all([
-      prisma.driver.findFirst({ where: { id: driverId, tenantId, archived: false } }),
-      prisma.plan.findFirst({
-        where: { driverId, tenantId, date },
+      db.driver.findFirst({ where: { id: driverId, archived: false } }),
+      db.plan.findFirst({
+        where: { driverId, date },
         select: { missions: true, startTime: true, speedKmh: true },
       }),
     ])

@@ -28,10 +28,10 @@ vi.mock('@/lib/redisCache', () => ({
   redisCache: { invalidateAll: vi.fn(() => Promise.resolve()) },
 }))
 
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     mission: { createMany: mockCreateMany },
-  },
+  }),
 }))
 
 import { POST } from '@/app/api/import/route'

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { Prisma } from '@/generated/prisma'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
@@ -75,10 +75,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     : data
 
   try {
+    const db = getTenantDb(tenantId)
     if (type === 'missions') {
       const VALID_TYPES = ['POSER','RETIRER','ECHANGER','VIDER','PAUSE','CHARGER_IMMEDIAT','DEPLACER','TASSER','EXPEDIER','ALLER_RETOUR'] as const
       type MType = (typeof VALID_TYPES)[number]
-      const rows: Prisma.MissionCreateManyInput[] = []
+      const rows: Omit<Prisma.MissionCreateManyInput, 'tenantId'>[] = []
       for (let i = 0; i < mapped.length; i++) {
         const m = mapped[i]
         const rawType = String(m.type ?? '')
@@ -96,7 +97,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         if (coordsOk) withCoords++
         else needsGeocodeCount++
         rows.push({
-          tenantId,
           type:                 rawType as MType,
           date:                 String(m.date ?? new Date().toISOString().slice(0, 10)),
           address:              String(m.address ?? ''),
@@ -113,12 +113,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         })
       }
       if (rows.length > 0) {
-        const result = await prisma.mission.createMany({ data: rows })
+        const result = await db.mission.createMany({ data: rows as Parameters<typeof db.mission.createMany>[0]['data'] })
         imported = result.count
       }
     } else if (type === 'drivers') {
       const rows = mapped.map(d => ({
-        tenantId,
         firstName: String(d.firstName ?? d.prenom ?? ''),
         lastName:  String(d.lastName  ?? d.nom    ?? ''),
         sector:    String(d.sector    ?? d.secteur ?? ''),
@@ -127,32 +126,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         depotLng:  parseCoord(d.depotLng  ?? d.longitude) ?? 0,
         phone:     d.phone ? String(d.phone) : undefined,
       }))
-      const result = await prisma.driver.createMany({ data: rows })
+      const result = await db.driver.createMany({ data: rows as Parameters<typeof db.driver.createMany>[0]['data'] })
       imported = result.count
     } else if (type === 'clients') {
       const rows = mapped.map(c => ({
-        tenantId,
         name:    String(c.name    ?? c.nom       ?? ''),
         contact: String(c.contact ?? ''),
         phone:   String(c.phone   ?? c.telephone ?? ''),
         email:   String(c.email   ?? ''),
       }))
-      const result = await prisma.client.createMany({ data: rows })
+      const result = await db.client.createMany({ data: rows as Parameters<typeof db.client.createMany>[0]['data'] })
       imported = result.count
     } else if (type === 'sites') {
       const rows = mapped.map(s => ({
-        tenantId,
         name:      String(s.name    ?? s.nom    ?? ''),
         address:   String(s.address ?? s.adresse ?? ''),
         latitude:  parseCoord(s.latitude)  ?? 0,
         longitude: parseCoord(s.longitude) ?? 0,
         sector:    s.sector ? String(s.sector) : undefined,
       }))
-      const result = await prisma.site.createMany({ data: rows })
+      const result = await db.site.createMany({ data: rows as Parameters<typeof db.site.createMany>[0]['data'] })
       imported = result.count
     } else if (type === 'exutoires') {
       const rows = mapped.map(e => ({
-        tenantId,
         name:               String(e.name    ?? e.nom    ?? ''),
         address:            String(e.address ?? e.adresse ?? ''),
         lat:                parseCoord(e.lat ?? e.latitude)   ?? 0,
@@ -163,7 +159,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         closedDays:         Array.isArray(e.closedDays)         ? e.closedDays         : [],
         acceptedWasteTypes: Array.isArray(e.acceptedWasteTypes) ? e.acceptedWasteTypes : [],
       }))
-      const result = await prisma.exutoire.createMany({ data: rows })
+      const result = await db.exutoire.createMany({ data: rows as unknown as Parameters<typeof db.exutoire.createMany>[0]['data'] })
       imported = result.count
     }
 

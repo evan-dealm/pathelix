@@ -10,8 +10,8 @@ vi.mock('@/lib/logger', () => ({
 }))
 
 const mockFindMany = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: { plan: { findMany: mockFindMany } },
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({ plan: { findMany: mockFindMany } }),
 }))
 
 function makeReq(params: Record<string, string> = {}) {
@@ -66,8 +66,8 @@ describe('GET /api/reports/co2 — real mode', () => {
     vi.mock('@/lib/logger', () => ({
       createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
     }))
-    vi.mock('@/lib/db', () => ({
-      default: { plan: { findMany: mockFindMany } },
+    vi.mock('@/lib/tenantDb', () => ({
+      getTenantDb: () => ({ plan: { findMany: mockFindMany } }),
     }))
     const mod = await import('@/app/api/reports/co2/route')
     GET = mod.GET

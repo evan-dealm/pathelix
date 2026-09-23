@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma                        from '@/lib/db'
+import { unscopedPrisma }            from '@/lib/tenantDb'
 import { getRequestContext }         from '@/lib/data/context'
 
 interface TradeBenchmark {
@@ -19,8 +19,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-
-    const tenants = await prisma.tenant.findMany({
+    // Cross-tenant by design — anonymized benchmark aggregates across every tenant sharing the
+    // same trade, never exposed per-tenant except the caller's own currentStats below.
+    const tenants = await unscopedPrisma.tenant.findMany({
       where: { trade: { not: null } },
       select: { id: true, trade: true },
     })
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const benchmarks: TradeBenchmark[] = []
     for (const [trade, ids] of tradeMap) {
-      const metrics = await prisma.interventionMetric.findMany({
+      const metrics = await unscopedPrisma.interventionMetric.findMany({
         where: { tenantId: { in: ids }, isReliable: true },
         select: {
           tenantId:            true,
@@ -52,8 +53,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       if (metrics.length < 10) continue
 
       const [missionTotal, missionDone] = await Promise.all([
-        prisma.mission.count({ where: { tenantId: { in: ids } } }),
-        prisma.mission.count({ where: { tenantId: { in: ids }, completedAt: { not: null } } }),
+        unscopedPrisma.mission.count({ where: { tenantId: { in: ids } } }),
+        unscopedPrisma.mission.count({ where: { tenantId: { in: ids }, completedAt: { not: null } } }),
       ])
 
       const tenantsInTrade = new Set(metrics.map(m => m.tenantId))
@@ -96,13 +97,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     let currentStats: Omit<TradeBenchmark, 'trade' | 'tenantCount'> | null = null
     if (currentTrade) {
-      const myMetrics = await prisma.interventionMetric.findMany({
+      const myMetrics = await unscopedPrisma.interventionMetric.findMany({
         where: { tenantId, isReliable: true },
         select: { estimatedDurationMin: true, actualDurationMin: true, distanceKm: true },
       })
       const [myMissionTotal, myMissionDone] = await Promise.all([
-        prisma.mission.count({ where: { tenantId } }),
-        prisma.mission.count({ where: { tenantId, completedAt: { not: null } } }),
+        unscopedPrisma.mission.count({ where: { tenantId } }),
+        unscopedPrisma.mission.count({ where: { tenantId, completedAt: { not: null } } }),
       ])
 
       if (myMetrics.length >= 5) {

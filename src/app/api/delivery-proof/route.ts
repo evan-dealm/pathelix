@@ -3,7 +3,7 @@ import { writeFile, mkdir }          from 'fs/promises'
 import { join }                      from 'path'
 import { createLogger }              from '@/lib/logger'
 import { getRequestContext }         from '@/lib/data/context'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/delivery-proof')
 
@@ -38,13 +38,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'missionId et driverId requis' }, { status: 422 })
   }
 
-  const mission = await prisma.mission.findFirst({ where: { id: missionId, tenantId } })
+  const db = getTenantDb(tenantId)
+  const mission = await db.mission.findFirst({ where: { id: missionId } })
   if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
 
   // DeliveryProof.driverId has no DB-level FK — driverId comes straight
   // from client form data, so it must be checked against tenantId here or a proof could get
   // written referencing a driver that belongs to a different tenant.
-  const driver = await prisma.driver.findFirst({ where: { id: driverId, tenantId }, select: { id: true } })
+  const driver = await db.driver.findFirst({ where: { id: driverId }, select: { id: true } })
   if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
 
   const uploadsDir = join(process.cwd(), 'public', 'uploads', safeName(tenantId))
@@ -82,9 +83,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const proof = await prisma.deliveryProof.upsert({
+    const proof = await db.deliveryProof.upsert({
       where:  { missionId },
-      create: { tenantId, missionId, driverId, notes, photoUrl, signatureUrl },
+      create: { missionId, driverId, notes, photoUrl, signatureUrl } as Parameters<typeof db.deliveryProof.upsert>[0]['create'],
       update: { notes, ...(photoUrl ? { photoUrl } : {}), ...(signatureUrl ? { signatureUrl } : {}) },
     })
 
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!missionId) return NextResponse.json({ error: 'missionId requis' }, { status: 400 })
 
   try {
-    const proof = await prisma.deliveryProof.findFirst({ where: { missionId, tenantId } })
+    const proof = await getTenantDb(tenantId).deliveryProof.findFirst({ where: { missionId } })
     return NextResponse.json({ proof: proof ?? null })
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

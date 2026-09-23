@@ -2,7 +2,7 @@ import { NextRequest, NextResponse }    from 'next/server'
 import { z }                            from 'zod'
 import { getRequestContext }            from '@/lib/data/context'
 import { getFeatureFlags, invalidateFlagsCache } from '@/lib/featureFlags'
-import prisma                           from '@/lib/db'
+import { getTenantDb }                  from '@/lib/tenantDb'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { tenantId } = getRequestContext(req)
@@ -25,9 +25,9 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   const parsed = UpdateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Payload invalide' }, { status: 422 })
 
-  await prisma.tenantSettings.upsert({
+  await getTenantDb(tenantId).tenantSettings.upsert({
     where:  { tenantId },
-    create: { tenantId, features: parsed.data },
+    create: { features: parsed.data } as Parameters<ReturnType<typeof getTenantDb>['tenantSettings']['upsert']>[0]['create'],
     update: { features: parsed.data },
   })
 
