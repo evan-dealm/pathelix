@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useCallback } from 'react'
+import { useMemo, useRef, useState, useCallback, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { Driver, PlannedMission } from '@/lib/types'
@@ -11,6 +11,12 @@ import { Btn, DateNav } from '../ui'
 import { displayFull, tlLeft } from '../hooks'
 import { DriverRow } from './DriverRow'
 import { GanttPanel } from './GanttPanel'
+import { useToast } from '@/components/ui/Toast'
+
+const LOCALSTORAGE_NOTES_KEY = 'pathelix_plan_notes'
+const LOCALSTORAGE_MIGRATED_KEY = 'pathelix_plan_notes_migrated_v1'
+
+interface PlanningNoteEntry { text: string; updatedAt: string | null }
 
 type DriverFilter = 'all' | 'with-plan' | 'empty' | 'available'
 
@@ -48,16 +54,80 @@ export function BottomPanel({ planDate, setPlanDate, draggedId, onDrop, onDragSt
   const [showCopyPicker, setShowCopyPicker] = useState(false)
   const [copyTargetDate, setCopyTargetDate] = useState('')
 
-  const [notes, setNotes] = useState<Record<string, string>>(() => {
-    if (typeof window === 'undefined') return {}
-    try { return JSON.parse(localStorage.getItem('pathelix_plan_notes') || '{}') } catch { return {} }
-  })
+  const { error: toastError } = useToast()
+  const [notes, setNotes] = useState<Record<string, PlanningNoteEntry>>({})
   const [showNotes, setShowNotes] = useState(false)
+  const noteSaveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+
+  // One-time migration of pre-existing localStorage notes into the shared PlanningNote table —
+  // they used to be per-browser only, silently unshared between dispatchers.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (localStorage.getItem(LOCALSTORAGE_MIGRATED_KEY)) return
+    let raw: Record<string, string> = {}
+    try { raw = JSON.parse(localStorage.getItem(LOCALSTORAGE_NOTES_KEY) || '{}') } catch { /* ignore */ }
+    const entries = Object.entries(raw).filter(([, text]) => text && text.trim())
+    if (entries.length === 0) {
+      localStorage.setItem(LOCALSTORAGE_MIGRATED_KEY, '1')
+      return
+    }
+    void (async () => {
+      for (const [date, text] of entries) {
+        try {
+          await fetch('/api/planning-notes', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date, text, expectedUpdatedAt: null }),
+          })
+        } catch { /* best-effort — leave localStorage in place if migration fails, retry next load */ }
+      }
+      localStorage.setItem(LOCALSTORAGE_MIGRATED_KEY, '1')
+      localStorage.removeItem(LOCALSTORAGE_NOTES_KEY)
+    })()
+  }, [])
+
+  const fetchedDatesRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (fetchedDatesRef.current.has(planDate)) return
+    fetchedDatesRef.current.add(planDate)
+    void (async () => {
+      try {
+        const res = await fetch(`/api/planning-notes?date=${planDate}`)
+        if (!res.ok) return
+        const data = await res.json() as { date: string; text: string; updatedAt: string | null }
+        setNotes(prev => ({ ...prev, [planDate]: { text: data.text, updatedAt: data.updatedAt } }))
+      } catch { /* keep whatever was cached locally, if anything */ }
+    })()
+  }, [showNotes, planDate])
+
   function updateNote(date: string, text: string) {
-    const next = { ...notes, [date]: text }
-    if (!text.trim()) delete next[date]
-    setNotes(next)
-    localStorage.setItem('pathelix_plan_notes', JSON.stringify(next))
+    const prevEntry = notes[date]
+    setNotes(prev => ({ ...prev, [date]: { text, updatedAt: prevEntry?.updatedAt ?? null } }))
+
+    const timers = noteSaveTimers.current
+    const existingTimer = timers.get(date)
+    if (existingTimer) clearTimeout(existingTimer)
+    timers.set(date, setTimeout(async () => {
+      timers.delete(date)
+      try {
+        const res = await fetch('/api/planning-notes', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, text, expectedUpdatedAt: prevEntry?.updatedAt ?? null }),
+        })
+        if (res.status === 409) {
+          const conflict = await res.json() as { current: PlanningNoteEntry }
+          toastError('Note modifiée par un autre utilisateur — conservez votre texte avant de recharger')
+          setNotes(prev => ({ ...prev, [date]: conflict.current }))
+          return
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const saved = await res.json() as { text: string; updatedAt: string | null }
+        setNotes(prev => ({ ...prev, [date]: { text: saved.text, updatedAt: saved.updatedAt } }))
+      } catch {
+        toastError('Échec de la sauvegarde de la note')
+      }
+    }, 600))
   }
 
   const [driverFilter, setDriverFilter] = useState<DriverFilter>('all')
@@ -249,8 +319,8 @@ export function BottomPanel({ planDate, setPlanDate, draggedId, onDrop, onDragSt
           <button type="button" onClick={() => setShowNotes(n => !n)}
             title="Notes de planification"
             className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors border
-              ${notes[planDate] ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/40' : 'bg-surface-100 text-surface-400 border-surface-200 hover:text-surface-600'}`}>
-            📝{notes[planDate] ? ' ●' : ''}
+              ${notes[planDate]?.text ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/40' : 'bg-surface-100 text-surface-400 border-surface-200 hover:text-surface-600'}`}>
+            📝{notes[planDate]?.text ? ' ●' : ''}
           </button>
           {onExportPdf && <Btn onClick={onExportPdf} variant="ghost" size="sm">PDF</Btn>}
           <Btn onClick={onNewDriver} variant="ghost" size="sm">+ Chauffeur</Btn>
@@ -274,7 +344,7 @@ export function BottomPanel({ planDate, setPlanDate, draggedId, onDrop, onDragSt
       {showNotes && (
         <div className="flex-shrink-0 px-4 py-2 border-b border-surface-200 bg-surface-50">
           <textarea
-            value={notes[planDate] || ''}
+            value={notes[planDate]?.text || ''}
             onChange={e => updateNote(planDate, e.target.value)}
             placeholder="Notes pour cette date (ex: Jean absent, exutoire Bonneville fermé…)"
             title="Notes de planification"

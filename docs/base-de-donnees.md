@@ -1,9 +1,9 @@
 # Pathélix — Base de données
 
 > Schéma, modèles, relations, migrations. Vérifié directement contre `prisma/schema.prisma`
-> le 2026-09-22 (34 modèles, 4 énumérations, recompté après l'ajout du modèle `IdempotencyKey`
-> lors de la mission qualité production — des documents antérieurs du projet mentionnaient
-> 30 modèles / 3 énumérations, chiffre déjà obsolète avant cet ajout, corrigé ici).
+> le 2026-09-23 (35 modèles, 4 énumérations, recompté après l'ajout du modèle `PlanningNote`
+> — voir `docs/problemes-connus.md` "Notes de planification"). Historique : 34 après
+> `IdempotencyKey`, avant ça 30 modèles / 3 énumérations (déjà obsolète avant ces deux ajouts).
 
 ## 1. Généralités
 
@@ -22,7 +22,7 @@ idempotency_key`, ajoutée lors de la mission qualité production — voir §4 e
 en développement, `npx prisma migrate deploy` en production (après sauvegarde, voir
 [deploiement.md](deploiement.md)).
 
-## 2. Modèles (34)
+## 2. Modèles (35)
 
 ```
 Tenant (1)
@@ -37,6 +37,7 @@ Tenant (1)
   ├─ Exutoire (N)
   ├─ Plan (N)                 ← missions JSON : PlannedMission[]
   ├─ TourHistory (N)          ← snapshots de tournées passées
+  ├─ PlanningNote (N)         ← note partagée par date, remplace le localStorage par dispatcher
   ├─ WeeklyPlan (N)           ← planning hebdomadaire
   ├─ MissionTemplate (N)      ← missions récurrentes, backed en DB
   ├─ AuditLog (N)
@@ -50,7 +51,7 @@ Tenant (1)
 ```
 
 Modèles listés ici tels qu'ils existent réellement dans `prisma/schema.prisma` au
-2026-09-22 — ne pas se fier à un diagramme d'un document antérieur sans revérifier contre le
+2026-09-23 — ne pas se fier à un diagramme d'un document antérieur sans revérifier contre le
 schéma si une divergence est suspectée.
 
 ## 3. Énumérations (4)

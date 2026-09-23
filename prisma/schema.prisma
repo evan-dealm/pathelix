@@ -46,6 +46,7 @@ model Tenant {
   siteProducts           SiteProduct[]
   settings               TenantSettings?
   history                TourHistory[]
+  planningNotes          PlanningNote[]
   users                  User[]
   vehicles               Vehicle[]
   weeklyPlans            WeeklyPlan[]
@@ -377,6 +378,17 @@ model TourHistory {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, date])
+}
+
+model PlanningNote {
+  id        String   @id @default(cuid())
+  tenantId  String
+  date      String
+  text      String   @default("")
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date])
 }
 
 model Vehicle {

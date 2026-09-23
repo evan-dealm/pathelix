@@ -39,7 +39,7 @@ Stack: Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prism
 | `src/stores/planningStore.ts` | Central Zustand store for planning state |
 | `src/app/admin/page.tsx` | Admin UI (13+ tabs) |
 | `src/app/driver/[id]/page.tsx` | Mobile driver interface |
-| `prisma/schema.prisma` | 34 models, 4 enums, full index set |
+| `prisma/schema.prisma` | 35 models, 4 enums, full index set |
 | `next.config.mjs` | CSP, HSTS, security headers, Sentry config |
 
 ## Auth model

@@ -54,6 +54,7 @@ const TENANT_SCOPED_MODELS = new Set([
   'AuditLog', 'Holiday', 'TenantSettings', 'DriverUnavailability', 'UserPermission', 'ApiKey',
   'WeeklyPlan', 'Integration', 'InterventionMetric', 'TenantMLProfile', 'MissionTemplate',
   'DeliveryProof', 'PushSubscription', 'AiJob', 'TrackdechetsAccount', 'Bsd', 'IdempotencyKey',
+  'PlanningNote',
 ])
 
 const READ_OR_DELETE_WHERE_OPS = new Set([

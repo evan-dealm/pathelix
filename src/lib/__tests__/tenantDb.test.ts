@@ -52,6 +52,7 @@ const TENANT_SCOPED_MODELS = [
   'AuditLog', 'Holiday', 'TenantSettings', 'DriverUnavailability', 'UserPermission', 'ApiKey',
   'WeeklyPlan', 'Integration', 'InterventionMetric', 'TenantMLProfile', 'MissionTemplate',
   'DeliveryProof', 'PushSubscription', 'AiJob', 'TrackdechetsAccount', 'Bsd', 'IdempotencyKey',
+  'PlanningNote',
 ]
 
 describe('getTenantDb — every tenant-scoped model, read/write isolation', () => {
