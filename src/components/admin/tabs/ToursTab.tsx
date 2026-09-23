@@ -9,7 +9,7 @@ import { calcTour, TourResult, formatDuration } from '@/lib/algorithm'
 import { usePlanningStore } from '@/stores/planningStore'
 import { useOptimizationStore } from '@/stores/optimizationStore'
 import { TL_START, TL_END, LEGAL_MAX_DRIVING_MIN, LEGAL_MAX_WORK_MIN, TourOverrideState } from '../types'
-import { Btn, DateNav, P1Badge, LegalBar } from '../ui'
+import { Btn, DateNav, P1Badge, LegalBar, Modal } from '../ui'
 import { useToast } from '@/components/ui/Toast'
 import { today, displayFull, tlLeft, tlWidth, mTitle, useDebounce } from '../hooks'
 import { TourOverrideModal } from '../modals/TourOverrideModal'
@@ -428,6 +428,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
 
   const [dndTour, setDndTour]           = useState<{ missionId: string; fromDriverId: string } | null>(null)
   const [tourOverride, setTourOverride] = useState<TourOverrideState>(null)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [dropTarget, setDropTarget]     = useState<string | null>(null)
 
   const [dndReorder, setDndReorder] = useState<{ driverId: string; fromIndex: number; missionId: string } | null>(null)
@@ -736,7 +737,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
               <Btn onClick={() => void handleExportExcel()} variant="ghost" size="sm" title="Exporter en Excel">⬇ Excel</Btn>
               <Btn onClick={handlePrintTours} variant="ghost" size="sm" title="Générer les feuilles de route pour tous les chauffeurs">🖨 Imprimer</Btn>
               <Btn onClick={() => void handleDownloadAllPdf()} variant="ghost" size="sm" title="Télécharger les feuilles de route en PDF (une par chauffeur)">⬇ PDF</Btn>
-              <Btn onClick={() => clearAllPlansForDate(tourDate)} variant="ghost" size="sm">✕ Vider</Btn>
+              <Btn onClick={() => setClearConfirmOpen(true)} variant="ghost" size="sm">✕ Vider</Btn>
             </>
           )}
           <span className="text-surface-400 text-xs">{plannedCount}/{( Array.isArray(storeDrivers) ? storeDrivers : [] ).length} planifiés</span>
@@ -1219,6 +1220,22 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
         onConfirm={confirmTourOverride}
         onCancel={() => setTourOverride(null)}
       />
+
+      {clearConfirmOpen && (
+        <Modal title="Vider toutes les tournées" onClose={() => setClearConfirmOpen(false)} size="sm">
+          <div className="flex items-start gap-3 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2.5">
+            <span className="text-orange-400 text-lg flex-shrink-0 mt-0.5">⚠</span>
+            <p className="text-orange-200 text-sm leading-relaxed">
+              Toutes les tournées planifiées pour le {displayFull(tourDate)} seront vidées ({plannedCount} chauffeur{plannedCount > 1 ? 's' : ''} planifié{plannedCount > 1 ? 's' : ''}).
+            </p>
+          </div>
+          <p className="text-surface-500 text-xs">Cette action peut être annulée avec « Annuler » (Ctrl+Z). Continuer ?</p>
+          <div className="flex gap-3 pt-1">
+            <Btn onClick={() => { clearAllPlansForDate(tourDate); setClearConfirmOpen(false) }} variant="warning">Vider</Btn>
+            <Btn onClick={() => setClearConfirmOpen(false)} variant="ghost">Annuler</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

@@ -1498,10 +1498,16 @@ export default function SuperAdminPage() {
           <div className="flex items-center gap-3">
             <div className="relative">
               <input type="text" placeholder="Rechercher...  Ctrl+K" value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
+                title={tab !== 'tenants' ? 'La recherche ne filtre que l\'onglet Tenants' : undefined}
                 className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs w-56 focus:border-red-500 focus:outline-none placeholder-zinc-600 pr-8" />
               {globalSearch && (
                 <button type="button" onClick={() => setGlobalSearch('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs">&times;</button>
+              )}
+              {globalSearch && tab !== 'tenants' && (
+                <div className="absolute top-full left-0 mt-1 text-[10px] text-amber-400 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 whitespace-nowrap z-10">
+                  Filtre uniquement l&apos;onglet Tenants
+                </div>
               )}
             </div>
             <div className="text-[10px] text-zinc-500 font-mono hidden lg:block">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>

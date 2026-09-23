@@ -108,7 +108,7 @@ function genId(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-const MAX_HISTORY = 5
+const MAX_HISTORY = 20
 
 function pushHistory(state: PlanningState, snap: HistorySnapshot): Partial<PlanningState> {
   // _historyIdx counts undo steps taken since the last action: any state reachable
