@@ -52,7 +52,8 @@ vi.mock('@/lib/redisCache', () => ({
 }))
 
 vi.mock('@/lib/prismaMappers', () => ({
-  prismaRowToDriver: vi.fn((raw: Record<string, unknown>) => raw),
+  prismaRowToDriver:   vi.fn((raw: Record<string, unknown>) => raw),
+  prismaRowToExutoire: vi.fn((raw: Record<string, unknown>) => raw),
 }))
 
 vi.mock('@/lib/mockData', () => ({
@@ -179,6 +180,7 @@ describe('GET /api/driver-plan/[id]', () => {
     mockPrisma.driver.findUnique.mockResolvedValue({ ...sampleDriver })
     mockPrisma.plan.findFirst.mockResolvedValue({ missions: [], startTime: '07:00', speedKmh: 50 })
     mockPrisma.tenant.findUnique.mockResolvedValue({ trade: 'bennes' })
+    mockPrisma.exutoire.findMany.mockResolvedValue([])
 
     const res  = await driverPlanGET(makeGet('http://localhost:3000/api/driver-plan/d-1?date=2026-04-01', 'token'), makeParams('d-1'))
     const json = await res.json()
@@ -186,6 +188,24 @@ describe('GET /api/driver-plan/[id]', () => {
     expect(res.status).toBe(200)
     expect(json.driver.id).toBe('d-1')
     expect(json.plan).toBeDefined()
+    expect(json.exutoires).toEqual([])
+  })
+
+  it('returns exutoires belonging to the driver\'s tenant', async () => {
+    vi.mocked(verifySession).mockResolvedValue(adminSession as never)
+    mockPrisma.driver.findUnique.mockResolvedValue({ ...sampleDriver })
+    mockPrisma.plan.findFirst.mockResolvedValue({ missions: [], startTime: '07:00', speedKmh: 50 })
+    mockPrisma.tenant.findUnique.mockResolvedValue({ trade: 'bennes' })
+    mockPrisma.exutoire.findMany.mockResolvedValue([
+      { id: 'ex-1', name: 'Centre Nord', address: 'a', lat: 45, lng: 4 },
+    ])
+
+    const res  = await driverPlanGET(makeGet('http://localhost:3000/api/driver-plan/d-1?date=2026-04-01', 'token'), makeParams('d-1'))
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.exutoires).toHaveLength(1)
+    expect(json.exutoires[0].id).toBe('ex-1')
   })
 
   it('returns 500 on DB error', async () => {

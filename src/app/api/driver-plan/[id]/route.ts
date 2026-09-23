@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { PlannedMission, Driver } from '@/lib/types'
+import type { PlannedMission, Driver, Exutoire } from '@/lib/types'
 import { getMockDrivers } from '@/lib/mockData'
 import { prismaRowToDriver } from '@/lib/prismaMappers'
 import { createLogger } from '@/lib/logger'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
+import { getAllExutoires } from '@/lib/data/exutoires'
 
 import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 
@@ -66,14 +67,16 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     let startTime = '07:00'
     let speedKmh  = 50
     let trade: string | null = null
+    let exutoires: Exutoire[] = []
 
     if (useMock) {
-
+      exutoires = await getAllExutoires(tenantId)
     } else {
 
-      const [record, tenantRow] = await Promise.all([
+      const [record, tenantRow, exutoireRows] = await Promise.all([
         getTenantDb(tenantId).plan.findFirst({ where: { driverId, date } }),
         unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { trade: true } }),
+        getAllExutoires(tenantId),
       ])
       if (record) {
         if (Array.isArray(record.missions)) {
@@ -85,10 +88,11 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
         speedKmh  = record.speedKmh
       }
       trade = tenantRow?.trade ?? null
+      exutoires = exutoireRows
     }
 
     return NextResponse.json(
-      { driver, plan, startTime, speedKmh, date, trade },
+      { driver, plan, startTime, speedKmh, date, trade, exutoires },
       { headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' } },
     )
   } catch (err) {

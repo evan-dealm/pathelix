@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation'
 import { usePlanningStore } from '@/stores/planningStore'
 import { calcTour } from '@/lib/algorithm'
 import {
-  type Driver, type PlannedMission,
+  type Driver, type PlannedMission, type Exutoire,
 } from '@/lib/types'
 import { getMissionTypeIcon, getMissionTypeLabel } from '@/lib/trades'
 import {
@@ -56,6 +56,7 @@ type DriverPlanResponse = {
   speedKmh: number
   date: string
   trade?: string | null
+  exutoires?: Exutoire[]
 }
 
 export default function DriverPage() {
@@ -70,6 +71,7 @@ export default function DriverPage() {
   const [apiData, setApiData]   = useState<DriverPlanResponse | null>(null)
   const [loading, setLoading]   = useState(true)
   const [apiError, setApiError] = useState<string | null>(null)
+  const exutoires = useMemo(() => apiData?.exutoires ?? [], [apiData])
 
   const [statuses, setStatuses] = useState<Record<string, MissionStatus>>({})
   const [pendingScanMissionId, setPendingScanMissionId] = useState<string | null>(null)
@@ -323,8 +325,8 @@ export default function DriverPage() {
 
   const tourResult = useMemo(() => {
     if (!driver || sorted.length === 0) return null
-    return calcTour(sorted, driver.depotLat, driver.depotLng, startTime, speed)
-  }, [driver, sorted, startTime, speed])
+    return calcTour(sorted, driver.depotLat, driver.depotLng, startTime, speed, exutoires.length > 0 ? exutoires : undefined)
+  }, [driver, sorted, startTime, speed, exutoires])
 
   function mapsUrl(m: PlannedMission): string {
     if (m.latitude !== 0 || m.longitude !== 0) {
