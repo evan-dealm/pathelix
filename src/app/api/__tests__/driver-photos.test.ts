@@ -155,6 +155,15 @@ describe('POST /api/driver-photos — mock mode', () => {
     expect(res.status).toBe(413)
   })
 
+  it('returns 422 when the decoded bytes are not a real image (fake magic bytes)', async () => {
+    const fakeJpeg = 'data:image/jpeg;base64,' + Buffer.from('not actually a jpeg').toString('base64')
+    const res = await POST(makePOST({
+      driverId: 'd1', date: '2026-06-01', missionId: 'm1',
+      dataUrl: fakeJpeg,
+    }))
+    expect(res.status).toBe(422)
+  })
+
   it('returns 200 and stores photo in mock store', async () => {
     const res = await POST(makePOST({
       driverId: 'dmock', date: '2026-06-01', missionId: 'mmock',
@@ -268,6 +277,16 @@ describe('driver-photos — real mode', () => {
     mockReaddir.mockRejectedValueOnce(new Error('disk error'))
     const res = await rGET(makeGETAuth({ driverId: 'd1', date: '2026-06-01' }))
     expect(res.status).toBe(500)
+  })
+
+  it('POST: rejects fake magic bytes before touching disk', async () => {
+    const fakeJpeg = 'data:image/jpeg;base64,' + Buffer.from('<script>alert(1)</script>').toString('base64')
+    const res = await rPOST(makePOST({
+      driverId: 'd1', date: '2026-06-01', missionId: 'm1',
+      dataUrl: fakeJpeg,
+    }))
+    expect(res.status).toBe(422)
+    expect(mockWriteFile).not.toHaveBeenCalled()
   })
 
   it('POST: writes file and returns url', async () => {

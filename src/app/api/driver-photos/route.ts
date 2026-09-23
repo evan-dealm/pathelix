@@ -14,6 +14,19 @@ const _mockPhotos = new Map<string, string>()
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'photos')
 
+const JPEG_MAGIC = [0xff, 0xd8, 0xff]
+const PNG_MAGIC  = [0x89, 0x50, 0x4e, 0x47]
+const GIF_MAGIC  = [0x47, 0x49, 0x46, 0x38]
+
+function isValidImageBuffer(buf: Buffer): boolean {
+  if (buf.length >= 4 && PNG_MAGIC.every((b, i) => buf[i] === b))  return true
+  if (buf.length >= 3 && JPEG_MAGIC.every((b, i) => buf[i] === b)) return true
+  if (buf.length >= 4 && GIF_MAGIC.every((b, i) => buf[i] === b))  return true
+  // WEBP: "RIFF"....."WEBP" — the middle 4 bytes are a little-endian chunk size, not checked
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return true
+  return false
+}
+
 async function ensureUploadDir(): Promise<void> {
   await fs.mkdir(UPLOAD_DIR, { recursive: true })
 }
@@ -128,6 +141,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
+  // The data URL's declared MIME type (checked above) is client-controlled and not trustworthy
+  // on its own — verify the decoded bytes are actually one of the accepted image formats before
+  // ever writing them to a statically-served path.
+  const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+  const buffer      = Buffer.from(base64Data, 'base64')
+  if (!isValidImageBuffer(buffer)) {
+    return NextResponse.json(
+      { error: 'Contenu du fichier invalide (ne correspond à aucun format image accepté)' },
+      { status: 422 },
+    )
+  }
+
   return withIdempotency(req, check.tenantId, 'POST /api/driver-photos', async () => {
     if (useMock) {
       _mockPhotos.set(photoKey(driverId, date, missionId), dataUrl)
@@ -136,9 +161,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     try {
       await ensureUploadDir()
-
-      const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
-      const buffer     = Buffer.from(base64Data, 'base64')
 
       const filename = photoFilename(driverId, date, missionId)
       await fs.writeFile(path.join(UPLOAD_DIR, filename), buffer)

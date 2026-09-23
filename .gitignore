@@ -12,6 +12,9 @@ out/
 # ─── Worker build output (esbuild) ─────────────────────────────────────────────
 dist/
 
+# ─── Runtime-uploaded files (driver photos, delivery proofs) ───────────────────
+public/uploads/
+
 # ─── Node ─────────────────────────────────────────────────────────────────────
 node_modules/
 
