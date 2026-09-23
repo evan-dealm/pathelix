@@ -43,17 +43,6 @@
         "src/workers/recurringMissionsWorker.ts"
       ],
       "rules": { "no-restricted-imports": "off" }
-    },
-    {
-      "files": [
-        "src/lib/audit.ts",
-        "src/lib/data/customTrades.ts",
-        "src/lib/delayScoring.ts",
-        "src/lib/demandPrediction.ts",
-        "src/lib/featureFlags.ts",
-        "src/lib/metricCollector.ts"
-      ],
-      "rules": { "no-restricted-imports": "off" }
     }
   ],
   "ignorePatterns": ["src/generated/**"]

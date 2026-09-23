@@ -1,4 +1,4 @@
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 
 const log = createLogger('delayScoring')
@@ -16,8 +16,9 @@ export interface MissionDelayScore {
 
 export async function computeDelayScores(tenantId: string, date: string): Promise<MissionDelayScore[]> {
 
-  const missions = await prisma.mission.findMany({
-    where:   { tenantId, date, priority: 1, archived: false },
+  const db = getTenantDb(tenantId)
+  const missions = await db.mission.findMany({
+    where:   { date, priority: 1, archived: false },
     select:  { id: true, address: true, clientName: true, estimatedDurationMin: true, latitude: true, longitude: true, type: true },
   })
 
@@ -27,8 +28,8 @@ export async function computeDelayScores(tenantId: string, date: string): Promis
   cutoff.setDate(cutoff.getDate() - 30)
   const cutoffStr = cutoff.toISOString().split('T')[0]
 
-  const metrics = await prisma.interventionMetric.findMany({
-    where:   { tenantId, date: { gte: cutoffStr }, isReliable: true },
+  const metrics = await db.interventionMetric.findMany({
+    where:   { date: { gte: cutoffStr }, isReliable: true },
     select:  { estimatedDurationMin: true, actualDurationMin: true, missionType: true },
   })
 

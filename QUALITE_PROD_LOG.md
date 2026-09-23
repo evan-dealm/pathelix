@@ -194,6 +194,44 @@ le segment `[id]` par un wildcard `*` (matche le même unique segment de chemin,
 de classe de caractères) — plus simple et plus robuste qu'échapper les crochets (`\\[id\\]`
 n'est de toute façon pas un échappement JSON valide dans un fichier `.eslintrc.json`).
 
+### Migration complétée (2026-09-23, session ultérieure)
+
+Les 89 routes restantes de la section précédente + les 6 fichiers `src/lib/` (`audit.ts`,
+`data/customTrades.ts`, `delayScoring.ts`, `demandPrediction.ts`, `featureFlags.ts`,
+`metricCollector.ts`) ont été migrées, en 8 lots (commits `refactor(security): migrate ... to
+getTenantDb`), suivant exactement la méthode mécanique décrite ci-dessus : `prisma.<modèle>` →
+`getTenantDb(tenantId).<modèle>`, retrait du `tenantId` désormais redondant dans chaque `where`/
+`data`, mise à jour du mock de test associé (`vi.mock('@/lib/db', ...)` → `vi.mock('@/lib/
+tenantDb', ...)`), et remplacement des assertions de test qui vérifiaient littéralement
+`where.tenantId` par une assertion sur le résultat (le filtre est maintenant structurel, prouvé
+par `tenant-isolation.test.ts`, pas un détail d'implémentation par route).
+
+Cas particuliers rencontrés et tranchés au fil de la migration :
+- **Clés uniques composées incluant `tenantId`** (`Plan.tenantId_driverId_date`,
+  `WeeklyPlan.tenantId_weekStart`, `Integration.tenantId_type`) : le `tenantId` reste explicite
+  dans le sélecteur `where` — c'est la forme de la contrainte DB, pas une vérification manuelle à
+  retirer.
+- **Lookups où le tenant n'est pas encore connu** (recherche par `trackingToken` public, par
+  `driverId` avant que la session ne révèle son tenant, webhook `AI_CALLBACK_SECRET`) : restent
+  sur `unscopedPrisma`, commentaire inline à chaque site expliquant pourquoi `getTenantDb` ne
+  peut pas s'appliquer avant cette étape.
+- **Cross-tenant par conception, pas un bug** : `admin/geocoding-audit` (agrégat superadmin par
+  tenant) et `benchmark` (moyennes anonymisées inter-tenants du même métier) restent
+  entièrement sur `unscopedPrisma` — retirés de la liste "en attente" sans être ajoutés à la
+  liste blanche permanente, puisque la règle ESLint ne bloque que l'import direct de
+  `@/lib/db`, pas `unscopedPrisma` réexporté depuis `tenantDb.ts`.
+- **`$transaction` en tableau mélangeant modèle global et modèle scopé** (`onboarding/route.ts` :
+  `Tenant.update` + `TenantSettings.upsert`) : les deux opérations restent sur le même client
+  (`unscopedPrisma`), `tenantId` gardé explicite sur `TenantSettings` — Prisma exige que toutes
+  les opérations d'un `$transaction([...])` en tableau viennent du même client.
+
+`.eslintrc.json` : la liste "en attente de migration" est maintenant **vide et supprimée** — il
+ne reste que la liste blanche permanente (webhooks, `superadmin/**`, health, `permissions.ts`,
+`superadminAudit.ts`, 2 workers batch). `grep -rl "from '@/lib/db'" src --include="*.ts" | grep
+-v __tests__` ne renvoie plus que ces fichiers-là. Suite verte : `npx tsc --noEmit` (0 erreur),
+`npm run lint` (0 warning), `npx vitest run` (215 fichiers / 3867 tests, tous verts) après chaque
+lot.
+
 ### RLS PostgreSQL — conception évaluée, non implémentée (comme demandé)
 
 Voir section dédiée ajoutée dans `docs/authentification-securite.md` §14 (Phase 9) : faisabilité

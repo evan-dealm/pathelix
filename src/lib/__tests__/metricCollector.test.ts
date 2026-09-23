@@ -6,7 +6,7 @@ const mockPrisma = vi.hoisted(() => ({
   interventionMetric: { create: vi.fn() },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: () => mockPrisma }))
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
@@ -104,7 +104,6 @@ describe('collectInterventionMetric — reliable metric', () => {
     expect(mockPrisma.interventionMetric.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          tenantId:    TENANT,
           driverId:    DRIVER,
           missionId:   MISSION,
           missionType: 'POSER',

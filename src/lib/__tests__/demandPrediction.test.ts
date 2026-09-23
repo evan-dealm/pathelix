@@ -9,11 +9,11 @@ const { mockMissionFindMany, mockSiteFindMany } = vi.hoisted(() => ({
   mockSiteFindMany:    vi.fn(),
 }))
 
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     mission: { findMany: mockMissionFindMany },
     site:    { findMany: mockSiteFindMany },
-  },
+  }),
 }))
 
 import { predictDemand } from '../demandPrediction'

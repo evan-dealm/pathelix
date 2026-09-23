@@ -1,4 +1,4 @@
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 import { emitEvent } from '@/lib/integrationEvents'
 
@@ -62,8 +62,9 @@ export async function collectInterventionMetric(input: CollectInput): Promise<vo
     const entry = statuses[missionId]
     if (!entry || entry.status !== 'done') return
 
-    const mission = await prisma.mission.findFirst({
-      where: { id: missionId, tenantId },
+    const db = getTenantDb(tenantId)
+    const mission = await db.mission.findFirst({
+      where: { id: missionId },
       select: {
         type: true,
         estimatedDurationMin: true,
@@ -162,8 +163,8 @@ export async function collectInterventionMetric(input: CollectInput): Promise<vo
     let estimatedTravelMin: number | null = null
     let distanceKm: number | null = null
     try {
-      const plan = await prisma.plan.findFirst({
-        where: { tenantId, driverId, date },
+      const plan = await db.plan.findFirst({
+        where: { driverId, date },
         select: { missions: true, estimatedDistanceKm: true },
       })
       if (plan && Array.isArray(plan.missions)) {
@@ -183,9 +184,8 @@ export async function collectInterventionMetric(input: CollectInput): Promise<vo
       log.warn('Plan lookup failed during metric collection', { tenantId, driverId, missionId, err: err instanceof Error ? err.message : String(err) })
     }
 
-    await prisma.interventionMetric.create({
+    await db.interventionMetric.create({
       data: {
-        tenantId,
         driverId,
         missionId,
         missionType:          mission.type,
@@ -209,7 +209,7 @@ export async function collectInterventionMetric(input: CollectInput): Promise<vo
         isReliable,
         rejectReason,
         confidenceScore,
-      },
+      } as Parameters<typeof db.interventionMetric.create>[0]['data'],
     })
 
     if (!isReliable && rejectReason) {

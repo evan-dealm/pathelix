@@ -5,7 +5,10 @@ const mockPrisma = vi.hoisted(() => ({
   tenant:         { findUnique: vi.fn() },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: mockPrisma,
+  getTenantDb:    () => mockPrisma,
+}))
 
 import { getFeatureFlags, hasFeature, invalidateFlagsCache } from '@/lib/featureFlags'
 

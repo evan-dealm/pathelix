@@ -5,8 +5,8 @@ vi.mock('@/lib/logger', () => ({
 }))
 
 const mockFindMany = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: { customTrade: { findMany: mockFindMany } },
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: { customTrade: { findMany: mockFindMany } },
 }))
 
 import {

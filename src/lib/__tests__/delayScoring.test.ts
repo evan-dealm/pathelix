@@ -5,7 +5,7 @@ const mockPrisma = vi.hoisted(() => ({
   interventionMetric: { findMany: vi.fn() },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: () => mockPrisma }))
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))

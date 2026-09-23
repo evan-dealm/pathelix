@@ -1,4 +1,4 @@
-import prisma from '@/lib/db'
+import { unscopedPrisma } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 import { registerCustomTrade, unregisterCustomTrade, type TradeConfig, type TradeVocabulary } from '@/lib/trades'
 import type { MissionType } from '@/lib/types'
@@ -61,7 +61,8 @@ export async function ensureCustomTradesLoaded(): Promise<void> {
 
 export async function loadCustomTradesFromDb(): Promise<void> {
   try {
-    const rows = await prisma.customTrade.findMany()
+    // CustomTrade is intentionally global (superadmin-managed, shared across all tenants).
+    const rows = await unscopedPrisma.customTrade.findMany()
     for (const row of rows) {
       registerCustomTrade(row.tradeKey, customTradeRowToConfig(row))
     }

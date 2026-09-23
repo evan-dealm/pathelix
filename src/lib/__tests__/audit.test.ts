@@ -7,7 +7,7 @@ const mockPrisma = vi.hoisted(() => ({
   auditLog: { create: vi.fn() },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/data/context', () => ({
   getRequestContext: vi.fn(() => ({ tenantId: 'tenant-1', userId: 'user-1', role: 'admin', requestId: 'r1', trade: null })),
@@ -32,7 +32,6 @@ describe('writeAudit', () => {
 
     expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        tenantId:   'tenant-1',
         userId:     'user-1',
         action:     'mission.create',
         entityType: 'Mission',

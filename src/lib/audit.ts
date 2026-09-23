@@ -1,4 +1,4 @@
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import type { NextRequest } from 'next/server'
 
@@ -14,15 +14,15 @@ export async function writeAudit(
   if (USE_MOCK) return
   try {
     const { tenantId, userId } = getRequestContext(req)
-    await prisma.auditLog.create({
+    const db = getTenantDb(tenantId)
+    await db.auditLog.create({
       data: {
-        tenantId,
         userId:     userId ?? 'system',
         action,
         entityType,
         entityId,
-        changes:    changes as Parameters<typeof prisma.auditLog.create>[0]['data']['changes'],
-      },
+        changes,
+      } as Parameters<typeof db.auditLog.create>[0]['data'],
     })
   } catch {
 

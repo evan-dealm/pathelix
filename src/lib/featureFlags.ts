@@ -1,4 +1,4 @@
-import prisma from '@/lib/db'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 
 export interface FeatureFlags {
   gantt:         boolean
@@ -42,8 +42,8 @@ export async function getFeatureFlags(tenantId: string): Promise<FeatureFlags> {
 
   try {
     const [settings, tenant] = await Promise.all([
-      prisma.tenantSettings.findUnique({ where: { tenantId }, select: { features: true } }),
-      prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } }),
+      getTenantDb(tenantId).tenantSettings.findUnique({ where: { tenantId }, select: { features: true } }),
+      unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } }),
     ])
 
     const planDefaults = PLAN_DEFAULTS[tenant?.plan ?? 'FREE'] ?? PLAN_DEFAULTS.FREE

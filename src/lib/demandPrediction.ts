@@ -1,4 +1,4 @@
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 
 const log = createLogger('demandPrediction')
@@ -33,10 +33,9 @@ export async function predictDemand(
   const horizon = horizonDate.toISOString().slice(0, 10)
 
   try {
-
-    const missions = await prisma.mission.findMany({
+    const db = getTenantDb(tenantId)
+    const missions = await db.mission.findMany({
       where: {
-        tenantId,
         type: { in: ['RETIRER', 'ECHANGER'] },
         date: { gte: lookback },
         archived: false,
@@ -116,8 +115,8 @@ export async function predictDemand(
 
     if (predictions.length > 0) {
       const siteIds = predictions.map(p => p.siteId)
-      const sites = await prisma.site.findMany({
-        where: { id: { in: siteIds }, tenantId },
+      const sites = await db.site.findMany({
+        where: { id: { in: siteIds } },
         select: { id: true, name: true },
       })
       const siteNames = new Map(sites.map(s => [s.id, s.name]))
