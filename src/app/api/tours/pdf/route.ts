@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
 import { calcTour } from '@/lib/algorithm'
-import { renderTourPdf } from '@/lib/tourPdf'
+import type { TourPdfProps } from '@/lib/tourPdf'
+import { generatePdfViaWorker } from '@/lib/queue/pdfQueue'
 import type { PlannedMission, Driver } from '@/lib/types'
 import { createLogger } from '@/lib/logger'
 
@@ -59,15 +60,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const tour = calcTour(sorted, driver.depotLat, driver.depotLng, startTime, speedKmh)
 
-    const pdf = await renderTourPdf({
+    const props: TourPdfProps = {
       driver,
       missions: sorted,
       date,
       startTime,
-      steps:    tour.steps as unknown as Parameters<typeof renderTourPdf>[0]['steps'],
+      steps:    tour.steps as unknown as TourPdfProps['steps'],
       totalKm:  tour.totalRoadDistKm,
       totalMin: tour.totalDurationMin,
-    })
+    }
+
+    // Rendered in a dedicated worker process (src/workers/pdfWorker.ts), not in this route
+    // handler — @react-pdf/renderer loads its own React instance, which collides with the one
+    // Next's webpack build bundles for this route (dual package hazard, see
+    // docs/deploiement.md §4). No process has both problems at once.
+    let pdf: Buffer
+    try {
+      pdf = await generatePdfViaWorker({ kind: 'tour', tenantId, props })
+    } catch (err) {
+      log.error('PDF worker unavailable or timed out', { driverId, err: err instanceof Error ? err.message : String(err) })
+      return NextResponse.json({ error: 'Service de génération PDF indisponible, réessayez dans un instant' }, { status: 503 })
+    }
 
     const filename = `tournee_${dbDriver.firstName}_${dbDriver.lastName}_${date}.pdf`
       .toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_.-]/g, '')

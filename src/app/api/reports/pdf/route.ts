@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse }           from 'next/server'
 import { unscopedPrisma, getTenantDb }         from '@/lib/tenantDb'
 import { getRequestContext }                   from '@/lib/data/context'
-import { generateMonthlyReportPdf }            from '@/lib/pdfReport'
 import type { MonthlyReportData }              from '@/lib/pdfReport'
+import { generatePdfViaWorker }                from '@/lib/queue/pdfQueue'
 import { createLogger }                        from '@/lib/logger'
 
 const log = createLogger('/api/reports/pdf')
@@ -106,7 +106,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       generatedAt: new Date().toLocaleString('fr-FR'),
     }
 
-    const buffer = await generateMonthlyReportPdf(data)
+    // Rendered in a dedicated worker process (src/workers/pdfWorker.ts) — see the same comment
+    // in tours/pdf/route.ts for why this can't run in-process here (dual package hazard).
+    let buffer: Buffer
+    try {
+      buffer = await generatePdfViaWorker({ kind: 'report', tenantId, data })
+    } catch (err) {
+      log.error('PDF worker unavailable or timed out', { err: err instanceof Error ? err.message : String(err) })
+      return NextResponse.json({ error: 'Service de génération PDF indisponible, réessayez dans un instant' }, { status: 503 })
+    }
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

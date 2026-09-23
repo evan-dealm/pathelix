@@ -135,7 +135,7 @@ interface TourStep {
   travelTimeMin: number
 }
 
-interface TourPdfProps {
+export interface TourPdfProps {
   driver:    Driver
   missions:  PlannedMission[]
   date:      string

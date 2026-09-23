@@ -19,6 +19,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "worker": "tsx src/workers/vrpWorker.ts",
+    "worker:pdf": "tsx src/workers/pdfWorker.ts",
     "worker:ml": "tsx src/workers/mlProfileWorker.ts",
     "worker:recurring": "tsx src/workers/recurringMissionsWorker.ts",
     "dev:fast": "next build && next start",

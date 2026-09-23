@@ -9,10 +9,10 @@ vi.mock('@/lib/data/context', () => ({
   getRequestContext: vi.fn(() => ({ tenantId: 't1', role: 'admin' })),
 }))
 
-const mockCalcTour     = vi.hoisted(() => vi.fn())
-const mockRenderTourPdf = vi.hoisted(() => vi.fn(async () => Buffer.from('%PDF-tour')))
+const mockCalcTour         = vi.hoisted(() => vi.fn())
+const mockGeneratePdfViaWorker = vi.hoisted(() => vi.fn(async () => Buffer.from('%PDF-tour')))
 vi.mock('@/lib/algorithm', () => ({ calcTour: mockCalcTour }))
-vi.mock('@/lib/tourPdf',   () => ({ renderTourPdf: mockRenderTourPdf }))
+vi.mock('@/lib/queue/pdfQueue', () => ({ generatePdfViaWorker: mockGeneratePdfViaWorker }))
 
 const mockDriverFindFirst = vi.hoisted(() => vi.fn())
 const mockPlanFindFirst   = vi.hoisted(() => vi.fn())
@@ -71,7 +71,7 @@ describe('GET /api/tours/pdf — real mode', () => {
       createLogger: () => mockLog,
     }))
     vi.mock('@/lib/algorithm', () => ({ calcTour: mockCalcTour }))
-    vi.mock('@/lib/tourPdf',   () => ({ renderTourPdf: mockRenderTourPdf }))
+    vi.mock('@/lib/queue/pdfQueue', () => ({ generatePdfViaWorker: mockGeneratePdfViaWorker }))
     vi.mock('@/lib/tenantDb', () => ({
       getTenantDb: () => ({
         driver: { findFirst: mockDriverFindFirst },
@@ -173,23 +173,24 @@ describe('GET /api/tours/pdf — real mode', () => {
 
   // Regression: found via manual QA — /api/tours/pdf 500'd on every single driver in
   // production (real root cause: dual React module instance between webpack-bundled route
-  // handler and pure-ESM @react-pdf/reconciler — see next.config.mjs; NOT fixable via
-  // serverExternalPackages, still open, not unit-testable here since Vitest doesn't go
-  // through Next's server bundler/module resolution). But finding it took far longer than
-  // it should have because the catch block was bare — nothing was ever logged, so app.log
-  // had zero trace of failures. This asserts a thrown render error is actually logged now.
-  it('logs the error when PDF rendering throws, instead of swallowing it silently', async () => {
+  // handler and @react-pdf/renderer — see docs/deploiement.md §4). Fixed by moving rendering
+  // into a dedicated worker process (src/workers/pdfWorker.ts) that Next's bundler never
+  // touches — see generatePdfViaWorker in src/lib/queue/pdfQueue.ts. This test now covers the
+  // route's other failure mode: the worker itself unreachable or timing out, which must 503
+  // with a clear message rather than 500 with a swallowed error (the original bug here was a
+  // bare catch block leaving zero trace in app.log).
+  it('returns 503 and logs when the PDF worker is unreachable or times out', async () => {
     vi.clearAllMocks()
     mockDriverFindFirst.mockResolvedValueOnce(DB_DRIVER)
     mockPlanFindFirst.mockResolvedValueOnce(DB_PLAN)
     mockCalcTour.mockReturnValueOnce(TOUR_RESULT)
-    mockRenderTourPdf.mockRejectedValueOnce(new Error('font loading failed'))
+    mockGeneratePdfViaWorker.mockRejectedValueOnce(new Error('Job timed out'))
 
     const res = await GET(makeReq({ driverId: 'd1', date: '2026-06-15' }))
 
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(503)
     expect(mockLog.error).toHaveBeenCalled()
     const [, meta] = mockLog.error.mock.calls[0]
-    expect(meta.err).toContain('font loading failed')
+    expect(meta.err).toContain('Job timed out')
   })
 })

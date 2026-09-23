@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
-import type { MonthlyReportData } from '@/lib/pdfReport'
+import type { PdfJobData } from '@/lib/queue/pdfQueue'
 
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -9,9 +9,9 @@ vi.mock('@/lib/data/context', () => ({
   getRequestContext: vi.fn(() => ({ tenantId: 't1', role: 'admin' })),
 }))
 
-const mockGeneratePdf = vi.hoisted(() => vi.fn(async (_data: MonthlyReportData) => Buffer.from('%PDF-1.4 fake-pdf-content')))
-vi.mock('@/lib/pdfReport', () => ({
-  generateMonthlyReportPdf: mockGeneratePdf,
+const mockGeneratePdf = vi.hoisted(() => vi.fn(async (_job: PdfJobData) => Buffer.from('%PDF-1.4 fake-pdf-content')))
+vi.mock('@/lib/queue/pdfQueue', () => ({
+  generatePdfViaWorker: mockGeneratePdf,
 }))
 
 const mockTenantFindUnique    = vi.hoisted(() => vi.fn())
@@ -123,7 +123,7 @@ describe('GET /api/reports/pdf', () => {
     await GET(makeReq({ month: '2026-06' }))
 
     expect(mockGeneratePdf).toHaveBeenCalledOnce()
-    const data = mockGeneratePdf.mock.calls[0][0]
+    const data = (mockGeneratePdf.mock.calls[0][0] as { data: import('@/lib/pdfReport').MonthlyReportData }).data
     expect(data.tenantName).toBe('Tenant ACME')
     expect(data.totalMissions).toBe(3)
     expect(data.completedMissions).toBe(1)
@@ -139,7 +139,7 @@ describe('GET /api/reports/pdf', () => {
   it('uses tenantId as fallback when tenant not found', async () => {
     mockTenantFindUnique.mockResolvedValueOnce(null)
     await GET(makeReq({ month: '2026-06' }))
-    const data = mockGeneratePdf.mock.calls[0][0]
+    const data = (mockGeneratePdf.mock.calls[0][0] as { data: import('@/lib/pdfReport').MonthlyReportData }).data
     expect(data.tenantName).toBe('t1')
   })
 
@@ -156,7 +156,7 @@ describe('GET /api/reports/pdf', () => {
       { driverId: 'd1', actualDurationMin: 0, actualTravelMin: 0, distanceKm: 100, missionType: 'POSER' },
     ])
     await GET(makeReq({ month: '2026-06' }))
-    const data = mockGeneratePdf.mock.calls[0][0]
+    const data = (mockGeneratePdf.mock.calls[0][0] as { data: import('@/lib/pdfReport').MonthlyReportData }).data
     expect(data.totalFuelEur).toBeCloseTo(100 * 0.35 * 1.80)
   })
 
@@ -166,7 +166,7 @@ describe('GET /api/reports/pdf', () => {
       { id: 'm2', completedAt: null, cancelledAt: null, type: 'POSER' },
     ])
     await GET(makeReq({ month: '2026-06' }))
-    const data = mockGeneratePdf.mock.calls[0][0]
+    const data = (mockGeneratePdf.mock.calls[0][0] as { data: import('@/lib/pdfReport').MonthlyReportData }).data
     expect(data.missionsByType[0].pct).toBe(100)
   })
 })
