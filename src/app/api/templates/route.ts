@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
-import prisma                        from '@/lib/db'
+import { getTenantDb }                from '@/lib/tenantDb'
 import { redisCache }                from '@/lib/redisCache'
 import { hasPermission }             from '@/lib/permissions'
 import type { Prisma }               from '@/generated/prisma'
@@ -55,8 +55,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const templates = await redisCache.getOrSet(
       'templates',
       tenantId,
-      () => prisma.missionTemplate.findMany({
-        where:   { tenantId },
+      () => getTenantDb(tenantId).missionTemplate.findMany({
         select:  TEMPLATE_SELECT,
         orderBy: { createdAt: 'asc' },
       }),
@@ -89,13 +88,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { timeWindow, ...rest } = parsed.data
 
   try {
-    const template = await prisma.missionTemplate.create({
+    const db = getTenantDb(tenantId)
+    const template = await db.missionTemplate.create({
       data: {
-        tenantId,
         ...rest,
         recurrence: rest.recurrence as Prisma.InputJsonValue,
         timeWindow: timeWindow ?? undefined,
-      },
+      } as Parameters<typeof db.missionTemplate.create>[0]['data'],
     })
     void redisCache.invalidateAll('templates', tenantId)
     return NextResponse.json(template, { status: 201 })

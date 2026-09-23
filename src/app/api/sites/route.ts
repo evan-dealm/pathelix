@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { redisCache } from '@/lib/redisCache'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const SiteCreateSchema = z.object({
   name:               z.string().min(1).max(200),
@@ -31,12 +31,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const limit    = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))
 
   try {
-    const where: Record<string, unknown> = { tenantId, archived: false }
+    const db = getTenantDb(tenantId)
+    const where: Record<string, unknown> = { archived: false }
 
     if (clientId) {
       const [client, links] = await Promise.all([
-        prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } }),
-        prisma.clientSite.findMany({ where: { clientId, site: { tenantId } }, select: { siteId: true } }),
+        db.client.findFirst({ where: { id: clientId }, select: { id: true } }),
+        db.clientSite.findMany({ where: { clientId, site: { tenantId } }, select: { siteId: true } }),
       ])
       if (!client) return NextResponse.json({ error: 'Client introuvable' }, { status: 404 })
       where.id = { in: links.map(l => l.siteId) }
@@ -48,14 +49,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       tenantId,
       async () => {
         const [sites, total] = await Promise.all([
-          prisma.site.findMany({
+          db.site.findMany({
             where,
             include: { clientSites: { include: { client: { select: { id: true, name: true } } } } },
             orderBy: { name: 'asc' },
             skip: (page - 1) * limit,
             take: limit,
           }),
-          prisma.site.count({ where }),
+          db.site.count({ where }),
         ])
         return { data: sites, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
       },
@@ -88,19 +89,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } = parsed.data
 
   try {
+    const db = getTenantDb(tenantId)
 
     if (clientIds && clientIds.length > 0) {
-      const validClients = await prisma.client.count({
-        where: { id: { in: clientIds }, tenantId },
+      const validClients = await db.client.count({
+        where: { id: { in: clientIds } },
       })
       if (validClients !== clientIds.length) {
         return NextResponse.json({ error: 'Un ou plusieurs clients sont introuvables' }, { status: 400 })
       }
     }
 
-    const site = await prisma.site.create({
+    const site = await db.site.create({
       data: {
-        tenantId, name: name.trim(),
+        name: name.trim(),
         address: address || '', latitude: latitude || 0, longitude: longitude || 0,
         accessNotes: accessNotes || '', defaultManeuverMin: defaultManeuverMin ?? 15,
         sector: sector || '',
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ...(clientIds && clientIds.length > 0 ? {
           clientSites: { create: clientIds.map(clientId => ({ clientId })) },
         } : {}),
-      },
+      } as Parameters<typeof db.site.create>[0]['data'],
       include: { clientSites: { include: { client: { select: { id: true, name: true } } } } },
     })
     void redisCache.invalidateAll('sites', tenantId)

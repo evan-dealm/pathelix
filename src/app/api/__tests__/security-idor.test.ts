@@ -32,6 +32,7 @@ const mockPrisma = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -368,12 +369,13 @@ describe('IDOR: /api/clients/[id] — tenantId enforced in update operations', (
     expect(res.status).toBe(404)
   })
 
-  it('DELETE own client calls update with tenantId in where clause', async () => {
+  it('DELETE own client archives it via getTenantDb (tenant scope enforced structurally, see tenant-isolation.test.ts)', async () => {
     mockPrisma.client.findFirst.mockResolvedValue({ id: 'c-1', tenantId: 'tenant-A', name: 'Acme' })
     mockPrisma.client.update.mockResolvedValue({ id: 'c-1', tenantId: 'tenant-A', archived: true })
-    await clientDel(makeDelete('http://localhost/api/clients/c-1'), makeParams('c-1'))
+    const res = await clientDel(makeDelete('http://localhost/api/clients/c-1'), makeParams('c-1'))
+    expect(res.status).toBe(200)
     expect(mockPrisma.client.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-A' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ id: 'c-1' }), data: { archived: true } }),
     )
   })
 })
@@ -395,12 +397,13 @@ describe('IDOR: /api/sites/[id] — tenantId enforced in update operations', () 
     expect(res.status).toBe(404)
   })
 
-  it('DELETE own site calls update with tenantId in where clause', async () => {
+  it('DELETE own site archives it via getTenantDb (tenant scope enforced structurally, see tenant-isolation.test.ts)', async () => {
     mockPrisma.site.findFirst.mockResolvedValue({ id: 's-1', tenantId: 'tenant-A', name: 'Site 1' })
     mockPrisma.site.update.mockResolvedValue({ id: 's-1', tenantId: 'tenant-A', archived: true })
-    await siteDel(makeDelete('http://localhost/api/sites/s-1'), makeParams('s-1'))
+    const res = await siteDel(makeDelete('http://localhost/api/sites/s-1'), makeParams('s-1'))
+    expect(res.status).toBe(200)
     expect(mockPrisma.site.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-A' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ id: 's-1' }), data: { archived: true } }),
     )
   })
 })

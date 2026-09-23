@@ -3,7 +3,7 @@ import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { redisCache }                from '@/lib/redisCache'
 import { TemplateSchema }            from '../route'
-import prisma                        from '@/lib/db'
+import { getTenantDb }               from '@/lib/tenantDb'
 
 const log = createLogger('/api/templates/[id]')
 
@@ -38,8 +38,8 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   }
 
   try {
-    const template = await prisma.missionTemplate.update({
-      where: { id, tenantId },
+    const template = await getTenantDb(tenantId).missionTemplate.update({
+      where: { id },
       data,
     })
     void redisCache.invalidateAll('templates', tenantId)
@@ -61,7 +61,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   }
 
   try {
-    await prisma.missionTemplate.delete({ where: { id, tenantId } })
+    await getTenantDb(tenantId).missionTemplate.delete({ where: { id } })
     void redisCache.invalidateAll('templates', tenantId)
     return NextResponse.json({ ok: true })
   } catch (err) {

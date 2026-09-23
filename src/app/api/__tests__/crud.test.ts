@@ -178,7 +178,7 @@ describe('PUT /api/clients/[id]', () => {
     const res = await clientsPut(req, makeIdParams('c-1'))
 
     expect(res.status).toBe(200)
-    expect(mockPrisma.site.count).toHaveBeenCalledWith({ where: { id: { in: ['site-1'] }, tenantId: 'tenant-test' } })
+    expect(mockPrisma.site.count).toHaveBeenCalledWith({ where: { id: { in: ['site-1'] } } })
     expect(mockPrisma.clientSite.createMany).toHaveBeenCalled()
   })
 
@@ -218,7 +218,7 @@ describe('DELETE /api/clients/[id]', () => {
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
     expect(mockPrisma.client.update).toHaveBeenCalledWith({
-      where: { id: 'c-1', tenantId: 'tenant-test' },
+      where: { id: 'c-1' },
       data:  { archived: true },
     })
   })
@@ -283,7 +283,7 @@ describe('DELETE /api/sites/[id]', () => {
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
     expect(mockPrisma.site.update).toHaveBeenCalledWith({
-      where: { id: 's-1', tenantId: 'tenant-test' },
+      where: { id: 's-1' },
       data:  { archived: true },
     })
   })
@@ -353,7 +353,7 @@ describe('DELETE /api/site-products/[id]', () => {
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
     expect(mockPrisma.siteProduct.updateMany).toHaveBeenCalledWith({
-      where: { id: 'sp-1', tenantId: 'tenant-test' },
+      where: { id: 'sp-1' },
       data:  { archived: true },
     })
   })

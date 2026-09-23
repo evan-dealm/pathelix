@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { redisCache } from '@/lib/redisCache'
 
 const ClientCreateSchema = z.object({
@@ -38,9 +38,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'clients',
       tenantId,
       async () => {
-        const where = { tenantId, archived: false }
+        const db = getTenantDb(tenantId)
+        const where = { archived: false }
         const [clients, total] = await Promise.all([
-          prisma.client.findMany({
+          db.client.findMany({
             where,
             select: {
               id: true, name: true, vip: true, requiresBsd: true,
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             skip: (page - 1) * limit,
             take: limit,
           }),
-          prisma.client.count({ where }),
+          db.client.count({ where }),
         ])
         return { data: clients, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
       },
@@ -86,19 +87,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } = parsed.data
 
   try {
+    const db = getTenantDb(tenantId)
 
     if (siteIds && siteIds.length > 0) {
-      const validSites = await prisma.site.count({
-        where: { id: { in: siteIds }, tenantId },
+      const validSites = await db.site.count({
+        where: { id: { in: siteIds } },
       })
       if (validSites !== siteIds.length) {
         return NextResponse.json({ error: 'Un ou plusieurs sites sont introuvables' }, { status: 400 })
       }
     }
 
-    const client = await prisma.client.create({
+    const client = await db.client.create({
       data: {
-        tenantId, name: name.trim(),
+        name: name.trim(),
         contact: contact || '', phone: phone || '', email: email || '',
         vip: vip || false, requiresDeposit: requiresDeposit || false,
         ecoResponsable: ecoResponsable || false, requiresBsd: requiresBsd || false,
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ...(siteIds && siteIds.length > 0 ? {
           clientSites: { create: siteIds.map(siteId => ({ siteId })) },
         } : {}),
-      },
+      } as Parameters<typeof db.client.create>[0]['data'],
       include: { clientSites: { include: { site: true } } },
     })
     void redisCache.invalidateAll('clients', tenantId)

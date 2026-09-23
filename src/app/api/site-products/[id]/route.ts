@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { redisCache } from '@/lib/redisCache'
 
 const UpdateSiteProductSchema = z.object({
@@ -29,21 +29,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
 
   try {
-    const existing = await prisma.siteProduct.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.siteProduct.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Produit introuvable' }, { status: 404 })
 
     const data = parsed.data as Record<string, unknown>
     if (Object.keys(data).length === 0) return NextResponse.json({ error: 'Aucun champ modifiable' }, { status: 400 })
 
-    const updated = await prisma.siteProduct.updateMany({
-      where: { id, tenantId },
+    const updated = await db.siteProduct.updateMany({
+      where: { id },
       data,
     })
     if (updated.count === 0) return NextResponse.json({ error: 'Produit introuvable' }, { status: 404 })
 
     void redisCache.invalidate('site-products', tenantId)
-    const product = await prisma.siteProduct.findFirst({
-      where: { id, tenantId },
+    const product = await db.siteProduct.findFirst({
+      where: { id },
       include: {
         site:            { select: { id: true, name: true } },
         client:          { select: { id: true, name: true } },
@@ -62,8 +63,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
 
   try {
-
-    const deleted = await prisma.siteProduct.updateMany({ where: { id, tenantId }, data: { archived: true } })
+    const deleted = await getTenantDb(tenantId).siteProduct.updateMany({ where: { id }, data: { archived: true } })
     if (deleted.count === 0) return NextResponse.json({ error: 'Produit introuvable' }, { status: 404 })
     void redisCache.invalidate('site-products', tenantId)
     return NextResponse.json({ ok: true })

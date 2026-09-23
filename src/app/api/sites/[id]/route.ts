@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRequestContext } from '@/lib/data/context'
 import { redisCache } from '@/lib/redisCache'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const SiteUpdateSchema = z.object({
   name:              z.string().min(1).max(200).optional(),
@@ -30,21 +30,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { clientIds, ...data } = parsed.data
 
   try {
-    const existing = await prisma.site.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.site.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Site introuvable' }, { status: 404 })
 
     if (clientIds && clientIds.length > 0) {
-      const validClients = await prisma.client.count({
-        where: { id: { in: clientIds }, tenantId },
+      const validClients = await db.client.count({
+        where: { id: { in: clientIds } },
       })
       if (validClients !== clientIds.length) {
         return NextResponse.json({ error: 'Un ou plusieurs clients sont introuvables' }, { status: 400 })
       }
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const updated = await db.$transaction(async (tx) => {
       await tx.site.update({
-        where: { id, tenantId },
+        where: { id },
         data,
       })
 
@@ -59,7 +60,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
 
       return tx.site.findFirst({
-        where: { id, tenantId },
+        where: { id },
         include: { clientSites: { include: { client: { select: { id: true, name: true } } } } },
       })
     })
@@ -76,9 +77,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
 
   try {
-    const existing = await prisma.site.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.site.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Site introuvable' }, { status: 404 })
-    await prisma.site.update({ where: { id, tenantId }, data: { archived: true } })
+    await db.site.update({ where: { id }, data: { archived: true } })
     void redisCache.invalidateAll('sites', tenantId)
     return NextResponse.json({ ok: true })
   } catch {

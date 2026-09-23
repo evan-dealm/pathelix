@@ -6,19 +6,21 @@ vi.mock('@/lib/data/context', () => ({
   getTenantId: vi.fn(() => 't1'),
 }))
 
-const mockSiteProductFindMany = vi.hoisted(() => vi.fn())
-const mockClientFindFirst     = vi.hoisted(() => vi.fn())
-const mockSiteFindFirst       = vi.hoisted(() => vi.fn())
-const mockClientSiteUpsert    = vi.hoisted(() => vi.fn())
-const mockSiteProductCreate   = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    siteProduct: { findMany: mockSiteProductFindMany, create: mockSiteProductCreate },
-    client:      { findFirst: mockClientFindFirst    },
-    site:        { findFirst: mockSiteFindFirst      },
-    clientSite:  { upsert:    mockClientSiteUpsert   },
-  },
+const mockTenantDb = vi.hoisted(() => ({
+  siteProduct: { findMany: vi.fn(), create: vi.fn() },
+  client:      { findFirst: vi.fn() },
+  site:        { findFirst: vi.fn() },
+  clientSite:  { upsert:    vi.fn() },
 }))
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: mockTenantDb,
+  getTenantDb:    () => mockTenantDb,
+}))
+const mockSiteProductFindMany = mockTenantDb.siteProduct.findMany
+const mockSiteProductCreate   = mockTenantDb.siteProduct.create
+const mockClientFindFirst     = mockTenantDb.client.findFirst
+const mockSiteFindFirst       = mockTenantDb.site.findFirst
+const mockClientSiteUpsert    = mockTenantDb.clientSite.upsert
 
 const mockGetOrSet      = vi.hoisted(() => vi.fn())
 const mockInvalidateAll = vi.hoisted(() => vi.fn())

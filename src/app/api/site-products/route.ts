@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { redisCache } from '@/lib/redisCache'
 
 const SiteProductCreateSchema = z.object({
@@ -27,11 +27,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'site-products' as never,
       tenantId,
       async () => {
-        const where: Record<string, unknown> = { tenantId, archived: false }
+        const where: Record<string, unknown> = { archived: false }
         if (siteId)   where.siteId   = siteId
         if (clientId) where.clientId = clientId
 
-        return prisma.siteProduct.findMany({
+        return getTenantDb(tenantId).siteProduct.findMany({
           where,
           include: {
             site:            { select: { id: true, name: true, address: true, latitude: true, longitude: true, accessNotes: true, defaultManeuverMin: true } },
@@ -68,23 +68,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { siteId, clientId, wasteType, binSizeLabel, binSizeM3, equipmentType, defaultDurationMin, defaultExutoireId, notes } = parsed.data
 
   try {
+    const db = getTenantDb(tenantId)
 
     const [client, site] = await Promise.all([
-      prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } }),
-      prisma.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } }),
+      db.client.findFirst({ where: { id: clientId }, select: { id: true } }),
+      db.site.findFirst({ where: { id: siteId }, select: { id: true } }),
     ])
     if (!client) return NextResponse.json({ error: 'Client introuvable pour ce tenant' }, { status: 404 })
     if (!site) return NextResponse.json({ error: 'Site introuvable pour ce tenant' }, { status: 404 })
 
-    await prisma.clientSite.upsert({
+    await db.clientSite.upsert({
       where: { clientId_siteId: { clientId, siteId } },
       update: {},
       create: { clientId, siteId },
     })
 
-    const product = await prisma.siteProduct.create({
+    const product = await db.siteProduct.create({
       data: {
-        tenantId, siteId, clientId,
+        siteId, clientId,
         wasteType: wasteType.trim(),
         binSizeLabel: binSizeLabel || '',
         binSizeM3: binSizeM3 ?? null,
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         defaultDurationMin: defaultDurationMin ?? 30,
         defaultExutoireId: defaultExutoireId || null,
         notes: notes || '',
-      },
+      } as Parameters<typeof db.siteProduct.create>[0]['data'],
       include: {
         site:            { select: { id: true, name: true } },
         client:          { select: { id: true, name: true } },
