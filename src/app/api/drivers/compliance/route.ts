@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const USE_MOCK = process.env.USE_MOCK_DATA !== 'false'
 
@@ -24,13 +24,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const mondayStr = monday.toISOString().slice(0, 10)
     const sundayStr = sunday.toISOString().slice(0, 10)
 
+    const db = getTenantDb(tenantId)
     const [driversWithExpiry, plans] = await Promise.all([
-      prisma.driver.findMany({
-        where:  { tenantId, archived: false, licenseExpiry: { not: null, lte: in90 } },
+      db.driver.findMany({
+        where:  { archived: false, licenseExpiry: { not: null, lte: in90 } },
         select: { id: true, firstName: true, lastName: true, licenseExpiry: true },
       }),
-      prisma.plan.findMany({
-        where: { tenantId, date: { gte: mondayStr, lte: sundayStr } },
+      db.plan.findMany({
+        where: { date: { gte: mondayStr, lte: sundayStr } },
         select: {
           driverId: true,
           missions: true,

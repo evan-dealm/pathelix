@@ -13,8 +13,8 @@ vi.mock('@/lib/session', () => ({
 }))
 
 const mockDriverFindUnique = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: { driver: { findUnique: mockDriverFindUnique } },
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
 }))
 
 // fs mocks — used only in real mode tests
@@ -218,8 +218,8 @@ describe('driver-photos — real mode', () => {
       verifySession:  mockVerifySession,
       SESSION_COOKIE: 'session',
     }))
-    vi.mock('@/lib/db', () => ({
-      default: { driver: { findUnique: mockDriverFindUnique } },
+    vi.mock('@/lib/tenantDb', () => ({
+      unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
     }))
     vi.mock('node:fs/promises', () => ({
       default: {

@@ -3,7 +3,7 @@ import { DriverUnavailabilitySchema }   from '@/lib/schemas'
 import { createLogger }                 from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }              from '@/lib/metrics'
-import prisma                           from '@/lib/db'
+import { getTenantDb }                  from '@/lib/tenantDb'
 
 const log = createLogger('/api/driver-unavailability')
 
@@ -16,17 +16,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const driverId = params.get('driverId') ?? undefined
 
   try {
-    const where: Record<string, unknown> = { tenantId }
+    const db = getTenantDb(tenantId)
+    const where: Record<string, unknown> = {}
     if (driverId) where.driverId = driverId
 
     const [unavailabilities, total] = await Promise.all([
-      prisma.driverUnavailability.findMany({
+      db.driverUnavailability.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { startDate: 'asc' },
       }),
-      prisma.driverUnavailability.count({ where }),
+      db.driverUnavailability.count({ where }),
     ])
 
     metrics.histogram(METRIC.API_LATENCY_MS, Date.now() - t0, { route: '/api/driver-unavailability', method: 'GET' })
@@ -59,8 +60,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const unavailability = await prisma.driverUnavailability.create({
-      data: { tenantId, ...parsed.data },
+    const db = getTenantDb(tenantId)
+    const unavailability = await db.driverUnavailability.create({
+      data: { ...parsed.data } as Parameters<typeof db.driverUnavailability.create>[0]['data'],
     })
 
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/driver-unavailability', method: 'POST', status: '201' })

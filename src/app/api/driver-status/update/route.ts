@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import prisma from '@/lib/db'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { publishStatusUpdate } from '@/lib/driverStatusPubSub'
@@ -42,7 +42,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
 
-    const driver = await prisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true, firstName: true, lastName: true } })
+    // Tenant not yet known here — this lookup is what determines it.
+    const driver = await unscopedPrisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true, firstName: true, lastName: true } })
     if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
 
     const tenantId = driver.tenantId
@@ -81,9 +82,10 @@ async function handleStatusUpdate({
   try {
     const ts = timestamp || new Date().toISOString()
 
+    const db = getTenantDb(tenantId)
     let capturedStatuses: Record<string, unknown> | null = null
-    await prisma.$transaction(async (tx) => {
-      const plan = await tx.plan.findFirst({ where: { tenantId, driverId, date } })
+    await db.$transaction(async (tx) => {
+      const plan = await tx.plan.findFirst({ where: { driverId, date } })
       if (!plan) return
 
       const statuses = (typeof plan.statuses === 'object' && plan.statuses !== null)
@@ -106,15 +108,14 @@ async function handleStatusUpdate({
       capturedStatuses = statuses
     })
 
-    await prisma.auditLog.create({
+    await db.auditLog.create({
       data: {
-        tenantId,
         userId: driverId,
         action: 'status_update',
         entityType: 'mission',
         entityId: missionId,
-        changes: { status, timestamp: ts, latitude: latitude ?? null, longitude: longitude ?? null } as Parameters<typeof prisma.auditLog.create>[0]['data']['changes'],
-      },
+        changes: { status, timestamp: ts, latitude: latitude ?? null, longitude: longitude ?? null },
+      } as Parameters<typeof db.auditLog.create>[0]['data'],
     })
 
     log.info('Status updated', { driverId, missionId, status, date })
@@ -122,8 +123,8 @@ async function handleStatusUpdate({
     if (status === 'done') {
       void emitEvent(tenantId, 'mission.done', { missionId, driverId, driverName: driverFullName, date, status })
 
-      const missionForERP = await prisma.mission.findFirst({
-        where: { id: missionId, tenantId },
+      const missionForERP = await db.mission.findFirst({
+        where: { id: missionId },
         select: { type: true, clientName: true, wasteTypeLabel: true, address: true },
       }).catch(() => null)
 

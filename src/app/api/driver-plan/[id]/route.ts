@@ -5,7 +5,7 @@ import { prismaRowToDriver } from '@/lib/prismaMappers'
 import { createLogger } from '@/lib/logger'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 
-import prisma from '@/lib/db'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/driver-plan/[id]')
 
@@ -42,7 +42,8 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
       driver = getDriverStore().find(d => d.id === driverId)
       tenantId = session.tenantId
     } else {
-      const raw = await prisma.driver.findUnique({ where: { id: driverId } })
+      // Tenant not yet known here — this lookup is what determines it.
+      const raw = await unscopedPrisma.driver.findUnique({ where: { id: driverId } })
       if (raw) {
         driver = prismaRowToDriver(raw as unknown as Record<string, unknown>)
         tenantId = raw.tenantId
@@ -71,8 +72,8 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     } else {
 
       const [record, tenantRow] = await Promise.all([
-        prisma.plan.findFirst({ where: { tenantId, driverId, date } }),
-        prisma.tenant.findUnique({ where: { id: tenantId }, select: { trade: true } }),
+        getTenantDb(tenantId).plan.findFirst({ where: { driverId, date } }),
+        unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { trade: true } }),
       ])
       if (record) {
         if (Array.isArray(record.missions)) {

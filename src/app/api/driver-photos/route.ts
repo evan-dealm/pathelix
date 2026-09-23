@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { createLogger } from '@/lib/logger'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
-import prisma from '@/lib/db'
+import { unscopedPrisma } from '@/lib/tenantDb'
 import { withIdempotency } from '@/lib/idempotency'
 
 const log = createLogger('/api/driver-photos')
@@ -34,7 +34,9 @@ async function verifyDriverTenant(req: NextRequest, driverId: string): Promise<{
   if (!session) return { ok: false, response: NextResponse.json({ error: 'Non authentifié' }, { status: 401 }) }
 
   if (!useMock) {
-    const driver = await prisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true } })
+    // Tenant not yet known here — verifying which tenant this driverId belongs to is the point
+    // of this lookup, so it must run unscoped, then compared against the session's tenantId.
+    const driver = await unscopedPrisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true } })
     if (!driver || driver.tenantId !== session.tenantId) {
       return { ok: false, response: NextResponse.json({ error: 'Chauffeur introuvable ou accès refusé' }, { status: 403 }) }
     }

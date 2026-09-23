@@ -17,14 +17,6 @@ const mockPlanUpdate        = vi.hoisted(() => vi.fn())
 const mockAuditLogCreate    = vi.hoisted(() => vi.fn())
 const mockMissionFindFirst  = vi.hoisted(() => vi.fn())
 const mockTransaction       = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    driver:   { findUnique:  mockDriverFindUnique },
-    auditLog: { create:      mockAuditLogCreate   },
-    mission:  { findFirst:   mockMissionFindFirst  },
-    $transaction: mockTransaction,
-  },
-}))
 
 const mockPublish  = vi.hoisted(() => vi.fn())
 const mockEmit     = vi.hoisted(() => vi.fn())
@@ -46,7 +38,13 @@ const mockIdemCreate = vi.hoisted(() => vi.fn(async ({ data }: { data: { key: st
   return data
 }))
 vi.mock('@/lib/tenantDb', () => ({
-  getTenantDb: () => ({ idempotencyKey: { findUnique: mockIdemFindUnique, create: mockIdemCreate } }),
+  unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
+  getTenantDb: () => ({
+    idempotencyKey: { findUnique: mockIdemFindUnique, create: mockIdemCreate },
+    auditLog:       { create: mockAuditLogCreate },
+    mission:        { findFirst: mockMissionFindFirst },
+    $transaction:   mockTransaction,
+  }),
 }))
 
 import { POST } from '@/app/api/driver-status/update/route'

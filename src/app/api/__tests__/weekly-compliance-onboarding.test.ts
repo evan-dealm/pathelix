@@ -41,6 +41,7 @@ const mockPrisma = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/data/context', () => ({
   getTenantId:       vi.fn(() => 'tenant-test'),

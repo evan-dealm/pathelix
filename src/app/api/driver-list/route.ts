@@ -4,7 +4,7 @@ import { getMockDrivers } from '@/lib/mockData'
 
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { redisCache } from '@/lib/redisCache'
-import prisma from '@/lib/db'
+import { getTenantDb } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 
 const log = createLogger('/api/driver-list')
@@ -41,8 +41,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         if (useMock) {
           drivers = getMockDrivers().filter(d => !d.archived)
         } else {
-          drivers = (await prisma.driver.findMany({
-            where:   { tenantId },
+          drivers = (await getTenantDb(tenantId).driver.findMany({
             select:  { id: true, firstName: true, lastName: true, sector: true, depotName: true },
             orderBy: [{ sector: 'asc' }, { lastName: 'asc' }],
           })) as Driver[]

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { getStatusFromStore, setStatusInStore, getAllStatusesForDate, pruneOldStatusEntries } from '@/lib/statusStore'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
-import prisma from '@/lib/db'
+import { unscopedPrisma } from '@/lib/tenantDb'
 
 let _pruneCounter = 0
 
@@ -104,7 +104,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
 
-    const driver = await prisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true } })
+    // Tenant not yet known here — this lookup is what determines it.
+    const driver = await unscopedPrisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true } })
     if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
     const tenantId = driver.tenantId
 

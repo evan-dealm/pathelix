@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createLogger }              from '@/lib/logger'
 import { getRequestContext }          from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
-import prisma                        from '@/lib/db'
+import { getTenantDb }               from '@/lib/tenantDb'
 
 const log = createLogger('/api/driver-unavailability/[id]')
 type Params = { params: Promise<{ id: string }> }
@@ -16,10 +16,11 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   const { id } = await params
 
   try {
-    const existing = await prisma.driverUnavailability.findFirst({ where: { id, tenantId } })
+    const db = getTenantDb(tenantId)
+    const existing = await db.driverUnavailability.findFirst({ where: { id } })
     if (!existing) return NextResponse.json({ error: 'Indisponibilité introuvable' }, { status: 404 })
 
-    await prisma.driverUnavailability.delete({ where: { id, tenantId } })
+    await db.driverUnavailability.delete({ where: { id } })
 
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/driver-unavailability/[id]', method: 'DELETE', status: '200' })
     return NextResponse.json({ ok: true })
