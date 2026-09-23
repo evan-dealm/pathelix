@@ -506,9 +506,56 @@ de 3 km à 25 km (le trajet vers l'exutoire est désormais réellement calculé)
 ajoutés à `driver-list-plan-tracking.test.ts` (réponse vide et réponse peuplée). Suite complète
 (3900 tests) et lint/typecheck relancés après coup — tous verts.
 
-**Reste non couvert par ce test manuel, faute de temps dans cette session** : transitions de
-statut avec vérification de persistance en base, upload photo avec rejet de faux type par magic
-bytes, flux commentaire/incident/scan-ticket, mode offline avec coupure réseau réelle et
-vérification d'absence de doublon en base (le correctif idempotence `IdempotencyKey` d'une session
-précédente n'a jamais été vérifié de bout en bout avec une vraie coupure navigateur). Détail dans
+**Reste non couvert par ce test manuel à ce point** : flux commentaire/incident/scan-ticket, mode
+offline avec coupure réseau réelle (le correctif idempotence `IdempotencyKey` d'une session
+précédente est désormais vérifié au niveau HTTP — voir Phase 11 — mais jamais avec une vraie
+coupure réseau navigateur). Transitions de statut et upload photo couverts dans la foulée — voir
+Phase 11 ci-dessous.
+
+## Phase 11 — transitions de statut, anti-doublon HTTP, et un vrai bug de sécurité trouvé + corrigé
+
+Poursuite directe du test manuel de Phase 10, sur la même session chauffeur déjà authentifiée.
+
+### Transition de statut — persistance vérifiée en base
+
+Clic réel sur "Démarrer le trajet" dans le navigateur → `Plan.statuses` interrogé directement en
+base (`psql`) après le clic : `{"<missionId>": {"status": "en_route", "en_routeAt": "..."}}`
+confirmé présent. Le flux complet (geolocation → `enqueueAction` → sync queue → `POST
+/api/driver-status/update`) fonctionne de bout en bout, pas seulement au niveau unitaire.
+
+### Anti-doublon `IdempotencyKey` — vérifié par rejeu HTTP réel
+
+Connexion via `curl` (mot de passe sandbox du compte de test réinitialisé pour l'occasion) pour
+obtenir un vrai cookie de session, puis deux `POST /api/driver-status/update` identiques avec le
+même en-tête `Idempotency-Key` : la 2e requête a renvoyé une réponse strictement identique (même
+`timestamp`) sans créer de 2e ligne `AuditLog` pour la même mission — confirmé par comptage direct
+en base avant/après. Vérifie réellement le mécanisme décrit en Phase 3 (Web Locks +
+`IdempotencyKey`), au niveau HTTP plutôt qu'unitaire (mocks). La coupure réseau navigateur réelle
+(`context.setOffline` Playwright) reste non testée — seul le rejeu HTTP direct l'est.
+
+### Upload photo — vrai bug de sécurité trouvé et corrigé
+
+En construisant un test légitime de rejet magic-byte pour `/api/driver-photos`, découverte que le
+rejet **n'existait pas du tout** : la route ne validait que le préfixe MIME déclaré dans le data
+URL (`data:image/jpeg;base64,...`) par une regex, jamais le contenu réel des octets décodés, avant
+de les écrire directement dans un dossier servi statiquement
+(`public/uploads/photos/<id>.jpg`). Confirmé en conditions réelles (pas supposé) : un payload texte
+brut étiqueté `image/jpeg` a été accepté (200), écrit sur disque, et confirmé par `file` comme
+"ASCII text" plutôt qu'une image — exactement le scénario d'upload de fichier non restreint
+(OWASP).
+
+`/api/delivery-proof` avait déjà le bon pattern (vérification des magic bytes JPEG/PNG sur le
+buffer décodé avant écriture) — appliqué le même principe à `/api/driver-photos`, étendu aux 2
+autres types déjà acceptés par cette route (GIF, WEBP). Rejette désormais avec 422 avant toute
+écriture (mock ou disque) si les octets décodés ne correspondent à aucune signature d'image
+acceptée. Revérifié en conditions réelles après correctif : le même payload malveillant est
+maintenant rejeté (422), une vraie image PNG 1×1 est toujours acceptée (200). 2 nouveaux tests de
+régression dans `driver-photos.test.ts` (mode mock et mode réel), suite complète (3902 tests) +
+lint + typecheck relancés — tous verts.
+
+`public/uploads/` était non suivi et non ignoré par git — ajouté à `.gitignore` (contenu généré à
+l'exécution, comme le dossier d'upload `delivery-proof` existant).
+
+**Reste non couvert, faute de temps dans cette session** : flux commentaire/incident/scan-ticket,
+mode offline avec coupure réseau navigateur réelle. Détail dans
 [docs/problemes-connus.md](docs/problemes-connus.md).

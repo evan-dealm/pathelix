@@ -47,11 +47,20 @@ migration close. RLS PostgreSQL évalué, non implémenté (§14 du même docume
 
 ## Non vérifié cette session (ni les précédentes) — pas nécessairement un bug
 
-Sections du test manuel jamais parcourues de bout en bout : statuts de mission avec vérification
-DB, upload photo avec rejet magic-byte, flux commentaire/incident/scan-ticket, mode hors-ligne
-avec coupure réseau réelle + vérification anti-doublon (`IdempotencyKey`), 3e tenant sur un
-secteur autre que Collecte/BTP (onboarding), flux Trackdéchets complet (HALT actif, jamais levé
-donc jamais testé de bout en bout), prédictions ML (localisation/affichage), pages publiques
-(`/`, `/help`, `/status`, `/tracking`, `/api-docs`), mesures de performance dédiées (temps de
-chargement, taille des payloads). À couvrir dans une session de test manuel dédiée si nécessaire
-avant un pilote à plus grande échelle.
+Sections du test manuel jamais parcourues de bout en bout : flux commentaire/incident/scan-ticket,
+mode hors-ligne avec coupure réseau navigateur réelle (`context.setOffline`/Playwright — l'anti-
+doublon `IdempotencyKey` a été vérifié au niveau HTTP par rejeu direct d'une requête identique,
+mais jamais dans le scénario complet "vraie coupure réseau → vraie file IndexedDB → vrai flush
+concurrent double"), 3e tenant sur un secteur autre que Collecte/BTP (onboarding), flux
+Trackdéchets complet (HALT actif, jamais levé donc jamais testé de bout en bout), prédictions ML
+(localisation/affichage), pages publiques (`/`, `/help`, `/status`, `/tracking`, `/api-docs`),
+mesures de performance dédiées (temps de chargement, taille des payloads). À couvrir dans une
+session de test manuel dédiée si nécessaire avant un pilote à plus grande échelle.
+
+Vérifié cette session (2026-09-23) en conditions réelles (app + worker + sandbox DB, pas de
+mocks) : statuts de mission (persistance confirmée dans `Plan.statuses` en base après clic réel),
+anti-doublon `IdempotencyKey` au niveau HTTP (rejeu d'une requête identique avec le même
+`Idempotency-Key` → réponse strictement identique, aucune deuxième ligne `AuditLog` créée), et
+upload photo — qui a révélé et corrigé un vrai bug de sécurité (`/api/driver-photos` acceptait
+n'importe quel contenu tant que le préfixe `data:image/...` déclaré était présent, sans vérifier
+les octets réels). Détail du correctif dans `QUALITE_PROD_LOG.md` Phase 11.
