@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { VehicleDimensions } from '@/lib/types'
 import { createLogger } from '@/lib/logger'
 import { cachedDist } from './distanceCache'
@@ -15,6 +16,23 @@ const log = createLogger('valhallaMatrix')
 const MAX_CHUNK_SIZE       = 45
 const MAX_CONCURRENT       = 4
 const REDIS_CACHE_TTL_S    = 86400
+/** Bumped whenever the cached payload layout changes — old entries are simply never read. */
+const CACHE_VERSION        = 'v2'
+/** Hard cap on building one matrix; past it the VRP runs on haversine rather than wait. */
+const MATRIX_BUDGET_MS     = parseInt(process.env.VALHALLA_MATRIX_BUDGET_MS || '20000', 10)
+/** After a failure Valhalla is skipped for this long (no 15 s timeout per chunk per run). */
+const BREAKER_OPEN_MS      = 60_000
+
+let _breakerOpenUntil = 0
+
+/** Test hook. */
+export function _resetValhallaBreaker(): void { _breakerOpenUntil = 0 }
+
+function breakerOpen(): boolean { return Date.now() < _breakerOpenUntil }
+function tripBreaker(reason: string): void {
+  _breakerOpenUntil = Date.now() + BREAKER_OPEN_MS
+  log.warn('Valhalla unavailable — using straight-line distances for the next minute', { reason })
+}
 
 function getValhallaUrl(): string {
   return process.env.VALHALLA_URL || process.env.VALHALLA_FALLBACK_URL || ''
@@ -31,6 +49,9 @@ export interface GeoPoint {
 
 export interface ValhallaMatrix {
   source: 'valhalla' | 'valhalla-chunked' | 'haversine'
+
+  /** True when part of the matrix had to be filled with haversine because Valhalla failed. */
+  degraded?: boolean
 
   size: number
 
@@ -69,7 +90,7 @@ export async function buildValhallaMatrix(
   points: GeoPoint[],
   dims?: VehicleDimensions,
 ): Promise<ValhallaMatrix> {
-  if (!getValhallaUrl() || points.length < 2) {
+  if (!getValhallaUrl() || points.length < 2 || breakerOpen()) {
     return buildHaversineMatrix(points)
   }
 
@@ -87,17 +108,15 @@ export async function buildValhallaMatrix(
     if (points.length <= MAX_CHUNK_SIZE) {
       matrix = await fetchDirect(points, dimensions)
     } else {
-      matrix = await fetchChunked(points, dimensions)
+      matrix = await fetchChunked(points, dimensions, Date.now() + MATRIX_BUDGET_MS)
     }
 
-    void cacheMatrix(points, dimensions, matrix)
+    // A matrix patched with straight-line distances must never be served from cache for a day.
+    if (!matrix.degraded) void cacheMatrix(points, dimensions, matrix)
 
     return matrix
   } catch (err) {
-    log.warn('Valhalla matrix failed, falling back to haversine', {
-      err: err instanceof Error ? err.message : String(err),
-      points: points.length,
-    })
+    tripBreaker(err instanceof Error ? err.message : String(err))
     return buildHaversineMatrix(points)
   }
 }
@@ -131,7 +150,7 @@ async function fetchDirect(points: GeoPoint[], dims: VehicleDimensions): Promise
   return parseValhallaResponse(points, data)
 }
 
-async function fetchChunked(points: GeoPoint[], dims: VehicleDimensions): Promise<ValhallaMatrix> {
+async function fetchChunked(points: GeoPoint[], dims: VehicleDimensions, deadline: number): Promise<ValhallaMatrix> {
   const n = points.length
   const distMatrix = new Float32Array(n * n)
   const durMatrix  = new Float32Array(n * n)
@@ -153,10 +172,19 @@ async function fetchChunked(points: GeoPoint[], dims: VehicleDimensions): Promis
 
   const locations = points.map(p => ({ lat: p.lat, lon: p.lng }))
   let chunkIdx = 0
+  // First failure (or the budget running out): every remaining chunk is filled with haversine
+  // immediately instead of waiting one timeout each — a black-holed Valhalla used to cost
+  // ~25 chunks x 15 s before the VRP could even start.
+  let failed = false
 
   async function processNext(): Promise<void> {
     while (chunkIdx < chunks.length) {
       const chunk = chunks[chunkIdx++]
+      if (failed || Date.now() > deadline) {
+        failed = true
+        fillHaversineChunk(points, distMatrix, durMatrix, chunk)
+        continue
+      }
 
       const sources = locations.slice(chunk.srcStart, chunk.srcEnd)
       const targets = locations.slice(chunk.tgtStart, chunk.tgtEnd)
@@ -174,12 +202,12 @@ async function fetchChunked(points: GeoPoint[], dims: VehicleDimensions): Promis
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(getValhallaTimeout()),
+          signal: AbortSignal.timeout(Math.max(1000, Math.min(getValhallaTimeout(), deadline - Date.now()))),
         })
 
         if (!res.ok) {
           log.warn('Valhalla chunk failed', { status: res.status })
-
+          failed = true
           fillHaversineChunk(points, distMatrix, durMatrix, chunk)
           continue
         }
@@ -204,6 +232,7 @@ async function fetchChunked(points: GeoPoint[], dims: VehicleDimensions): Promis
           }
         }
       } catch {
+        failed = true
         fillHaversineChunk(points, distMatrix, durMatrix, chunk)
       }
     }
@@ -212,10 +241,11 @@ async function fetchChunked(points: GeoPoint[], dims: VehicleDimensions): Promis
   const workers = Array.from({ length: MAX_CONCURRENT }, () => processNext())
   await Promise.all(workers)
 
-  log.info('Valhalla chunked matrix built', { points: n, chunks: chunks.length })
+  log.info('Valhalla chunked matrix built', { points: n, chunks: chunks.length, degraded: failed })
+  if (failed) tripBreaker('chunk failure')
 
   return {
-    source: 'valhalla-chunked', size: n,
+    source: 'valhalla-chunked', size: n, degraded: failed,
     indexOf: (id: string) => idxMap.get(id) ?? -1,
     distance: (from: number, to: number) => distMatrix[from * n + to] || 0,
     duration: (from: number, to: number) => durMatrix[from * n + to] || 0,
@@ -291,16 +321,27 @@ function buildHaversineMatrix(points: GeoPoint[]): ValhallaMatrix {
   }
 }
 
-function matrixCacheKey(points: GeoPoint[], dims: VehicleDimensions): string {
+/**
+ * Cache entries are keyed on the SET of locations, not their order — the same addresses come
+ * back in a different order from one optimisation to the next. The matrix is therefore stored
+ * in a canonical order (sorted coordinate keys) and re-indexed to the caller's order on read.
+ * (The previous version hashed the sorted set but stored and served the matrix in the caller's
+ * order: a later request with the same points in another order got every distance permuted.)
+ */
+function coordKey(p: GeoPoint): string {
+  return `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`
+}
 
-  const sorted = points.map(p => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).sort()
-  const input = `${sorted.join('|')}:${dims.weightTon}:${dims.heightM}:${dims.widthM}:${dims.lengthM}`
-  let h = 0x811c9dc5
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
-  }
-  return `valhalla:matrix:${(h >>> 0).toString(36)}`
+function canonicalCoords(points: GeoPoint[]): string[] {
+  return [...new Set(points.map(coordKey))].sort()
+}
+
+export function matrixCacheKey(points: GeoPoint[], dims: VehicleDimensions): string {
+  const input = [
+    CACHE_VERSION, canonicalCoords(points).join('|'),
+    dims.weightTon, dims.heightM, dims.widthM, dims.lengthM, dims.axleCount, dims.hazmat,
+  ].join(':')
+  return `valhalla:matrix:${createHash('sha256').update(input).digest('hex').slice(0, 40)}`
 }
 
 async function tryLoadFromCache(points: GeoPoint[], dims: VehicleDimensions): Promise<ValhallaMatrix | null> {
@@ -310,25 +351,26 @@ async function tryLoadFromCache(points: GeoPoint[], dims: VehicleDimensions): Pr
     const client = await getRedisClient()
     if (!client) return null
 
-    const key = matrixCacheKey(points, dims)
-    const raw = await client.get(key)
+    const raw = await client.get(matrixCacheKey(points, dims))
     if (!raw) return null
 
-    const { dist, dur } = JSON.parse(raw) as { dist: number[]; dur: number[] }
-    const n = points.length
-    const distMatrix = new Float32Array(dist)
-    const durMatrix  = new Float32Array(dur)
+    const cached = JSON.parse(raw) as { coords: string[]; dist: number[]; dur: number[] }
+    const m = cached.coords.length
+    const canonIdx = new Map(cached.coords.map((c, i) => [c, i]))
+    // Caller index -> canonical index (duplicate coordinates share one canonical row).
+    const map = points.map(p => canonIdx.get(coordKey(p)) ?? -1)
+    if (map.some(i => i < 0) || cached.dist.length !== m * m) return null
+
     const idxMap = new Map<string, number>()
-    for (let i = 0; i < n; i++) idxMap.set(points[i].id, i)
+    for (let i = 0; i < points.length; i++) idxMap.set(points[i].id, i)
 
     return {
-      source: 'valhalla', size: n,
+      source: 'valhalla', size: points.length,
       indexOf: (id: string) => idxMap.get(id) ?? -1,
-      distance: (from: number, to: number) => distMatrix[from * n + to] || 0,
-      duration: (from: number, to: number) => durMatrix[from * n + to] || 0,
+      distance: (from: number, to: number) => cached.dist[map[from] * m + map[to]] || 0,
+      duration: (from: number, to: number) => cached.dur[map[from] * m + map[to]] || 0,
     }
   } catch {
-
     return null
   }
 }
@@ -340,19 +382,22 @@ async function cacheMatrix(points: GeoPoint[], dims: VehicleDimensions, matrix: 
     const client = await getRedisClient()
     if (!client) return
 
-    const n = points.length
-    const dist: number[] = []
-    const dur: number[] = []
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        dist.push(matrix.distance(i, j))
-        dur.push(matrix.duration(i, j))
+    const coords = canonicalCoords(points)
+    const firstIdx = new Map<string, number>()
+    points.forEach((p, i) => { const k = coordKey(p); if (!firstIdx.has(k)) firstIdx.set(k, i) })
+    const m = coords.length
+    const dist: number[] = new Array(m * m)
+    const dur: number[]  = new Array(m * m)
+    for (let a = 0; a < m; a++) {
+      const i = firstIdx.get(coords[a])!
+      for (let b = 0; b < m; b++) {
+        const j = firstIdx.get(coords[b])!
+        dist[a * m + b] = matrix.distance(i, j)
+        dur[a * m + b]  = matrix.duration(i, j)
       }
     }
-
-    const key = matrixCacheKey(points, dims)
-    await client.set(key, JSON.stringify({ dist, dur }), 'EX', REDIS_CACHE_TTL_S)
+    await client.set(matrixCacheKey(points, dims), JSON.stringify({ coords, dist, dur }), 'EX', REDIS_CACHE_TTL_S)
   } catch {
-
+    // Cache is an optimisation only.
   }
 }

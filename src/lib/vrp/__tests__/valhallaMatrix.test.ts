@@ -9,9 +9,15 @@ vi.mock('@/lib/algorithm', () => ({
   trafficFactor: vi.fn(() => 1.0),
 }))
 
+// In-memory Redis so the cache round-trip itself is exercised.
+const redisStore = vi.hoisted(() => new Map<string, string>())
+const redisState = vi.hoisted(() => ({ available: false }))
 vi.mock('@/lib/redisClient', () => ({
-  REDIS_AVAILABLE: false,
-  getRedisClient: vi.fn(async () => null),
+  get REDIS_AVAILABLE() { return redisState.available },
+  getRedisClient: vi.fn(async () => redisState.available ? {
+    get: async (k: string) => redisStore.get(k) ?? null,
+    set: async (k: string, v: string) => { redisStore.set(k, v); return 'OK' },
+  } : null),
 }))
 
 const points: GeoPoint[] = [
@@ -84,9 +90,12 @@ describe('buildValhallaMatrix — no Valhalla URL (haversine fallback)', () => {
 })
 
 describe('buildValhallaMatrix — Valhalla available (fetch mocked)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.stubEnv('VALHALLA_URL', 'http://valhalla:8002')
     vi.stubEnv('VALHALLA_TIMEOUT_MS', '5000')
+    ;(await import('../valhallaMatrix'))._resetValhallaBreaker()
+    redisStore.clear()
+    redisState.available = false
   })
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -168,5 +177,76 @@ describe('buildValhallaMatrix — Valhalla available (fetch mocked)', () => {
     for (const size of seenChunkSizes) {
       expect(size).toBeLessThanOrEqual(2500)
     }
+  })
+
+  // Distances depend only on the pair of points: a deterministic fake Valhalla.
+  function pairDistance(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+    return Math.round((a.lat * 1000 + b.lon * 7) * 10) / 10
+  }
+  function fakeValhalla() {
+    return vi.spyOn(global, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string)
+      return {
+        ok: true,
+        json: async () => ({
+          sources_to_targets: body.sources.map((src: { lat: number; lon: number }) =>
+            body.targets.map((tgt: { lat: number; lon: number }) => ({ distance: pairDistance(src, tgt), time: 60 }))),
+        }),
+      } as Response
+    })
+  }
+
+  it('serves a cached matrix correctly when the same points come back in another order', async () => {
+    redisState.available = true
+    fakeValhalla()
+    const { buildValhallaMatrix } = await import('../valhallaMatrix')
+    await buildValhallaMatrix(points) // fills the cache
+    await new Promise(r => setTimeout(r, 0))
+    const fetchSpy = vi.mocked(global.fetch)
+    fetchSpy.mockClear()
+
+    const reordered = [points[2], points[0], points[1]]
+    const m = await buildValhallaMatrix(reordered)
+    expect(fetchSpy).not.toHaveBeenCalled() // cache hit
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const a = { lat: reordered[i].lat, lon: reordered[i].lng }
+        const b = { lat: reordered[j].lat, lon: reordered[j].lng }
+        expect(m.distance(i, j)).toBeCloseTo(pairDistance(a, b), 1)
+      }
+    }
+  })
+
+  it('never caches a matrix partly filled with straight-line distances', async () => {
+    redisState.available = true
+    const many: GeoPoint[] = Array.from({ length: 60 }, (_, i) => ({ id: `q${i}`, lat: 45 + i * 0.01, lng: 6 }))
+    let call = 0
+    vi.spyOn(global, 'fetch').mockImplementation(async () => {
+      call++
+      if (call === 1) return { ok: false, status: 503, text: async () => '' } as Response
+      return { ok: true, json: async () => ({ sources_to_targets: [] }) } as Response
+    })
+    const { buildValhallaMatrix } = await import('../valhallaMatrix')
+    const m = await buildValhallaMatrix(many)
+    await new Promise(r => setTimeout(r, 0))
+    expect(m.degraded).toBe(true)
+    expect(redisStore.size).toBe(0)
+  })
+
+  it('skips Valhalla for a while after a failure (no 15 s wait per run while it is down)', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockRejectedValue(new Error('ETIMEDOUT'))
+    const { buildValhallaMatrix } = await import('../valhallaMatrix')
+    expect((await buildValhallaMatrix(points)).source).toBe('haversine')
+    spy.mockClear()
+    expect((await buildValhallaMatrix(points)).source).toBe('haversine')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('cache keys include every vehicle dimension (axles, hazmat) but not the point order', async () => {
+    const { matrixCacheKey } = await import('../valhallaMatrix')
+    const dims = { weightTon: 26, heightM: 4, widthM: 2.55, lengthM: 12, axleCount: 3, hazmat: false }
+    expect(matrixCacheKey(points, dims)).toBe(matrixCacheKey([...points].reverse(), dims))
+    expect(matrixCacheKey(points, dims)).not.toBe(matrixCacheKey(points, { ...dims, axleCount: 4 }))
+    expect(matrixCacheKey(points, dims)).not.toBe(matrixCacheKey(points, { ...dims, hazmat: true }))
   })
 })
