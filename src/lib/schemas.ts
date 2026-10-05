@@ -62,9 +62,14 @@ const SYNTHETIC_TYPE_ISSUE = {
 }
 
 export const MissionSchema = MissionObjectSchema.refine(notSyntheticType, SYNTHETIC_TYPE_ISSUE)
-export const MissionUpdateSchema = MissionObjectSchema.partial().refine(notSyntheticType, SYNTHETIC_TYPE_ISSUE)
+// On update, `priority: null` clears it (an omitted key means "unchanged").
+export const MissionUpdateSchema = MissionObjectSchema
+  .extend({ priority: z.union([z.literal(1), z.literal(2), z.literal(3)]).nullable() })
+  .partial()
+  .refine(notSyntheticType, SYNTHETIC_TYPE_ISSUE)
 
 export type MissionInput = z.infer<typeof MissionObjectSchema>
+export type MissionUpdateInput = z.infer<typeof MissionUpdateSchema>
 
 export const DriverSchema = z.object({
   firstName: z.string().min(1),
@@ -211,10 +216,11 @@ export const VehicleSchema = z.object({
   type:            z.string().min(1),
   brand:           z.string().optional(),
   model:           z.string().optional(),
-  capacityM3:      z.number().positive().optional(),
-  maxBins:         z.number().int().positive().optional(),
+  // Nullable = the field can be cleared from the edit form (undefined means "unchanged").
+  capacityM3:      z.number().positive().nullable().optional(),
+  maxBins:         z.number().int().positive().nullable().optional(),
   mileageKm:       z.number().int().min(0).optional(),
-  nextInspection:  dateSchema.optional(),
+  nextInspection:  dateSchema.nullable().optional(),
   status:          z.enum(['active', 'maintenance', 'decommissioned']).optional(),
   notes:           z.string().optional(),
   assignedDriverId: z.string().nullable().optional(),
@@ -232,18 +238,18 @@ export const VehicleSchema = z.object({
   axleCount:       z.number().int().min(2).max(10).optional(),
   hazmat:          z.boolean().optional(),
 
-  fuelType:        z.enum(['diesel', 'essence', 'electrique', 'hybride', 'gpl']).optional(),
-  year:            z.number().int().min(1900).max(2100).optional(),
-  vin:             z.string().optional(),
+  fuelType:        z.enum(['diesel', 'essence', 'electrique', 'hybride', 'gpl', '']).optional(),
+  year:            z.number().int().min(1900).max(2100).nullable().optional(),
+  vin:             z.string().nullable().optional(),
   color:           z.string().optional(),
 
-  gpsDeviceId:     z.string().optional(),
+  gpsDeviceId:     z.string().nullable().optional(),
 
-  insuranceExpiry: dateSchema.optional(),
+  insuranceExpiry: dateSchema.nullable().optional(),
   insuranceRef:    z.string().optional(),
 
-  lastServiceDate: dateSchema.optional(),
-  lastServiceKm:   z.number().int().min(0).optional(),
+  lastServiceDate: dateSchema.nullable().optional(),
+  lastServiceKm:   z.number().int().min(0).nullable().optional(),
 })
 
 export type VehicleInput = z.infer<typeof VehicleSchema>

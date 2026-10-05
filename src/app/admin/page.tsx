@@ -13,6 +13,7 @@ import {
 } from '@/components/admin/types'
 import { today, displayShort, logErr, sleep } from '@/components/admin/hooks'
 import { cachedFetch } from '@/lib/clientCache'
+import { apiRequest } from '@/lib/apiClient'
 import type { SettingsApiResponse } from '@/lib/types'
 
 import { MissionForm } from '@/components/admin/MissionForm'
@@ -24,6 +25,7 @@ import { MissionDetailModal } from '@/components/admin/modals/MissionDetailModal
 import { DriverDetailModal } from '@/components/admin/modals/DriverDetailModal'
 
 import { DashboardKPIBar } from '@/components/admin/DashboardKPIBar'
+import { SyncIndicator } from '@/components/admin/SyncIndicator'
 
 import { TopPanel } from '@/components/admin/timeline/TopPanel'
 import { BottomPanel } from '@/components/admin/timeline/BottomPanel'
@@ -110,39 +112,27 @@ export default function AdminPage() {
     })
   }, [])
 
+  // Every mutation below updates the store optimistically, then waits for the server and rolls
+  // back with an explicit message if it refuses — the UI used to show "supprimé"/"mis à jour"
+  // while the server had answered 403/422 and the change silently came back on reload.
   async function handleSaveMission(data: Omit<Mission, 'id'>, existingId?: string) {
     if (existingId) {
+      const before = (Array.isArray(missions) ? missions : []).find(m => m.id === existingId)
       updateMission(existingId, data)
-      fetch(`/api/missions/${existingId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).then(res => {
-        if (res.ok) toastSuccess('Mission mise \u00e0 jour')
-        else res.json().then(e => toastError(e?.error ?? 'Erreur serveur')).catch(() => toastError('Erreur serveur'))
-      }).catch(() => { logErr('api'); toastError('Erreur serveur') })
-    } else {
-      try {
-        const res = await fetch('/api/missions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        })
-        if (res.ok) {
-          const created = await res.json()
-          addMission(data, created.id)
-          toastSuccess('Mission cr\u00e9\u00e9e')
-        } else {
-          const errData = await res.json().catch(() => ({}))
-          const errMsg = typeof errData?.error === 'string' ? errData.error
-            : errData?.error?.formErrors?.length ? errData.error.formErrors.join(', ')
-            : `Erreur ${res.status}`
-          logErr('Mission POST')(errData)
-          toastError(errMsg)
-        }
-      } catch {
-        toastError('Erreur réseau — mission non sauvegardée')
+      const res = await apiRequest(`/api/missions/${existingId}`, { method: 'PUT', json: data })
+      if (res.ok) toastSuccess('Mission mise à jour')
+      else {
+        if (before) updateMission(existingId, before)
+        toastError(res.error)
       }
+      return
+    }
+    const res = await apiRequest<{ id: string }>('/api/missions', { method: 'POST', json: data })
+    if (res.ok) {
+      addMission(data, res.data.id)
+      toastSuccess('Mission créée')
+    } else {
+      toastError(res.error)
     }
   }
 
@@ -170,42 +160,35 @@ export default function AdminPage() {
   }
 
   async function handleDeleteMission(id: string) {
-    if (!confirm('Supprimer cette mission ? Cette action est irréversible.')) return
+    if (!confirm('Supprimer cette mission ? Elle sera archivée et retirée des tournées à venir.')) return
+    const before = (Array.isArray(missions) ? missions : []).find(m => m.id === id)
     removeMission(id)
-    fetch(`/api/missions/${id}`, { method: 'DELETE' })
-      .then(() => toastSuccess('Mission supprimée'))
-      .catch(() => { logErr('api'); toastError('Erreur serveur') })
+    const res = await apiRequest(`/api/missions/${id}`, { method: 'DELETE' })
+    if (res.ok) toastSuccess('Mission supprimée')
+    else {
+      if (before) { const { id: _id, ...rest } = before; addMission(rest, id) }
+      toastError(res.error)
+    }
   }
 
   async function handleSaveDriver(data: Omit<Driver, 'id'>, existingId?: string) {
     if (existingId) {
+      const before = (Array.isArray(drivers) ? drivers : []).find(d => d.id === existingId)
       updateDriver(existingId, data)
-      fetch(`/api/drivers/${existingId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).then(res => {
-        if (res.ok) toastSuccess(`${vocab.driver} mis \u00e0 jour`)
-        else res.json().then(e => toastError(e?.error ?? 'Erreur serveur')).catch(() => toastError('Erreur serveur'))
-      }).catch(() => { logErr('api'); toastError('Erreur serveur') })
-    } else {
-      try {
-        const res = await fetch('/api/drivers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        })
-        if (res.ok) {
-          const created = await res.json()
-          addDriver(data, created.id)
-          toastSuccess(`${vocab.driver} créé`)
-        } else {
-          const errData = await res.json().catch(() => ({}))
-          toastError(typeof errData?.error === 'string' ? errData.error : 'Données invalides — vérifiez le formulaire')
-        }
-      } catch {
-        toastError(`Erreur réseau — ${vocab.driver.toLowerCase()} non sauvegardé`)
+      const res = await apiRequest(`/api/drivers/${existingId}`, { method: 'PUT', json: data })
+      if (res.ok) toastSuccess(`${vocab.driver} mis à jour`)
+      else {
+        if (before) updateDriver(existingId, before)
+        toastError(res.error)
       }
+      return
+    }
+    const res = await apiRequest<{ id: string }>('/api/drivers', { method: 'POST', json: data })
+    if (res.ok) {
+      addDriver(data, res.data.id)
+      toastSuccess(`${vocab.driver} créé`)
+    } else {
+      toastError(res.error)
     }
   }
 
@@ -233,11 +216,15 @@ export default function AdminPage() {
   }
 
   async function handleDeleteDriver(id: string) {
-    if (!confirm(`Supprimer ce ${vocab.driver.toLowerCase()} ? Cette action est irréversible.`)) return
+    if (!confirm(`Supprimer ce ${vocab.driver.toLowerCase()} ? Il sera archivé et retiré du planning.`)) return
+    const before = (Array.isArray(drivers) ? drivers : []).find(d => d.id === id)
     removeDriver(id)
-    fetch(`/api/drivers/${id}`, { method: 'DELETE' })
-      .then(() => toastSuccess(`${vocab.driver} supprimé`))
-      .catch(() => { logErr('api'); toastError('Erreur serveur') })
+    const res = await apiRequest(`/api/drivers/${id}`, { method: 'DELETE' })
+    if (res.ok) toastSuccess(`${vocab.driver} supprimé`)
+    else {
+      if (before) { const { id: _id, ...rest } = before; addDriver(rest, id) }
+      toastError(res.error)
+    }
   }
 
   async function handleDuplicateMission(id: string) {
@@ -522,17 +509,14 @@ export default function AdminPage() {
   const handleReschedule = useCallback((missionId: string, newDate: string) => {
     const mission = (Array.isArray(missions) ? missions : []).find(m => m.id === missionId)
     if (!mission || mission.date === newDate) return
+    const previousDate = mission.date
     updateMission(missionId, { date: newDate })
     setDraggedId(null)
     setDragSource(null)
-    fetch(`/api/missions/${missionId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: newDate }),
-    }).then(res => {
+    void apiRequest(`/api/missions/${missionId}`, { method: 'PUT', json: { date: newDate } }).then(res => {
       if (res.ok) toastSuccess(`Mission déplacée au ${new Date(newDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}`)
-      else res.json().then(e => toastError(e?.error ?? 'Erreur serveur')).catch(() => toastError('Erreur serveur'))
-    }).catch(() => toastError('Erreur serveur'))
+      else { updateMission(missionId, { date: previousDate }); toastError(res.error) }
+    })
   }, [missions, updateMission, toastSuccess, toastError])
 
   // Stable ref: passed as prop to BottomPanel and ToursTab
@@ -711,6 +695,7 @@ export default function AdminPage() {
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
             {}
+            <SyncIndicator />
             <button type="button" onClick={() => window.location.reload()} title="Rafraichir"
               className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-surface-600 hover:bg-surface-100 rounded-lg transition-colors">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 0111.5-2.5M15 3v3.5h-3.5M15 9a6 6 0 01-11.5 2.5M3 15v-3.5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>

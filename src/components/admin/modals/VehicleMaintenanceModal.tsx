@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { apiErrorMessage, apiRequest } from '@/lib/apiClient'
 import { Modal, Btn, Field, Input, SelectInput } from '../ui'
 
 interface MaintenanceRecord {
@@ -83,7 +84,7 @@ export function VehicleMaintenanceModal({ vehicleId, vehicleName, onClose }: {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError((data as { error?: string }).error || 'Erreur lors de la sauvegarde')
+        setError(apiErrorMessage(data, res.status))
         return
       }
       setForm({ ...BLANK })
@@ -98,7 +99,8 @@ export function VehicleMaintenanceModal({ vehicleId, vehicleName, onClose }: {
     if (!confirm('Supprimer cet enregistrement ?')) return
     setDeleting(id)
     try {
-      await fetch(`/api/maintenance/${id}`, { method: 'DELETE' })
+      const res = await apiRequest(`/api/maintenance/${id}`, { method: 'DELETE' })
+      if (!res.ok) setError(res.error)
       void load()
     } finally {
       setDeleting(null)

@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+// Role defaults from the real permission table (no custom per-user grants in these tests).
+vi.mock('@/lib/permissions', async (orig) => {
+  const real = await orig<typeof import('@/lib/permissions')>()
+  return {
+    ...real,
+    hasPermission: vi.fn(async (_userId: string, role: string, perm: string) =>
+      role === 'admin' || role === 'superadmin' || (real.DEFAULT_PERMISSIONS[role] ?? []).includes(perm as never)),
+  }
+})
+
 const mockPrisma = vi.hoisted(() => ({
   fuelRecord: {
     findMany: vi.fn(),
@@ -250,11 +260,13 @@ describe('POST /api/maintenance', () => {
     expect(json.type).toBe('oil_change')
   })
 
-  it('returns 403 for dispatcher role', async () => {
+  // Changed on purpose: maintenance/fuel follow manage_vehicles (a dispatcher default) like the
+  // vehicle itself — dispatchers saw these actions and always got 403. A driver still never may.
+  it('lets a dispatcher (manage_vehicles by default) record maintenance', async () => {
     vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
 
     const res = await maintenancePOST(makePost('http://localhost:3000/api/maintenance', validBody))
-    expect(res.status).toBe(403)
+    expect(res.status).not.toBe(403)
   })
 
   it('returns 403 for driver role', async () => {

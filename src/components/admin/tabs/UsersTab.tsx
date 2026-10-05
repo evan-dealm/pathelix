@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import { fetchAllPages, apiErrorMessage } from '@/lib/apiClient'
 import { Btn, Modal, Field, Input, SelectInput } from '../ui'
 import { useDebounce, logErr } from '../hooks'
 import { useToast } from '@/components/ui/Toast'
 import { usePlanningStore } from '@/stores/planningStore'
-import { cachedFetch, invalidateClientCache } from '@/lib/clientCache'
+import { invalidateClientCache } from '@/lib/clientCache'
 
 interface User {
   id: string
@@ -74,8 +75,8 @@ export function UsersTab() {
 
   function load() {
     setLoading(true)
-    cachedFetch<User[] | { data?: User[] }>('/api/users', 30_000)
-      .then(d => { setUsers(Array.isArray(d) ? d : (d as { data?: User[] })?.data ?? []) })
+    fetchAllPages<User>('/api/users')
+      .then(setUsers)
       .catch(logErr('users'))
       .finally(() => setLoading(false))
   }
@@ -160,6 +161,11 @@ export function UsersTab() {
       setError('Le mot de passe est obligatoire pour un nouvel utilisateur.')
       return
     }
+    // Same rule as the API — say it here instead of after a round-trip.
+    if (form.password && form.password.length < 12) {
+      setError('Le mot de passe doit contenir au moins 12 caractères.')
+      return
+    }
 
     setSaving(true)
     try {
@@ -178,20 +184,14 @@ export function UsersTab() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error((data as { error?: string }).error || 'Erreur serveur')
-        }
+        if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => null), res.status))
       } else {
         const res = await fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error((data as { error?: string }).error || 'Erreur serveur')
-        }
+        if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => null), res.status))
       }
       setModal(null)
       invalidateClientCache('/api/users')

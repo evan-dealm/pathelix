@@ -7,17 +7,12 @@ import { usePlanningStore } from '@/stores/planningStore'
 import { TradeProvider } from '@/providers/TradeProvider'
 import type { Driver, Mission } from '@/lib/types'
 import { cachedFetch } from '@/lib/clientCache'
+import { fetchAllPages } from '@/lib/apiClient'
 import type { SettingsApiResponse } from '@/lib/types'
 import type { TradeConfig } from '@/lib/trades'
 
 const PUBLIC_PATH_PREFIXES = ['/login', '/driver']
 
-async function fetchPage<T>(url: string): Promise<T[]> {
-  const res = await fetch(url, { cache: 'no-store' })
-  if (!res.ok) throw new Error(`Erreur ${res.status}`)
-  const json = await res.json().catch(() => ({}))
-  return Array.isArray(json) ? json : (json.data ?? [])
-}
 
 // UTC-based to match src/lib/dateUtils.ts's today() (used for mission creation, driver pages,
 // e2e/global-setup.ts seeding) — this used to read local Date components instead, which silently
@@ -56,8 +51,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         setStep(1)
         const [drivers, missions, settingsRes, plansJson] = await Promise.all([
-          fetchPage<Driver>(`/api/drivers?limit=2000`),
-          fetchPage<Mission>(`/api/missions?date=${today}&limit=5000`),
+          // Every page: list routes cap page size at 100 (a tenant with 150 drivers saw 100).
+          fetchAllPages<Driver>('/api/drivers'),
+          fetchAllPages<Mission>(`/api/missions?date=${today}`),
           cachedFetch<SettingsApiResponse>('/api/settings', 120_000).catch(() => null as SettingsApiResponse | null),
           fetch(`/api/plans?date=${today}`).then(r => r.ok ? r.json() : null).catch(() => null),
         ])
@@ -75,14 +71,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         setReady(true)
 
-        fetch(`/api/missions?date=${today}&page=2&limit=5000`, { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null)
-          .then(json => {
-            const data = json?.data ?? []
-            if (data.length > 0) usePlanningStore.getState().addMissionsBulk(data)
-          })
-          .catch(() => {})
-
       } catch (err) {
 
         if (!usePlanningStore.getState().drivers.length) {
@@ -99,8 +87,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       try {
         const today = todayStr()
         const [drivers, missions] = await Promise.all([
-          fetchPage<Driver>('/api/drivers?limit=2000'),
-          fetchPage<Mission>(`/api/missions?date=${today}&limit=5000`),
+          fetchAllPages<Driver>('/api/drivers'),
+          fetchAllPages<Mission>(`/api/missions?date=${today}`),
         ])
         // upsertMissions (not setInitialData) — a full replace here would silently wipe out
         // any other dates' missions loaded separately (e.g. by the Missions tab's full-history

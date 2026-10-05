@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+// Role defaults from the real permission table (no custom per-user grants in these tests).
+vi.mock('@/lib/permissions', async (orig) => {
+  const real = await orig<typeof import('@/lib/permissions')>()
+  return {
+    ...real,
+    hasPermission: vi.fn(async (_userId: string, role: string, perm: string) =>
+      role === 'admin' || role === 'superadmin' || (real.DEFAULT_PERMISSIONS[role] ?? []).includes(perm as never)),
+  }
+})
+
 vi.mock('@/lib/sessionRevocation', () => ({
   revokeUserSessions:   vi.fn(async () => undefined),
   forgetSessionVersion: vi.fn(),
@@ -127,8 +137,10 @@ describe('POST /api/users/[id]/reset-password', () => {
 // ─── DELETE /api/fuel-records/[id] ───────────────────────────────────────────
 
 describe('DELETE /api/fuel-records/[id]', () => {
-  it('returns 403 for non-admin', async () => {
-    mockGetCtx.mockReturnValueOnce({ tenantId: 't1', userId: 'u1', role: 'dispatcher', requestId: 'req-123', trade: null })
+  // Changed on purpose: maintenance/fuel follow manage_vehicles (a dispatcher default) like the
+  // vehicle itself — dispatchers saw these actions and always got 403. A driver still never may.
+  it('returns 403 for a role without manage_vehicles (driver)', async () => {
+    mockGetCtx.mockReturnValueOnce({ tenantId: 't1', userId: 'u1', role: 'driver', requestId: 'req-123', trade: null })
     const res = await deleteFuel(makeDelete('/api/fuel-records', 'rec-1'), makeParams('rec-1'))
     expect(res.status).toBe(403)
   })
@@ -157,8 +169,10 @@ describe('DELETE /api/fuel-records/[id]', () => {
 // ─── DELETE /api/maintenance/[id] ────────────────────────────────────────────
 
 describe('DELETE /api/maintenance/[id]', () => {
-  it('returns 403 for non-admin', async () => {
-    mockGetCtx.mockReturnValueOnce({ tenantId: 't1', userId: 'u1', role: 'dispatcher', requestId: 'req-123', trade: null })
+  // Changed on purpose: maintenance/fuel follow manage_vehicles (a dispatcher default) like the
+  // vehicle itself — dispatchers saw these actions and always got 403. A driver still never may.
+  it('returns 403 for a role without manage_vehicles (driver)', async () => {
+    mockGetCtx.mockReturnValueOnce({ tenantId: 't1', userId: 'u1', role: 'driver', requestId: 'req-123', trade: null })
     const res = await deleteMaint(makeDelete('/api/maintenance', 'maint-1'), makeParams('maint-1'))
     expect(res.status).toBe(403)
   })

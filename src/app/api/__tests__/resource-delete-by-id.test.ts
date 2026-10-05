@@ -8,6 +8,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+// Role defaults from the real permission table (no custom per-user grants in these tests).
+vi.mock('@/lib/permissions', async (orig) => {
+  const real = await orig<typeof import('@/lib/permissions')>()
+  return {
+    ...real,
+    hasPermission: vi.fn(async (_userId: string, role: string, perm: string) =>
+      role === 'admin' || role === 'superadmin' || (real.DEFAULT_PERMISSIONS[role] ?? []).includes(perm as never)),
+  }
+})
+
 const mockPrisma = vi.hoisted(() => ({
   fuelRecord:        { deleteMany: vi.fn() },
   maintenanceRecord: { deleteMany: vi.fn() },
@@ -70,8 +80,10 @@ describe('DELETE /api/fuel-records/[id]', () => {
     expect(res.status).toBe(404)
   })
 
-  it('returns 403 for dispatcher role', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'u-1', role: 'dispatcher', requestId: 'req-1', trade: null })
+  // Changed on purpose: maintenance/fuel follow manage_vehicles (a dispatcher default) like the
+  // vehicle itself — dispatchers saw these actions and always got 403. A driver still never may.
+  it('returns 403 for a role without manage_vehicles (driver)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'u-1', role: 'driver', requestId: 'req-1', trade: null })
     const res = await fuelDelete(makeDelete('http://localhost/api/fuel-records/f-1'), makeParams('f-1'))
     expect(res.status).toBe(403)
   })
@@ -118,8 +130,10 @@ describe('DELETE /api/maintenance/[id]', () => {
     expect(res.status).toBe(404)
   })
 
-  it('returns 403 for dispatcher role', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'u-1', role: 'dispatcher', requestId: 'req-1', trade: null })
+  // Changed on purpose: maintenance/fuel follow manage_vehicles (a dispatcher default) like the
+  // vehicle itself — dispatchers saw these actions and always got 403. A driver still never may.
+  it('returns 403 for a role without manage_vehicles (driver)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'u-1', role: 'driver', requestId: 'req-1', trade: null })
     const res = await maintenanceDel(makeDelete('http://localhost/api/maintenance/m-1'), makeParams('m-1'))
     expect(res.status).toBe(403)
   })

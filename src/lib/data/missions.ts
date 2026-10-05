@@ -1,5 +1,5 @@
 import type { Mission } from '@/lib/types'
-import type { MissionInput } from '@/lib/schemas'
+import type { MissionInput, MissionUpdateInput } from '@/lib/schemas'
 import { prismaRowToMission } from '@/lib/prismaMappers'
 import { getMissionStore } from '@/app/api/missions/_store'
 import { getTenantDb } from '@/lib/tenantDb'
@@ -7,7 +7,7 @@ import { assertTenantRefs, ForeignTenantRefError } from '@/lib/tenantRefs'
 
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
-function flattenTimeWindow(data: Partial<MissionInput>): Record<string, unknown> {
+function flattenTimeWindow(data: Partial<MissionInput> | MissionUpdateInput): Record<string, unknown> {
   const { timeWindow, ...rest } = data
   return {
     ...rest,
@@ -132,14 +132,18 @@ export async function createMission(tenantId: string, data: MissionInput): Promi
 export async function updateMission(
   tenantId: string,
   id:       string,
-  data:     Partial<MissionInput>,
+  data:     MissionUpdateInput,
 ): Promise<Mission | null> {
   if (useMock) {
     const store = getMissionStore()
     const idx   = store.findIndex(m => m.id === id)
     if (idx === -1) return null
-    const { timeWindow, ...rest } = data
-    store[idx] = { ...store[idx], ...rest, ...(timeWindow !== undefined ? { timeWindow } : {}) }
+    const { timeWindow, priority, ...rest } = data
+    store[idx] = {
+      ...store[idx], ...rest,
+      ...(priority !== undefined ? { priority: priority ?? undefined } : {}),
+      ...(timeWindow !== undefined ? { timeWindow } : {}),
+    }
     return store[idx]
   }
   try {

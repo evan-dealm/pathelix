@@ -7,12 +7,14 @@ import { usePlanningStore } from '@/stores/planningStore'
 import { SYNTHETIC_TYPES } from '../types'
 import { useTrade } from '@/providers/TradeProvider'
 import { Btn, TypeBadge } from '../ui'
-import { useDebounce, today, displayShort, mTitle, logErr } from '../hooks'
+import { useDebounce, today, displayShort, mTitle } from '../hooks'
 import { ImportExportBar } from '../ImportExportBar'
 import { MISSION_COLUMNS, parseMissionRows, missionExportData } from '@/lib/importExportColumns'
 import { loadAllMissionsIntoStore } from '@/lib/loadAllMissions'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PermissionGate } from '../PermissionGate'
+import { apiRequest } from '@/lib/apiClient'
+import { useToast } from '@/components/ui/Toast'
 
 export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onImportCSV }: {
   onEdit: (_m: Mission) => void
@@ -42,9 +44,37 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
   }, [])
   const drivers = usePlanningStore(s => s.drivers)
   const plans = usePlanningStore(s => s.plans)
-  const archiveMission = usePlanningStore(s => s.archiveMission)
-  const restoreMission = usePlanningStore(s => s.restoreMission)
+  const archiveMissionLocal = usePlanningStore(s => s.archiveMission)
+  const restoreMissionLocal = usePlanningStore(s => s.restoreMission)
   const updateMission = usePlanningStore(s => s.updateMission)
+  const { success: toastSuccess, error: toastError } = useToast()
+
+  /**
+   * Persists a change made to the store: these actions used to update the local store only, so
+   * archiving, restoring, re-dating or re-prioritising came back as before on the next reload.
+   * Rolls back and explains when the server refuses.
+   */
+  const persistMissions = useCallback(async (
+    ids: string[], patch: Omit<Partial<Mission>, 'priority'> & { priority?: 1 | 2 | 3 | null }, apply: (_id: string) => void, rollback: (_id: string) => void, done?: string,
+  ) => {
+    ids.forEach(apply)
+    const results = await Promise.all(ids.map(id => apiRequest(`/api/missions/${id}`, { method: 'PUT', json: patch })))
+    const failed = results.map((r, i) => ({ r, id: ids[i] })).filter(x => !x.r.ok)
+    failed.forEach(x => rollback(x.id))
+    if (failed.length > 0) {
+      const first = failed[0].r
+      toastError(`${failed.length} mission(s) non modifiée(s) : ${first.ok ? '' : first.error}`)
+    } else if (done) {
+      toastSuccess(done)
+    }
+  }, [toastError, toastSuccess])
+
+  const archiveMission = useCallback((id: string) => {
+    void persistMissions([id], { archived: true }, archiveMissionLocal, restoreMissionLocal)
+  }, [persistMissions, archiveMissionLocal, restoreMissionLocal])
+  const restoreMission = useCallback((id: string) => {
+    void persistMissions([id], { archived: false }, restoreMissionLocal, archiveMissionLocal, 'Mission restaurée')
+  }, [persistMissions, archiveMissionLocal, restoreMissionLocal])
   const assignToDriver = usePlanningStore(s => s.assignToDriver)
   const [search, setSearch]               = useState('')
   const [typeFilter, setTypeFilter]       = useState<MissionType | 'all'>('all')
@@ -148,27 +178,33 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
     else setSelectedIds(new Set(filtered.map(m => m.id)))
   }
 
-  function bulkDelete() {
-    if (!confirm(`Supprimer définitivement ${selectedIds.size} mission(s) ? Cette action est irréversible.`)) return
-    selectedIds.forEach(id => onDelete(id))
-    setSelectedIds(new Set())
-  }
-
   function bulkArchive() {
-    selectedIds.forEach(id => archiveMission(id))
+    const ids = [...selectedIds]
+    if (ids.length > 1 && !confirm(`Archiver ${ids.length} missions ? Elles restent consultables et restaurables dans « Archives ».`)) return
+    void persistMissions(ids, { archived: true }, archiveMissionLocal, restoreMissionLocal, `${ids.length} mission(s) archivée(s)`)
     setSelectedIds(new Set())
   }
 
   function bulkChangeDate() {
     if (!bulkDate) return
-    selectedIds.forEach(id => updateMission(id, { date: bulkDate }))
+    const ids = [...selectedIds]
+    const before = new Map(ids.map(id => [id, missions.find(m => m.id === id)?.date]))
+    void persistMissions(ids, { date: bulkDate },
+      id => updateMission(id, { date: bulkDate }),
+      id => { const d = before.get(id); if (d) updateMission(id, { date: d }) },
+      `${ids.length} mission(s) déplacée(s)`)
     setSelectedIds(new Set())
   }
 
   function bulkChangePriority() {
     if (!bulkPriority) return
     const p = parseInt(bulkPriority) as 1 | 2 | 3
-    selectedIds.forEach(id => updateMission(id, { priority: p }))
+    const ids = [...selectedIds]
+    const before = new Map(ids.map(id => [id, missions.find(m => m.id === id)?.priority]))
+    void persistMissions(ids, { priority: p },
+      id => updateMission(id, { priority: p }),
+      id => updateMission(id, { priority: before.get(id) }),
+      `Priorité mise à jour (${ids.length})`)
     setSelectedIds(new Set())
     setBulkPriority('')
   }
@@ -181,15 +217,13 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
 
   const cyclePriority = useCallback((m: Mission, e: React.MouseEvent) => {
     e.stopPropagation()
-    const next = m.priority === 1 ? 2 : m.priority === 2 ? 3 : m.priority === 3 ? undefined : 1
-    updateMission(m.id, { priority: next as 1 | 2 | 3 | undefined })
-
-    fetch(`/api/missions/${m.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...m, priority: next }),
-    }).catch(logErr('MissionsTab priority sync'))
-  }, [updateMission])
+    const next = m.priority === 1 ? 2 : m.priority === 2 ? 3 : m.priority === 3 ? null : 1
+    const previous = m.priority
+    // null (not undefined) clears the priority — an omitted key means "unchanged" to the API.
+    void persistMissions([m.id], { priority: next },
+      id => updateMission(id, { priority: next ?? undefined }),
+      id => updateMission(id, { priority: previous }))
+  }, [updateMission, persistMissions])
 
   const hasActiveFilters = typeFilter !== 'all' || priorityFilter !== 'all' || dateFrom || dateTo
 
@@ -333,7 +367,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
           </div>
           <div className="w-px h-4 bg-surface-200 mx-1" />
           <Btn onClick={bulkArchive} variant="warning" size="xs">📁 Archiver</Btn>
-          <Btn onClick={bulkDelete} variant="danger" size="xs">✕ Supprimer</Btn>
+
         </div>
       )}
       <div className="flex-1 overflow-auto">
@@ -575,7 +609,6 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
                     <span className="text-xs text-surface-500 flex-1 truncate">{mTitle(m)}</span>
                     <span className="text-[10px] text-surface-400">{m.date}</span>
                     <Btn onClick={() => restoreMission(m.id)} variant="ghost" size="xs" title="Restaurer">↩ Restaurer</Btn>
-                    <Btn onClick={() => onDelete(m.id)} variant="danger" size="xs" title="Supprimer définitivement">✕</Btn>
                   </div>
                 ))}
               </div>

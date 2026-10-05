@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { apiRequest } from '@/lib/apiClient'
 import { usePlanningStore } from '@/stores/planningStore'
 import { IntegrationsPanel } from '../IntegrationsPanel'
 import { TRADES, TRADE_IDS, type TradeId } from '@/lib/trades'
@@ -129,6 +130,7 @@ const LOCALES = [
 
 export function SettingsTab() {
   const { success: toastSuccess, error: toastError } = useToast()
+  const [purgeDate, setPurgeDate] = useState(() => new Date().toISOString().slice(0, 10))
   const importInputRef = useRef<HTMLInputElement>(null)
 
   const [backupStatus, setBackupStatus] = useState<'idle' | 'exporting' | 'importing' | 'ok' | 'error'>('idle')
@@ -908,27 +910,31 @@ export function SettingsTab() {
             <div className="flex-shrink-0">
               <h3 className="text-red-600 font-semibold text-xs mb-2">Zone admin</h3>
               <div className="space-y-2">
-                <button type="button" onClick={async () => {
-                  if (!confirm('Purger tous les logs d\'audit ? Cette action est irreversible.')) return
-                  await fetch('/api/audit', { method: 'DELETE' }).catch(() => {})
-                  toastSuccess('Logs d\'audit purgés')
-                }} className="w-full text-left px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-50 hover:bg-red-50 text-surface-600 hover:text-red-600 border border-surface-200 hover:border-red-200 transition-colors">
-                  Purger les logs d&apos;audit
-                </button>
-                <button type="button" onClick={async () => {
-                  if (!confirm('Supprimer tous les plans de tournees ? Les missions seront conservees.')) return
-                  await fetch('/api/plans?action=purge', { method: 'DELETE' }).catch(() => {})
-                  toastSuccess('Plans purgés')
-                }} className="w-full text-left px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-50 hover:bg-red-50 text-surface-600 hover:text-red-600 border border-surface-200 hover:border-red-200 transition-colors">
-                  Purger tous les plans de tournees
-                </button>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="purge-plans-date" className="sr-only">Date des tournées à effacer</label>
+                  <input id="purge-plans-date" type="date" value={purgeDate} onChange={e => setPurgeDate(e.target.value)}
+                    className="h-8 px-2 text-xs rounded-lg border border-surface-200 bg-white" />
+                  <button type="button" disabled={!purgeDate} onClick={async () => {
+                    if (!confirm(`Effacer toutes les tournées du ${purgeDate} ? Les missions sont conservées et redeviennent à planifier.`)) return
+                    const res = await apiRequest<{ deleted: number }>(`/api/plans?date=${purgeDate}`, { method: 'DELETE' })
+                    if (res.ok) toastSuccess(`${res.data.deleted} tournée(s) effacée(s)`)
+                    else toastError(res.error)
+                  }} className="flex-1 text-left px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-50 hover:bg-red-50 text-surface-600 hover:text-red-600 border border-surface-200 hover:border-red-200 transition-colors disabled:opacity-50">
+                    Effacer les tournées de cette date
+                  </button>
+                </div>
                 <button type="button" onClick={async () => {
                   if (!confirm('Archiver TOUTES les missions ? Vous pourrez les restaurer individuellement.')) return
-                  await fetch('/api/missions?action=archive-all', { method: 'POST' }).catch(() => {})
+                  const res = await apiRequest('/api/missions?action=archive-all', { method: 'POST' })
+                  if (!res.ok) { toastError(res.error); return }
                   toastSuccess('Toutes les missions archivées')
+                  window.location.reload()
                 }} className="w-full text-left px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-50 hover:bg-amber-50 text-surface-600 hover:text-amber-700 border border-surface-200 hover:border-amber-200 transition-colors">
                   Archiver toutes les missions
                 </button>
+                <p className="text-[10px] text-surface-400 leading-relaxed">
+                  Le journal d&apos;audit est conservé 365 jours puis purgé automatiquement ; il ne peut pas être effacé manuellement.
+                </p>
               </div>
             </div>
 
@@ -940,7 +946,7 @@ export function SettingsTab() {
               <div className="grid grid-cols-2 gap-y-1.5 text-[10px]">
                 <span className="text-surface-400">Application</span><span className="text-surface-600">PATHÉLIX</span>
                 <span className="text-surface-400">Version</span><span className="text-surface-600">1.0.0</span>
-                <span className="text-surface-400">Framework</span><span className="text-surface-600">Next.js 14 / TypeScript</span>
+                <span className="text-surface-400">Framework</span><span className="text-surface-600">Next.js 15 / TypeScript</span>
                 <span className="text-surface-400">Optimisation</span><span className="text-surface-600">MV-ALNS + Cheapest Insertion + Regret-3</span>
                 <span className="text-surface-400">Base de donnees</span><span className="text-surface-600">PostgreSQL (Prisma)</span>
                 <span className="text-surface-400">Routage</span><span className="text-surface-600">OSRM / Haversine</span>

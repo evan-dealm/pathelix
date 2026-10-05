@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { hasPermission } from '@/lib/permissions'
 import { getTenantDb } from '@/lib/tenantDb'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
@@ -66,8 +67,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'dispatcher') return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_vehicles'))) return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
 
   let raw: unknown
   try { raw = await req.json() } catch { return NextResponse.json({ error: 'JSON invalide' }, { status: 400 }) }

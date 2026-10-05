@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { apiRequest } from '@/lib/apiClient'
+import { useToast } from '@/components/ui/Toast'
 import { Driver } from '@/lib/types'
 import { usePlanningStore } from '@/stores/planningStore'
 import { Btn, Modal, Field } from '../ui'
@@ -24,6 +26,7 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
   onImportDriversCSV: (_drivers: Array<Omit<Driver, 'id'>>) => Promise<void>
 }) {
   const drivers = usePlanningStore(s => s.drivers)
+  const { error: toastError } = useToast()
   const setSpeed = usePlanningStore(s => s.setSpeed)
   const speeds = usePlanningStore(s => s.speeds)
   const plans = usePlanningStore(s => s.plans)
@@ -102,7 +105,9 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
     for (const id of ids) {
       const recId = dbUnavailIds.get(id)
       if (recId) {
-        await fetch(`/api/driver-unavailability/${recId}`, { method: 'DELETE' })
+        const res = await apiRequest(`/api/driver-unavailability/${recId}`, { method: 'DELETE' })
+        // Local state must follow the server: on failure the driver stays unavailable.
+        if (!res.ok) { toastError(res.error); continue }
         setDbUnavailIds(prev => { const m = new Map(prev); m.delete(id); return m })
       }
       if (isUnavailable(id, availDate)) toggleUnavailable(id, availDate)

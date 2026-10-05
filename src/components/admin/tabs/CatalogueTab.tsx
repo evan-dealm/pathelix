@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { fetchAllPages } from '@/lib/apiClient'
 import { CatalogClient, CatalogSite, CatalogProduct, Exutoire } from '@/lib/types'
 import { Btn, Modal, Field, Input, SelectInput, Textarea } from '../ui'
 import { useDebounce, logErr, sleep } from '../hooks'
@@ -51,7 +52,8 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
 
   function load() {
     setLoading(true)
-    cachedFetch<CatalogClient[] | { data?: CatalogClient[] }>('/api/clients', 30_000).then(d => { setClients(Array.isArray(d) ? d : (d as { data?: CatalogClient[] })?.data ?? []) }).catch(logErr('clients')).finally(() => setLoading(false))
+    // All pages — the list route returns 50 per page, search/filters ran on a partial list.
+    fetchAllPages<CatalogClient>('/api/clients').then(setClients).catch(logErr('clients')).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
@@ -270,11 +272,11 @@ function SitesPanel({ readOnly = false }: { readOnly?: boolean }) {
   function load() {
     setLoading(true)
     Promise.all([
-      fetch('/api/sites').then(r => r.json()),
-      fetch('/api/clients').then(r => r.json()),
+      fetchAllPages<CatalogSite>('/api/sites'),
+      fetchAllPages<CatalogClient>('/api/clients'),
     ]).then(([s, c]) => {
-      setSites(Array.isArray(s) ? s : s?.data ?? [])
-      setClients(Array.isArray(c) ? c : c?.data ?? [])
+      setSites(s)
+      setClients(c)
     }).catch(logErr('sites')).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
@@ -533,13 +535,13 @@ function ProductsPanel({ readOnly = false }: { readOnly?: boolean }) {
     setLoading(true)
     Promise.all([
       fetch('/api/site-products').then(r => r.json()),
-      cachedFetch<CatalogClient[] | { data?: CatalogClient[] }>('/api/clients', 30_000),
-      fetch('/api/sites').then(r => r.json()),
+      fetchAllPages<CatalogClient>('/api/clients'),
+      fetchAllPages<CatalogSite>('/api/sites'),
       cachedFetch<Exutoire[] | { data?: Exutoire[] }>('/api/exutoires', 60_000),
     ]).then(([p, c, s, e]) => {
       setProducts(Array.isArray(p) ? p : p?.data ?? [])
-      setClients(Array.isArray(c) ? c : c?.data ?? [])
-      setSites(Array.isArray(s) ? s : s?.data ?? [])
+      setClients(c)
+      setSites(s)
       setExutoires(Array.isArray(e) ? e : e?.data ?? [])
     }).catch(logErr('products')).finally(() => setLoading(false))
   }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { apiErrorMessage, fetchAllPages } from '@/lib/apiClient'
 import { Btn, Modal, Field, Input, SelectInput, Textarea } from '../ui'
 import { useDebounce, logErr, sleep } from '../hooks'
 import { useToast } from '@/components/ui/Toast'
@@ -9,7 +10,7 @@ import { ImportExportBar } from '../ImportExportBar'
 import { VEHICLE_COLUMNS, parseVehicleRows } from '@/lib/importExportColumns'
 import { VehicleMaintenanceModal } from '../modals/VehicleMaintenanceModal'
 import { VehicleFuelModal } from '../modals/VehicleFuelModal'
-import { cachedFetch, invalidateClientCache } from '@/lib/clientCache'
+import { invalidateClientCache } from '@/lib/clientCache'
 
 interface GabaritProfile {
   key: string
@@ -251,11 +252,8 @@ export function VehiclesTab() {
 
   const load = useCallback(() => {
     setLoading(true)
-    cachedFetch<unknown>('/api/vehicles', 60_000)
-      .then(d => {
-        const list = Array.isArray(d) ? d : Array.isArray((d as { data?: unknown[] })?.data) ? (d as { data: unknown[] }).data : []
-        setVehicles(list.map(mapVehicle))
-      })
+    fetchAllPages<unknown>('/api/vehicles')
+      .then(list => setVehicles(list.map(v => mapVehicle(v as Parameters<typeof mapVehicle>[0]))))
       .catch(logErr('vehicles'))
       .finally(() => setLoading(false))
   }, [])
@@ -336,18 +334,20 @@ export function VehiclesTab() {
       const body = {
         licensePlate: form.immatriculation,
         type: form.type,
-        brand: form.marque || undefined,
-        model: form.modele || undefined,
-        capacityM3: form.capaciteM3 || undefined,
-        maxBins: form.nbBennes || undefined,
-        mileageKm: form.kilometrage || undefined,
-        nextInspection: form.prochaineCT || undefined,
+        // Cleared fields are sent explicitly ('' / 0 / null): an omitted key means "unchanged"
+        // to the API, so emptying a field or unassigning the driver used to be silently ignored.
+        brand: form.marque ?? '',
+        model: form.modele ?? '',
+        capacityM3: form.capaciteM3 || null,
+        maxBins: form.nbBennes || null,
+        mileageKm: form.kilometrage || 0,
+        nextInspection: form.prochaineCT || null,
         status: form.statut,
-        notes: form.notes || undefined,
-        assignedDriverId: form.assignedDriverId || undefined,
+        notes: form.notes ?? '',
+        assignedDriverId: form.assignedDriverId || null,
         tollClass: form.tollClass,
-        telepayBadge: form.telepayBadge || undefined,
-        telepayDiscount: form.telepayDiscount || undefined,
+        telepayBadge: form.telepayBadge ?? '',
+        telepayDiscount: form.telepayDiscount || 0,
         gabaritProfile: form.gabaritProfile,
         weightTon: form.weightTon,
         heightM: form.heightM,
@@ -355,15 +355,15 @@ export function VehiclesTab() {
         lengthM: form.lengthM,
         axleCount: form.axleCount,
         hazmat: form.hazmat,
-        fuelType: form.fuelType || undefined,
-        year: form.year !== '' ? form.year : undefined,
-        vin: form.vin || undefined,
-        color: form.color || undefined,
-        gpsDeviceId: form.gpsDeviceId || undefined,
-        insuranceExpiry: form.insuranceExpiry || undefined,
-        insuranceRef: form.insuranceRef || undefined,
-        lastServiceDate: form.lastServiceDate || undefined,
-        lastServiceKm: form.lastServiceKm !== '' ? form.lastServiceKm : undefined,
+        fuelType: form.fuelType || '',
+        year: form.year !== '' ? form.year : null,
+        vin: form.vin || null,
+        color: form.color ?? '',
+        gpsDeviceId: form.gpsDeviceId || null,
+        insuranceExpiry: form.insuranceExpiry || null,
+        insuranceRef: form.insuranceRef ?? '',
+        lastServiceDate: form.lastServiceDate || null,
+        lastServiceKm: form.lastServiceKm !== '' ? form.lastServiceKm : null,
       }
 
       if (modal?.kind === 'edit') {
@@ -373,12 +373,7 @@ export function VehiclesTab() {
           body: JSON.stringify(body),
         })
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          const err = (data as { error?: unknown }).error
-          const errMsg = typeof err === 'string' ? err
-            : err && typeof err === 'object' ? JSON.stringify(err)
-            : 'Erreur serveur'
-          throw new Error(errMsg)
+          throw new Error(apiErrorMessage(await res.json().catch(() => null), res.status))
         }
       } else {
         const res = await fetch('/api/vehicles', {
@@ -387,12 +382,7 @@ export function VehiclesTab() {
           body: JSON.stringify(body),
         })
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          const err = (data as { error?: unknown }).error
-          const errMsg = typeof err === 'string' ? err
-            : err && typeof err === 'object' ? JSON.stringify(err)
-            : 'Erreur serveur'
-          throw new Error(errMsg)
+          throw new Error(apiErrorMessage(await res.json().catch(() => null), res.status))
         }
       }
       setModal(null)

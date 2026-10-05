@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { apiErrorMessage } from '@/lib/apiClient'
 import type { Driver, Mission, PlannedMission } from '@/lib/types'
 import { idbStorage } from '@/lib/idbStorage'
 import { createLogger } from '@/lib/logger'
@@ -28,6 +29,8 @@ interface PlanningState {
   lockedPlans: Record<string, boolean>
 
   syncStatus:    SyncStatus
+  /** Why the last tour save failed (shown to the dispatcher), null otherwise. */
+  syncError:     string | null
   lastSyncedAt:  string | null
 
   _history:    HistorySnapshot[]
@@ -93,7 +96,6 @@ interface PlanningActions {
   updatePlannedMission(_missionId: string, _driverId: string, _date: string, _data: Partial<PlannedMission>): void
   setManualStartMin(_missionId: string, _driverId: string, _date: string, _startMin: number | undefined): void
 
-  savePlansToDB(_date: string): Promise<void>
 }
 
 type PlanningStore = PlanningState & PlanningActions
@@ -125,12 +127,13 @@ function pushHistory(state: PlanningState, snap: HistorySnapshot): Partial<Plann
 }
 
 const _syncTimers = new Map<string, ReturnType<typeof setTimeout>>()
-let _syncAllTimer: ReturnType<typeof setTimeout> | null = null
+const _syncAllTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 export function _cleanupTimers() {
   for (const timer of _syncTimers.values()) clearTimeout(timer)
   _syncTimers.clear()
-  if (_syncAllTimer) { clearTimeout(_syncAllTimer); _syncAllTimer = null }
+  for (const timer of _syncAllTimers.values()) clearTimeout(timer)
+  _syncAllTimers.clear()
 }
 
 function debouncedSyncPlan(
@@ -153,17 +156,17 @@ function debouncedSyncPlan(
     const speed = state.speeds[driverId] || 50
 
     try {
-      set({ syncStatus: 'syncing' })
+      set({ syncStatus: 'syncing', syncError: null })
       const res = await fetch('/api/plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ driverId, date, missions, startTime, speedKmh: speed }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => null), res.status))
       set({ syncStatus: 'synced', lastSyncedAt: new Date().toISOString() })
     } catch (err) {
       log.warn('sync failed', { err: err instanceof Error ? err.message : String(err) })
-      set({ syncStatus: 'error' })
+      set({ syncStatus: 'error', syncError: err instanceof Error ? err.message : 'Sauvegarde impossible' })
     }
   }, 500))
 }
@@ -175,8 +178,12 @@ function debouncedSyncAllForDate(
 ) {
 
   if (typeof window === 'undefined') return
-  if (_syncAllTimer) clearTimeout(_syncAllTimer)
-  _syncAllTimer = setTimeout(async () => {
+  // One timer per date: syncing several dates at once (undo across days, copy to another day)
+  // must not cancel each other.
+  const pending = _syncAllTimers.get(date)
+  if (pending) clearTimeout(pending)
+  _syncAllTimers.set(date, setTimeout(async () => {
+    _syncAllTimers.delete(date)
     const state = get()
     const plansForDate: Array<{
       driverId: string; date: string; missions: PlannedMission[];
@@ -196,7 +203,7 @@ function debouncedSyncAllForDate(
     if (plansForDate.length === 0) return
 
     try {
-      set({ syncStatus: 'syncing' })
+      set({ syncStatus: 'syncing', syncError: null })
 
       const BATCH = 50
       const batches = []
@@ -210,13 +217,28 @@ function debouncedSyncAllForDate(
           body: JSON.stringify(batch),
         }),
       ))
-      if (results.some(r => !r.ok)) throw new Error(`HTTP ${results.find(r => !r.ok)?.status}`)
+      const failed = results.find(r => !r.ok)
+      if (failed) throw new Error(apiErrorMessage(await failed.json().catch(() => null), failed.status))
       set({ syncStatus: 'synced', lastSyncedAt: new Date().toISOString() })
     } catch (err) {
       log.warn('sync (all for date) failed', { err: err instanceof Error ? err.message : String(err) })
-      set({ syncStatus: 'error' })
+      set({ syncStatus: 'error', syncError: err instanceof Error ? err.message : 'Sauvegarde impossible' })
     }
-  }, 500)
+  }, 500))
+}
+
+/** Saves every date whose tours differ between two plan maps (undo/redo, copy, archive…). */
+function syncChangedDates(
+  before: Record<string, PlannedMission[]>,
+  get: () => PlanningStore,
+  set: (_partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>)) => void,
+) {
+  const after = get().plans
+  const dates = new Set<string>()
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (before[key] !== after[key]) dates.add(key.split('|')[1] ?? '')
+  }
+  for (const date of dates) if (date) debouncedSyncAllForDate(date, get, set)
 }
 
 export const usePlanningStore = create<PlanningStore>()(
@@ -231,6 +253,7 @@ export const usePlanningStore = create<PlanningStore>()(
       unavailable: {},
       lockedPlans: {},
       syncStatus:    'idle',
+      syncError:     null,
       lastSyncedAt:  null,
       _history:    [],
       _historyIdx: 0,
@@ -303,6 +326,7 @@ export const usePlanningStore = create<PlanningStore>()(
       },
 
       removeMission(id) {
+        const before = get().plans
         set(state => {
           const newPlans = { ...state.plans }
           let changed = false
@@ -318,9 +342,11 @@ export const usePlanningStore = create<PlanningStore>()(
             ...(changed ? { plans: newPlans } : {}),
           }
         })
+        syncChangedDates(before, get, set)
       },
 
       archiveMission(id) {
+        const before = get().plans
         set(state => {
           const newPlans = { ...state.plans }
           let changed = false
@@ -336,6 +362,7 @@ export const usePlanningStore = create<PlanningStore>()(
             ...(changed ? { plans: newPlans } : {}),
           }
         })
+        syncChangedDates(before, get, set)
       },
 
       restoreMission(id) {
@@ -630,6 +657,7 @@ export const usePlanningStore = create<PlanningStore>()(
       },
 
       copyPlansToDate(fromDate, toDate) {
+        const before = get().plans
         set(state => {
           const newPlans = { ...state.plans }
           const newStartTimes = { ...state.startTimes }
@@ -649,9 +677,11 @@ export const usePlanningStore = create<PlanningStore>()(
           }
           return { plans: newPlans, startTimes: newStartTimes }
         })
+        syncChangedDates(before, get, set)
       },
 
       undo() {
+        const before = get().plans
         set(state => {
           const n = state._history.length
           if (state._historyIdx >= n) return {}
@@ -669,9 +699,11 @@ export const usePlanningStore = create<PlanningStore>()(
             _tip:        tip,
           }
         })
+        syncChangedDates(before, get, set)
       },
 
       redo() {
+        const before = get().plans
         set(state => {
           if (state._historyIdx <= 0) return {}
           const newIdx = state._historyIdx - 1
@@ -691,6 +723,7 @@ export const usePlanningStore = create<PlanningStore>()(
             _historyIdx: newIdx,
           }
         })
+        syncChangedDates(before, get, set)
       },
 
       canUndo() {
@@ -731,41 +764,6 @@ export const usePlanningStore = create<PlanningStore>()(
         debouncedSyncPlan(driverId, date, get, set)
       },
 
-      async savePlansToDB(date) {
-        const state = get()
-        const plansForDate: Array<{
-          driverId:  string
-          date:      string
-          missions:  PlannedMission[]
-          startTime: string
-          speedKmh:  number
-        }> = []
-
-        for (const [key, missions] of Object.entries(state.plans)) {
-          if (!key.endsWith(`|${date}`)) continue
-          const driverId = key.replace(`|${date}`, '')
-          if (missions.length === 0) continue
-          plansForDate.push({
-            driverId,
-            date,
-            missions,
-            startTime: state.startTimes[key] ?? '07:00',
-            speedKmh:  state.speeds[driverId] ?? 50,
-          })
-        }
-
-        if (plansForDate.length === 0) return
-
-        try {
-          await fetch('/api/plans', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify(plansForDate),
-          })
-        } catch (err) {
-          log.error('savePlansToDB failed', { err: err instanceof Error ? err.message : String(err) })
-        }
-      },
     }),
 
     {

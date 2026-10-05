@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
+import { fetchAllPages } from '@/lib/apiClient'
 import { usePlanningStore } from '@/stores/planningStore'
 import { HistoryEntry } from '../types'
 import { Btn, DateNav } from '../ui'
@@ -28,10 +29,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/history?limit=500')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setEntries(Array.isArray(data) ? data : data?.data ?? [])
+      setEntries(await fetchAllPages('/api/history'))
     } catch {
       setError('Impossible de charger l\'historique.')
     } finally {

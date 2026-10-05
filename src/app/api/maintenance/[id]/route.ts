@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTenantDb } from '@/lib/tenantDb'
+import { hasPermission } from '@/lib/permissions'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { redisCache } from '@/lib/redisCache'
@@ -9,8 +10,9 @@ type Params = { params: Promise<{ id: string }> }
 
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id } = await params
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  // Same permission as managing the vehicle itself (dispatchers hold it by default).
+  if (!(await hasPermission(userId, role, 'manage_vehicles'))) return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
 
   try {
     const result = await getTenantDb(tenantId).maintenanceRecord.deleteMany({ where: { id } })

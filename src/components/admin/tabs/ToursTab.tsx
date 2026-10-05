@@ -530,58 +530,6 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
     return results
   }, [driverMapTours, storePlans, storeStartTimes, storeSpeeds, tourDate, exutoires, settings.defaultSpeedKmh, settings.defaultStartTime, settings.costPerKm, settings.fuelCostPerLiter, settings.consumptionLPer100])
 
-  const autoSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isFirstRender  = useRef(true)
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved'>('idle')
-
-  const plansHash = useMemo(() => {
-    const suffix = `|${tourDate}`
-    let h = 0
-    for (const key of Object.keys(storePlans)) {
-      if (!key.endsWith(suffix)) continue
-      const plan = storePlans[key]
-      if (!plan || plan.length === 0) continue
-      h = (h * 31 + plan.length) | 0
-      if (plan[0]) h = (h * 31 + plan[0].sequenceOrder) | 0
-    }
-    return h
-  }, [storePlans, tourDate])
-
-  useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return }
-    setAutoSaveStatus('pending')
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    autoSaveTimer.current = setTimeout(async () => {
-
-      const suffix = `|${tourDate}`
-      const plansPayload: Array<Record<string, unknown>> = []
-      for (const key of Object.keys(storePlans)) {
-        if (!key.endsWith(suffix)) continue
-        const missions = storePlans[key]
-        if (!missions || missions.length === 0) continue
-        const driverId = key.slice(0, key.length - suffix.length)
-        plansPayload.push({
-          driverId, date: tourDate, missions,
-          startTime: storeStartTimes[key] || settings.defaultStartTime,
-          speedKmh: storeSpeeds[driverId] || settings.defaultSpeedKmh,
-        })
-      }
-      if (plansPayload.length > 0) {
-        setAutoSaveStatus('saving')
-        try {
-
-          for (let i = 0; i < plansPayload.length; i += 50) {
-            await fetch('/api/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plansPayload.slice(i, i + 50)) })
-          }
-          setAutoSaveStatus('saved')
-          setTimeout(() => setAutoSaveStatus('idle'), 2500)
-        } catch { setAutoSaveStatus('idle') }
-      } else { setAutoSaveStatus('idle') }
-    }, 3000)
-    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plansHash])
-
   function buildTourExportRows() {
     const rows: Record<string, unknown>[] = []
     for (const driver of (Array.isArray(storeDrivers) ? storeDrivers : [])) {
@@ -716,17 +664,6 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
           )}
           {optimizeError && !isOptimizing && (
             <span className="text-xs text-red-400 truncate max-w-[200px]" title={optimizeError}>⚠ {optimizeError}</span>
-          )}
-          {autoSaveStatus !== 'idle' && (
-            <span className={`text-[10px] flex items-center gap-1 ${
-              autoSaveStatus === 'saved'   ? 'text-green-500' :
-              autoSaveStatus === 'saving'  ? 'text-blue-400' : 'text-surface-400'
-            }`}>
-              {autoSaveStatus === 'saving'  && <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
-              {autoSaveStatus === 'saved'   && '✓'}
-              {autoSaveStatus === 'pending' && '·'}
-              {autoSaveStatus === 'saving'  ? 'Sauvegarde…' : autoSaveStatus === 'saved' ? 'Sauvegardé' : ''}
-            </span>
           )}
           <button type="button" onClick={() => undo()} disabled={!canUndo()} title="Annuler la dernière action (Ctrl+Z)"
             className="px-1.5 md:px-2 py-1 rounded text-xs text-surface-400 hover:text-surface-900 hover:bg-surface-100 disabled:opacity-20 disabled:cursor-not-allowed transition-colors font-mono">↩ <span className="hidden sm:inline">Annuler</span></button>

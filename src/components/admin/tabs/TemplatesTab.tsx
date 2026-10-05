@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { apiRequest } from '@/lib/apiClient'
 import { Mission, MissionType, MISSION_TYPE_HEX } from '@/lib/types'
 import { MissionTemplate, expandTemplate, recurrenceLabel, getNextOccurrence } from '@/lib/missionTemplates'
 import { formatDuration } from '@/lib/algorithm'
@@ -154,26 +155,16 @@ export function TemplatesTab({ onGenerate }: { onGenerate: (_missions: Array<Omi
   }
 
   async function toggleEnabled(t: MissionTemplate) {
-    try {
-      await fetch(`/api/templates/${t.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: !t.enabled }),
-      })
-      load()
-    } catch {
-      toastError('Erreur lors de la mise à jour')
-    }
+    const res = await apiRequest(`/api/templates/${t.id}`, { method: 'PUT', json: { enabled: !t.enabled } })
+    if (!res.ok) toastError(res.error)
+    load()
   }
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer ce template ?')) return
-    try {
-      await fetch(`/api/templates/${id}`, { method: 'DELETE' })
-      load()
-    } catch {
-      toastError('Erreur lors de la suppression')
-    }
+    const res = await apiRequest(`/api/templates/${id}`, { method: 'DELETE' })
+    if (!res.ok) toastError(res.error)
+    load()
   }
 
   function toggleWeekDay(d: number) {

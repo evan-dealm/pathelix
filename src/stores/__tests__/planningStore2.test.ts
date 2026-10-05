@@ -1,7 +1,7 @@
 /**
  * Additional planningStore tests covering actions missing from planningStore.test.ts:
  * updateMission, addDriver family, bulk ops, lock, unavailable, reorder,
- * copyPlansToDate, updatePlannedMission, setManualStartMin, savePlansToDB.
+ * copyPlansToDate, updatePlannedMission, setManualStartMin.
  *
  * debouncedSyncPlan/debouncedSyncAllForDate are no-ops in Node (window undefined).
  */
@@ -280,27 +280,6 @@ describe('setManualStartMin', () => {
   })
 })
 
-describe('savePlansToDB', () => {
-  it('calls fetch /api/plans with plan data', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) })
-    st().setInitialData([DRIVER_A], [MISSION_1])
-    st().assignToDriver('m-1', 'd-1', DATE)
-    await st().savePlansToDB(DATE)
-    expect(mockFetch).toHaveBeenCalledWith('/api/plans', expect.objectContaining({ method: 'POST' }))
-  })
-
-  it('no-op when no plans for date', async () => {
-    await st().savePlansToDB(DATE)
-    expect(mockFetch).not.toHaveBeenCalled()
-  })
-
-  it('handles fetch error gracefully', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('network'))
-    st().setInitialData([DRIVER_A], [MISSION_1])
-    st().assignToDriver('m-1', 'd-1', DATE)
-    await expect(st().savePlansToDB(DATE)).resolves.toBeUndefined()
-  })
-})
 
 describe('addMission with serverId', () => {
   it('uses provided serverId', () => {
