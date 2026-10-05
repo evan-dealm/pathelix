@@ -4,19 +4,20 @@ import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { broadcastIncident }         from '@/lib/incidentBroadcast'
 import { getTenantDb }                from '@/lib/tenantDb'
+import { driverOwnsMission, isStaff } from '@/lib/driverAccess'
 
 const log = createLogger('/api/incidents')
 
 const INCIDENT_TYPES = ['accident', 'panne', 'refus', 'acces', 'autre'] as const
 
 const IncidentSchema = z.object({
-  missionId:    z.string(),
+  missionId:    z.string().min(1).max(100),
   incidentType: z.enum(INCIDENT_TYPES),
   notes:        z.string().max(500).optional(),
 })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, userId } = getRequestContext(req)
+  const { tenantId, userId, role, driverRef } = getRequestContext(req)
 
   let body: unknown
   try { body = await req.json() }
@@ -30,6 +31,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const db = getTenantDb(tenantId)
   const mission = await db.mission.findFirst({ where: { id: missionId }, select: { id: true, address: true, clientName: true } })
   if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
+  if (!isStaff(role) && !(await driverOwnsMission(db, driverRef ?? userId, missionId))) {
+    return NextResponse.json({ error: 'Mission absente de votre tournée' }, { status: 403 })
+  }
 
   try {
     const updated = await db.mission.updateMany({
@@ -57,7 +61,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId } = getRequestContext(req)
+  const { tenantId, role } = getRequestContext(req)
+  if (!isStaff(role)) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
   const params   = req.nextUrl.searchParams
   const page     = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
   const limit    = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))

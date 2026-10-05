@@ -165,7 +165,7 @@ describe('Security: delivery-proof — UUID filenames', () => {
     const mockWriteFile = vi.fn(async () => {})
     const mockMkdir     = vi.fn(async () => {})
 
-    vi.doMock('fs/promises', () => ({ writeFile: mockWriteFile, mkdir: mockMkdir }))
+    vi.doMock('node:fs/promises', () => ({ default: { writeFile: mockWriteFile, mkdir: mockMkdir } }))
     vi.doMock('@/lib/tenantDb', () => ({
       getTenantDb: () => ({
         mission:       { findFirst: vi.fn(async () => ({ id: 'm-1', tenantId: 'tenant-test' })) },
@@ -174,7 +174,7 @@ describe('Security: delivery-proof — UUID filenames', () => {
       }),
     }))
     vi.doMock('@/lib/data/context', () => ({
-      getRequestContext: vi.fn(() => ({ tenantId: 'tenant-test', userId: 'u-1', role: 'driver', requestId: 'req-1', trade: null })),
+      getRequestContext: vi.fn(() => ({ tenantId: 'tenant-test', userId: 'u-1', role: 'admin', requestId: 'req-1', trade: null })),
     }))
 
     const { POST } = await import('@/app/api/delivery-proof/route')
@@ -199,6 +199,10 @@ describe('Security: delivery-proof — UUID filenames', () => {
     expect(mockWriteFile).toHaveBeenCalled()
     const savedPath = (mockWriteFile.mock.calls as unknown as [string, Buffer][])[0][0]
     expect(savedPath).toMatch(/proof-[0-9a-f-]{36}\.jpg$/)
+    // Stored outside public/, under the tenant's own directory.
+    const normalized = savedPath.replace(/\\/g, '/')
+    expect(normalized).toMatch(/data\/uploads\/tenant-test\/proofs\//)
+    expect(normalized).not.toContain('/public/')
     expect(savedPath).not.toContain('m-1')
   })
 })

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
-import { signSession, SESSION_COOKIE, COOKIE_OPTIONS } from '@/lib/session'
+import { signSession, verifySession, SESSION_COOKIE, COOKIE_OPTIONS } from '@/lib/session'
 import { TRADE_IDS } from '@/lib/trades'
 import { createLogger } from '@/lib/logger'
 
@@ -89,11 +89,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     log.info('Trade selected', { tenantId, trade: parsed.data.trade, userId })
 
+    // Re-issued only to carry the new trade claim: everything else — notably exp (an
+    // impersonation session is 15 min and must not become 24h) and sv — is kept as is.
+    const current = await verifySession(req.cookies.get(SESSION_COOKIE)?.value ?? '')
     const newToken = await signSession({
       sub: userId,
       role: role as 'admin' | 'superadmin' | 'dispatcher' | 'driver',
       tenantId,
       trade: parsed.data.trade,
+      driverRef: current?.driverRef,
+      sv: current?.sv,
+      exp: current?.exp,
     })
     const response = NextResponse.json(tenant)
     response.cookies.set(SESSION_COOKIE, newToken, { ...COOKIE_OPTIONS, maxAge: 86400, path: '/' })

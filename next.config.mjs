@@ -44,17 +44,9 @@ const nextConfig = {
 
   typescript: { ignoreBuildErrors: false },
 
-  // NOTE: @react-pdf/renderer PDF generation (/api/tours/pdf, /api/reports/pdf) is BROKEN in
-  // production ("next start") — always 500s with React error #31. Root cause: @react-pdf/reconciler
-  // ships pure ESM ("type":"module"), so Next auto-externalizes it; the native ESM loader then pulls
-  // its own copy of React, separate from the webpack-bundled React the route handler uses to build
-  // JSX. Elements built by one React copy fail isValidElement in the reconciler's copy. Adding
-  // '@react-pdf/renderer' to serverExternalPackages here does NOT fix this (tried, verified live —
-  // identical error/stack before and after). Adding 'react'/'react-dom' here breaks the build
-  // entirely (Next's own RSC cache() APIs need its bundled React). This needs either an upstream fix,
-  // pinning to a CJS-compatible react-pdf version, or moving PDF rendering out of the Next server
-  // process (own worker, mirroring src/workers/vrpWorker.ts) — not a config-flag fix. See git history
-  // for the false-start diagnosis this replaces.
+  // PDF rendering (@react-pdf/renderer) never runs inside the Next server: its ESM-only reconciler
+  // would load a second copy of React (dual package hazard). It runs in src/workers/pdfWorker.ts,
+  // reached through src/lib/queue/pdfQueue.ts.
   serverExternalPackages: ['bullmq', 'ioredis', '@prisma/client'],
 
   experimental: {
@@ -63,6 +55,15 @@ const nextConfig = {
   images: {
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 31536000,
+  },
+
+  async rewrites() {
+    return {
+      // Files uploaded before tenant-namespaced storage existed live under public/uploads. They
+      // must never be served statically (no auth, cross-tenant readable): this rewrite runs
+      // before the filesystem, so /uploads/* always goes through the authenticated files route.
+      beforeFiles: [{ source: '/uploads/:path*', destination: '/api/files/legacy/:path*' }],
+    }
   },
 
   webpack(config) {

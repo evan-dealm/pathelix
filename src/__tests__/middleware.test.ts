@@ -12,6 +12,9 @@ vi.mock('@/lib/session', () => ({
   verifySession: mockVerifySession,
 }))
 
+const mockIsSessionCurrent = vi.hoisted(() => vi.fn(async () => true))
+vi.mock('@/lib/sessionRevocation', () => ({ isSessionCurrent: mockIsSessionCurrent }))
+
 vi.mock('@/lib/data/context', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/data/context')>()
   return {
@@ -124,10 +127,22 @@ describe('middleware', () => {
     expect(res.status).toBe(200)
   })
 
-  it('passes /driver/123 without auth', async () => {
-    const req = makeReq('/driver/123')
-    const res = await middleware(req)
-    expect(res.status).toBe(200)
+  it('requires a session for /driver/123 (redirects to /login)', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    const res = await middleware(makeReq('/driver/123'))
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toContain('/login')
+  })
+
+  it('requires a session for /api/driver-plan/* (no longer a public path)', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    const res = await middleware(makeReq('/api/driver-plan/d1?date=2026-01-01'))
+    expect(res.status).toBe(401)
+  })
+
+  it('passes /track/<token> and /api/tracking without auth (customer tracking link)', async () => {
+    expect((await middleware(makeReq('/track/abc'))).status).toBe(200)
+    expect((await middleware(makeReq('/api/tracking?token=abc'))).status).toBe(200)
   })
 
   it('passes /login without auth', async () => {
@@ -155,13 +170,74 @@ describe('middleware', () => {
     expect(res.status).toBe(200)
   })
 
-  it('preserves x-tenant-id header on Nessy webhook path', async () => {
-    const req = makeReq('/api/webhooks/nessy', {
+  it('re-injects identity headers from the verified session, not from the client', async () => {
+    mockVerifySession.mockResolvedValue(makeSession({ role: 'admin', tenantId: 'tenant-1', sub: 'user-1' }))
+    const res = await middleware(makeReq('/api/drivers', {
+      headers: { 'x-user-role': 'superadmin', 'x-tenant-id': 'other-tenant', 'x-driver-ref': 'd9', cookie: 'session=t' },
+    }))
+    expect(res.headers.get('x-middleware-request-x-tenant-id')).toBe('tenant-1')
+    expect(res.headers.get('x-middleware-request-x-user-role')).toBe('admin')
+    expect(res.headers.get('x-middleware-request-x-driver-ref')).toBeNull()
+  })
+
+  it('strips a client-supplied x-tenant-id on the Nessy webhook path (tenant comes from the HMAC secret)', async () => {
+    const res = await middleware(makeReq('/api/webhooks/nessy', {
       headers: { 'x-tenant-id': 'tenant-from-nessy' },
-    })
-    const res = await middleware(req)
-    // Nessy is public, passes through
+    }))
     expect(res.status).toBe(200)
+    expect(res.headers.get('x-middleware-request-x-tenant-id')).toBeNull()
+  })
+
+  // ─── Driver deny-by-default ───────────────────────────────────────────────
+
+  it.each([
+    '/api/clients', '/api/vehicles', '/api/settings', '/api/integrations', '/api/kpi-history',
+    '/api/permissions', '/api/reports/co2', '/api/tours/pdf', '/api/driver-list', '/api/users',
+  ])('denies a driver session on tenant-wide route %s', async (path) => {
+    mockVerifySession.mockResolvedValue(makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }))
+    const res = await middleware(makeReq(path, { cookie: 'session=t' }))
+    expect(res.status).toBe(403)
+  })
+
+  it.each([
+    '/api/driver-plan/d1', '/api/driver-status/update', '/api/driver-photos', '/api/incidents',
+    '/api/mission-comments', '/api/auth/me', '/api/ai/ocr', '/api/files/t/photos/x.jpg',
+  ])('lets a driver session reach driver route %s', async (path) => {
+    mockVerifySession.mockResolvedValue(makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }))
+    const res = await middleware(makeReq(path, { cookie: 'session=t' }))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-middleware-request-x-driver-ref')).toBe('d1')
+  })
+
+  it("redirects a driver opening another driver's page (or the picker) to its own page", async () => {
+    mockVerifySession.mockResolvedValue(makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }))
+    for (const path of ['/driver', '/driver/d2']) {
+      const res = await middleware(makeReq(path, { cookie: 'session=t' }))
+      expect(res.status).toBe(307)
+      expect(new URL(res.headers.get('location')!).pathname).toBe('/driver/d1')
+    }
+    expect((await middleware(makeReq('/driver/d1', { cookie: 'session=t' }))).status).toBe(200)
+  })
+
+  // ─── Session revocation ───────────────────────────────────────────────────
+
+  it('treats a revoked session (sessionVersion moved on) as unauthenticated', async () => {
+    mockVerifySession.mockResolvedValue(makeSession())
+    mockIsSessionCurrent.mockResolvedValueOnce(false)
+    const res = await middleware(makeReq('/api/drivers', { cookie: 'session=t' }))
+    expect(res.status).toBe(401)
+  })
+
+  // ─── Rate-limit client IP ─────────────────────────────────────────────────
+
+  it('does not let a spoofed left-most X-Forwarded-For entry dodge the global limiter', async () => {
+    mockVerifySession.mockResolvedValue(makeSession())
+    let last = 200
+    for (let i = 0; i < 305; i++) {
+      const res = await middleware(makeReq('/api/drivers', { cookie: 'session=t', ip: `10.0.${i % 250}.${i}, 203.0.113.77` }))
+      last = res.status
+    }
+    expect(last).toBe(429)
   })
 
   // ─── Auth enforcement ─────────────────────────────────────────────────────

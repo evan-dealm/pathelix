@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+vi.mock('@/lib/sessionRevocation', () => ({
+  revokeUserSessions:   vi.fn(async () => undefined),
+  forgetSessionVersion: vi.fn(),
+  isSessionCurrent:     vi.fn(async () => true),
+}))
+
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
@@ -12,7 +18,12 @@ vi.mock('bcryptjs', () => ({ compare: mockCompare, hash: mockHash }))
 
 // change-password deps
 const mockVerifySession = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/session', () => ({ verifySession: mockVerifySession, SESSION_COOKIE: 'session' }))
+vi.mock('@/lib/session', () => ({
+  verifySession: mockVerifySession,
+  signSession:   vi.fn(async () => 'fresh-token'),
+  SESSION_COOKIE: 'session',
+  COOKIE_OPTIONS: { httpOnly: true, sameSite: 'strict' as const },
+}))
 
 const mockRlCheck = vi.hoisted(() => vi.fn(async () => true))
 vi.mock('@/lib/rateLimit', () => ({
@@ -143,10 +154,14 @@ describe('POST /api/auth/change-password', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(mockHash).toHaveBeenCalledWith('mynewpassword12', 12)
+    // sessionVersion bump = every other session of this user is revoked; this device gets a
+    // freshly signed cookie instead.
     expect(mockUserUpdate).toHaveBeenCalledWith({
-      where: { id: 'u1' },
-      data:  { passwordHash: 'new-hash' },
+      where:  { id: 'u1' },
+      data:   { passwordHash: 'new-hash', sessionVersion: { increment: 1 } },
+      select: { sessionVersion: true },
     })
+    expect(res.headers.get('set-cookie')).toContain('session=fresh-token')
   })
 
   it('returns 500 on DB error', async () => {

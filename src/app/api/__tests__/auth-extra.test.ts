@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+vi.mock('@/lib/sessionRevocation', () => ({
+  revokeUserSessions:   vi.fn(async () => undefined),
+  forgetSessionVersion: vi.fn(),
+  isSessionCurrent:     vi.fn(async () => true),
+}))
+
 const mockPrisma = vi.hoisted(() => ({
   user: {
     findFirst: vi.fn(),
@@ -12,7 +18,9 @@ vi.mock('@/lib/tenantDb', () => ({ getTenantDb: () => mockPrisma }))
 
 vi.mock('@/lib/session', () => ({
   verifySession:  vi.fn(),
+  signSession:    vi.fn(async () => 'fresh-token'),
   SESSION_COOKIE: 'session',
+  COOKIE_OPTIONS: { httpOnly: true, sameSite: 'strict' as const },
 }))
 
 vi.mock('@/lib/rateLimit', () => ({

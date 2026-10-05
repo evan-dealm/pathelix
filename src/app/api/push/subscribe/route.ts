@@ -4,13 +4,16 @@ import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { VAPID_PUBLIC_KEY }          from '@/lib/webPush'
 import { getTenantDb }                from '@/lib/tenantDb'
+import { isStaff }                   from '@/lib/driverAccess'
+import { isAllowedPushEndpoint }     from '@/lib/pushEndpoints'
 
 const log = createLogger('/api/push/subscribe')
 
 const SubscribeSchema = z.object({
-  endpoint: z.string().url(),
-  keys:     z.object({ p256dh: z.string(), auth: z.string() }),
-  driverId: z.string().optional(),
+  // The server later POSTs to this URL — only real browser push services are accepted (SSRF).
+  endpoint: z.string().url().max(1000).refine(isAllowedPushEndpoint, 'Service push non reconnu'),
+  keys:     z.object({ p256dh: z.string().max(200), auth: z.string().max(100) }),
+  driverId: z.string().max(100).optional(),
 })
 
 export async function GET(): Promise<NextResponse> {
@@ -18,7 +21,7 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, userId } = getRequestContext(req)
+  const { tenantId, userId, role, driverRef } = getRequestContext(req)
 
   let body: unknown
   try { body = await req.json() }
@@ -40,11 +43,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       select: { id: true },
     })
     if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
+    // A driver subscribes for itself only — never to receive a colleague's notifications.
+    if (!isStaff(role) && driverId !== (driverRef ?? userId)) {
+      return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+    }
   }
 
   try {
     await db.pushSubscription.upsert({
-      where:  { endpoint },
+      where:  { tenantId_endpoint: { tenantId, endpoint } },
       create: { userId, driverId, endpoint, p256dh: keys.p256dh, auth: keys.auth } as Parameters<typeof db.pushSubscription.upsert>[0]['create'],
       update: { userId, driverId, p256dh: keys.p256dh, auth: keys.auth },
     })

@@ -6,6 +6,8 @@ import { getRequestContext } from '@/lib/data/context'
 import { metrics, METRIC }           from '@/lib/metrics'
 import { createRateLimiter }         from '@/lib/rateLimit'
 import { getTenantDb }                from '@/lib/tenantDb'
+import { revokeUserSessions }        from '@/lib/sessionRevocation'
+import { auditAsync }                from '@/lib/audit'
 
 const log = createLogger('/api/users/[id]/reset-password')
 const _resetRl = createRateLimiter(10, 60_000)
@@ -43,6 +45,8 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
     const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12)
     await db.user.update({ where: { id }, data: { passwordHash } })
+    await revokeUserSessions(id)
+    auditAsync(req, 'user.reset_password', 'User', id, { email: existing.email })
 
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/users/[id]/reset-password', method: 'POST', status: '200' })
     return NextResponse.json({ ok: true })

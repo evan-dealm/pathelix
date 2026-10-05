@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+vi.mock('@/lib/sessionRevocation', () => ({
+  revokeUserSessions:   vi.fn(async () => undefined),
+  forgetSessionVersion: vi.fn(),
+  isSessionCurrent:     vi.fn(async () => true),
+}))
+
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))

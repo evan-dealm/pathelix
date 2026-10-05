@@ -34,7 +34,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } })
     if (!tenant) return NextResponse.json({ error: 'Tenant introuvable' }, { status: 404 })
 
+    // sv: the superadmin's own session version — the impersonation token is revoked together
+    // with the superadmin's sessions (sessionRevocation.ts resolves `sa:<id>` to that user).
+    const sa = await prisma.user.findUnique({ where: { id: superadminId }, select: { sessionVersion: true } })
     const token = await signSession({
+      sv:       sa?.sessionVersion ?? 0,
       sub:      `sa:${superadminId}`,
       role:     'admin',
       tenantId: tenant.id,

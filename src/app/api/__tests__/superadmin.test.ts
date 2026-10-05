@@ -10,6 +10,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+vi.mock('@/lib/sessionRevocation', () => ({
+  revokeUserSessions:   vi.fn(async () => undefined),
+  forgetSessionVersion: vi.fn(),
+  isSessionCurrent:     vi.fn(async () => true),
+}))
+
 const mockPrisma = vi.hoisted(() => ({
   tenant: {
     findMany:   vi.fn(),
@@ -20,7 +26,7 @@ const mockPrisma = vi.hoisted(() => ({
     count:      vi.fn(),
     groupBy:    vi.fn(),
   },
-  user:        { count: vi.fn() },
+  user:        { count: vi.fn(), findUnique: vi.fn(async () => ({ sessionVersion: 0 })) },
   driver:      { count: vi.fn() },
   mission:     { count: vi.fn(), groupBy: vi.fn() },
   vehicle:     { count: vi.fn() },

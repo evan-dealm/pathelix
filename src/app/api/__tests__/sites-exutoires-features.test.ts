@@ -8,6 +8,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+vi.mock('@/lib/sessionRevocation', () => ({
+  revokeUserSessions:   vi.fn(async () => undefined),
+  forgetSessionVersion: vi.fn(),
+  isSessionCurrent:     vi.fn(async () => true),
+}))
+
 const mockPrisma = vi.hoisted(() => ({
   site:            { findMany: vi.fn(), count: vi.fn(), create: vi.fn() },
   client:          { findFirst: vi.fn(), count: vi.fn() },

@@ -1,29 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir }          from 'fs/promises'
-import { join }                      from 'path'
 import { createLogger }              from '@/lib/logger'
 import { getRequestContext }         from '@/lib/data/context'
 import { getTenantDb }                from '@/lib/tenantDb'
+import { driverOwnsMission, isStaff } from '@/lib/driverAccess'
+import { detectImageExt, writeUpload } from '@/lib/uploadStorage'
 
 const log = createLogger('/api/delivery-proof')
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 
-const JPEG_MAGIC = [0xff, 0xd8, 0xff]
-const PNG_MAGIC  = [0x89, 0x50, 0x4e, 0x47]
-
-function detectImageType(buf: Uint8Array): 'jpg' | 'png' | null {
-  if (buf.length >= 4 && PNG_MAGIC.every((b, i) => buf[i] === b))  return 'png'
-  if (buf.length >= 3 && JPEG_MAGIC.every((b, i) => buf[i] === b)) return 'jpg'
-  return null
-}
-
-function safeName(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
-}
-
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, userId } = getRequestContext(req)
+  const { tenantId, userId, role, driverRef } = getRequestContext(req)
 
   const form = await req.formData().catch(() => null)
   if (!form) return NextResponse.json({ error: 'Formulaire invalide' }, { status: 400 })
@@ -48,8 +35,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const driver = await db.driver.findFirst({ where: { id: driverId }, select: { id: true } })
   if (!driver) return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
 
-  const uploadsDir = join(process.cwd(), 'public', 'uploads', safeName(tenantId))
-  await mkdir(uploadsDir, { recursive: true })
+  // A driver may only prove its own deliveries — not overwrite a colleague's proof.
+  if (!isStaff(role)) {
+    const ownId = driverRef ?? userId
+    if (driverId !== ownId || !(await driverOwnsMission(db, driverId, missionId))) {
+      return NextResponse.json({ error: 'Mission absente de votre tournée' }, { status: 403 })
+    }
+  }
 
   let photoUrl:     string | undefined
   let signatureUrl: string | undefined
@@ -59,13 +51,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Fichier photo trop volumineux (max 5 MB)' }, { status: 413 })
     }
     const bytes  = new Uint8Array(await photo.arrayBuffer())
-    const ext    = detectImageType(bytes)
+    const ext    = detectImageExt(bytes)
     if (!ext) {
-      return NextResponse.json({ error: 'Format photo invalide (JPEG ou PNG requis)' }, { status: 422 })
+      return NextResponse.json({ error: 'Format photo invalide (JPEG, PNG, GIF ou WEBP requis)' }, { status: 422 })
     }
-    const name = `proof-${crypto.randomUUID()}.${ext}`
-    await writeFile(join(uploadsDir, name), Buffer.from(bytes))
-    photoUrl = `/uploads/${safeName(tenantId)}/${name}`
+    photoUrl = await writeUpload(tenantId, 'proofs', `proof-${crypto.randomUUID()}.${ext}`, Buffer.from(bytes))
   }
 
   if (signature && signature.size > 0) {
@@ -73,13 +63,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Fichier signature trop volumineux (max 5 MB)' }, { status: 413 })
     }
     const bytes = new Uint8Array(await signature.arrayBuffer())
-    const ext   = detectImageType(bytes)
+    const ext   = detectImageExt(bytes)
     if (!ext) {
-      return NextResponse.json({ error: 'Format signature invalide (JPEG ou PNG requis)' }, { status: 422 })
+      return NextResponse.json({ error: 'Format signature invalide (JPEG, PNG, GIF ou WEBP requis)' }, { status: 422 })
     }
-    const name = `proof-${crypto.randomUUID()}.${ext}`
-    await writeFile(join(uploadsDir, name), Buffer.from(bytes))
-    signatureUrl = `/uploads/${safeName(tenantId)}/${name}`
+    signatureUrl = await writeUpload(tenantId, 'proofs', `proof-${crypto.randomUUID()}.${ext}`, Buffer.from(bytes))
   }
 
   try {
@@ -98,13 +86,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId } = getRequestContext(req)
+  const { tenantId, role, userId, driverRef } = getRequestContext(req)
   const missionId    = req.nextUrl.searchParams.get('missionId')
 
   if (!missionId) return NextResponse.json({ error: 'missionId requis' }, { status: 400 })
 
   try {
-    const proof = await getTenantDb(tenantId).deliveryProof.findFirst({ where: { missionId } })
+    const db = getTenantDb(tenantId)
+    if (!isStaff(role) && !(await driverOwnsMission(db, driverRef ?? userId, missionId))) {
+      return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+    }
+    const proof = await db.deliveryProof.findFirst({ where: { missionId } })
     return NextResponse.json({ proof: proof ?? null })
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

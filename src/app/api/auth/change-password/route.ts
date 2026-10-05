@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
-import { verifySession, SESSION_COOKIE } from '@/lib/session'
+import { verifySession, signSession, SESSION_COOKIE, COOKIE_OPTIONS } from '@/lib/session'
+import { forgetSessionVersion } from '@/lib/sessionRevocation'
 import { createRateLimiter } from '@/lib/rateLimit'
 import { createLogger } from '@/lib/logger'
 import { getTenantDb } from '@/lib/tenantDb'
@@ -57,14 +58,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const newHash = await hash(newPassword, 12)
-    await db.user.update({
+    // Bumping sessionVersion logs out every other device (a password change after a suspected
+    // compromise must kill the attacker's session) — this one gets a fresh token below.
+    const updated = await db.user.update({
       where: { id: user.id },
-      data:  { passwordHash: newHash },
+      data:  { passwordHash: newHash, sessionVersion: { increment: 1 } },
+      select: { sessionVersion: true },
     })
+    forgetSessionVersion(user.id)
 
     log.info('password changed', { userId: user.id, tenantId: session.tenantId })
 
-    return NextResponse.json({ ok: true })
+    const fresh = await signSession({
+      sub: session.sub, role: session.role, tenantId: session.tenantId,
+      driverRef: session.driverRef, trade: session.trade, sv: updated.sessionVersion,
+    })
+    const res = NextResponse.json({ ok: true })
+    res.cookies.set(SESSION_COOKIE, fresh, { ...COOKIE_OPTIONS, maxAge: 86400, path: '/' })
+    return res
   } catch (err) {
     log.error('change-password failed', { err: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

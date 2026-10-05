@@ -193,9 +193,18 @@ export async function getTenantPlanLimit(
   }
 }
 
+/**
+ * Client IP for rate limiting. Pathélix runs behind a reverse proxy (Caddy/Nginx) that *appends*
+ * the address it saw to X-Forwarded-For, so the left-most entries are whatever the client chose
+ * to send — trusting them let anyone rotate a fake IP per request and bypass every IP limiter
+ * (login brute force included). The trustworthy entry is the one added by our own proxy:
+ * counted from the right, `TRUSTED_PROXY_COUNT` hops (default 1).
+ */
 export function getClientIp(headers: Headers): string {
-  const xff = headers.get('x-forwarded-for')?.split(',')[0].trim()
-  if (xff && xff.length > 0) return xff
+  const hops = Math.max(1, parseInt(process.env.TRUSTED_PROXY_COUNT ?? '1', 10) || 1)
+  const xff = (headers.get('x-forwarded-for') ?? '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+  if (xff.length > 0) return xff[Math.max(0, xff.length - hops)]
 
   const realIp = headers.get('x-real-ip')?.trim()
   if (realIp && realIp.length > 0) return realIp

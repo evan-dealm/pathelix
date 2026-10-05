@@ -5,6 +5,9 @@ import { prismaRowToDriver } from '@/lib/prismaMappers'
 import { createLogger } from '@/lib/logger'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { getAllExutoires } from '@/lib/data/exutoires'
+import { checkTenantSuspension } from '@/lib/data/context'
+import { canActForDriver } from '@/lib/driverAccess'
+import { isMissionStatus, type MissionStatus } from '@/lib/missionStatus'
 
 import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 
@@ -24,8 +27,8 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   const { id: driverId } = await params
   const date = req.nextUrl.searchParams.get('date')
 
-  if (!date) {
-    return NextResponse.json({ error: 'Paramètre date requis' }, { status: 400 })
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json({ error: 'Paramètre date requis (AAAA-MM-JJ)' }, { status: 400 })
   }
 
   try {
@@ -57,17 +60,20 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
       return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
     }
 
-    const isOwnDriver = session.driverRef === driverId || session.sub === driverId
-    const isAdminOrDispatcher = (session.role === 'admin' || session.role === 'dispatcher') && session.tenantId === tenantId
-    if (!isOwnDriver && !isAdminOrDispatcher) {
+    if (!canActForDriver(session, driverId, tenantId)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
+    const suspended = await checkTenantSuspension(tenantId, session.role)
+    if (suspended) return suspended
 
     let plan: PlannedMission[] = []
     let startTime = '07:00'
     let speedKmh  = 50
     let trade: string | null = null
     let exutoires: Exutoire[] = []
+    // Server-side progression per mission (Plan.statuses) — the app merges it with its own
+    // not-yet-synced local changes, so a status survives a device change or a cleared cache.
+    const statuses: Record<string, MissionStatus> = {}
 
     if (useMock) {
       exutoires = await getAllExutoires(tenantId)
@@ -86,14 +92,20 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
         }
         startTime = record.startTime
         speedKmh  = record.speedKmh
+        if (record.statuses && typeof record.statuses === 'object' && !Array.isArray(record.statuses)) {
+          for (const [missionId, entry] of Object.entries(record.statuses as Record<string, unknown>)) {
+            const st = entry && typeof entry === 'object' ? (entry as { status?: unknown }).status : entry
+            if (isMissionStatus(st)) statuses[missionId] = st
+          }
+        }
       }
       trade = tenantRow?.trade ?? null
       exutoires = exutoireRows
     }
 
     return NextResponse.json(
-      { driver, plan, startTime, speedKmh, date, trade, exutoires },
-      { headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' } },
+      { driver, plan, statuses, startTime, speedKmh, date, trade, exutoires },
+      { headers: { 'Cache-Control': 'private, no-store' } },
     )
   } catch (err) {
     log.error('GET failed', { driverId, err: err instanceof Error ? err.message : String(err) })

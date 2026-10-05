@@ -18,6 +18,13 @@ if (process.env.NODE_ENV === 'production' && !ADMIN_PASSWORD && USE_MOCK) {
 }
 
 const _loginRl = createRateLimiter(5, 60_000)
+// Per-account limiter on top of the per-IP one: a distributed guessing attack (many IPs, one
+// account) is throttled too. Keyed by the normalised email.
+const _accountRl = createRateLimiter(10, 15 * 60_000)
+
+// bcrypt hash of a random string — compared against when the email is unknown, so a miss costs
+// the same time as a wrong password and response timing doesn't reveal which emails exist.
+const DUMMY_HASH = '$2a$12$gJokVt6sGgIZXVkM4dp5X.ov8ZqUBF7VagdkvgJpEClAZaR16V6.u'
 
 function safePasswordCompare(input: string, expected: string): boolean {
   const maxLen = Math.max(input.length, expected.length, 1)
@@ -61,18 +68,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Email requis en mode base de données' }, { status: 400 })
     }
 
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!(await _accountRl.check(normalizedEmail))) {
+      return NextResponse.json(
+        { error: 'Trop de tentatives pour ce compte. Réessayez dans quelques minutes.' },
+        { status: 429, headers: _accountRl.headers(normalizedEmail) },
+      )
+    }
+
     try {
       const { prisma } = await import('@/lib/db')
-      const user       = await prisma.user.findFirst({
-        where: { email },
+      const user       = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
         include: { tenant: { select: { trade: true, suspendedAt: true } } },
       })
 
-      if (!user) return deny('Identifiants incorrects')
-
       const { compare } = await import('bcryptjs')
-      const ok = await compare(password, user.passwordHash)
-      if (!ok)  return deny('Identifiants incorrects')
+      const ok = await compare(password, user?.passwordHash ?? DUMMY_HASH)
+      if (!user || !ok) return deny('Identifiants incorrects')
 
       if (user.tenant?.suspendedAt && user.role !== 'SUPERADMIN') {
         return deny('Compte suspendu. Contactez votre administrateur.', 403)
@@ -94,6 +107,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         tenantId:  user.tenantId,
         driverRef: user.driverRef || undefined,
         trade:     tenantTrade,
+        sv:        user.sessionVersion,
       })
 
       metrics.increment(METRIC.AUTH_LOGIN_OK)

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getTenantDb } from '@/lib/tenantDb'
-import { getTenantId, getRequestContext } from '@/lib/data/context'
+import { getRequestContext } from '@/lib/data/context'
+import { driverOwnsMission, isStaff } from '@/lib/driverAccess'
 import { createLogger } from '@/lib/logger'
 
 const log = createLogger('/api/mission-comments')
@@ -12,12 +13,16 @@ const CommentSchema = z.object({
 })
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const tenantId  = getTenantId(req)
+  const { tenantId, role, userId, driverRef } = getRequestContext(req)
   const missionId = req.nextUrl.searchParams.get('missionId')
   if (!missionId) return NextResponse.json({ error: 'missionId requis' }, { status: 400 })
 
   try {
-    const comments = await getTenantDb(tenantId).missionComment.findMany({
+    const db = getTenantDb(tenantId)
+    if (!isStaff(role) && !(await driverOwnsMission(db, driverRef ?? userId, missionId))) {
+      return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+    }
+    const comments = await db.missionComment.findMany({
       where:   { missionId },
       orderBy: { createdAt: 'asc' },
     })
@@ -29,7 +34,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, userId, role } = getRequestContext(req)
+  const { tenantId, userId, role, driverRef } = getRequestContext(req)
 
   let raw: unknown
   try { raw = await req.json() } catch { return NextResponse.json({ error: 'JSON invalide' }, { status: 400 }) }
@@ -41,6 +46,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const db = getTenantDb(tenantId)
     const mission = await db.mission.findFirst({ where: { id: parsed.data.missionId } })
     if (!mission) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
+    if (!isStaff(role) && !(await driverOwnsMission(db, driverRef ?? userId, parsed.data.missionId))) {
+      return NextResponse.json({ error: 'Mission absente de votre tournée' }, { status: 403 })
+    }
 
     const comment = await db.missionComment.create({
       data: { userId, role, ...parsed.data } as Parameters<typeof db.missionComment.create>[0]['data'],

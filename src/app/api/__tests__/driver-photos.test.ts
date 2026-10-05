@@ -13,8 +13,10 @@ vi.mock('@/lib/session', () => ({
 }))
 
 const mockDriverFindUnique = vi.hoisted(() => vi.fn())
+const mockPlanFindFirst    = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/tenantDb', () => ({
   unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
+  getTenantDb:    () => ({ plan: { findFirst: mockPlanFindFirst } }),
 }))
 
 // fs mocks — used only in real mode tests
@@ -34,7 +36,8 @@ vi.mock('node:fs/promises', () => ({
 import { GET, POST, DELETE } from '@/app/api/driver-photos/route'
 
 const VALID_DATA_URL = 'data:image/jpeg;base64,/9j/4AAQSkZJRg=='
-const SESSION = { tenantId: 't1', userId: 'u1', role: 'driver' as const, sub: 'u1', iat: 0, exp: 9999999999 }
+const SESSION = { tenantId: 't1', userId: 'u1', role: 'admin' as const, sub: 'u1', iat: 0, exp: 9999999999 }
+const DRIVER_D1 = { tenantId: 't1', role: 'driver' as const, sub: 'u-d1', driverRef: 'd1', iat: 0, exp: 9999999999 }
 
 function makeGET(params: Record<string, string> = {}) {
   const url = new URL('http://localhost/api/driver-photos')
@@ -229,6 +232,7 @@ describe('driver-photos — real mode', () => {
     }))
     vi.mock('@/lib/tenantDb', () => ({
       unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
+      getTenantDb:    () => ({ plan: { findFirst: mockPlanFindFirst } }),
     }))
     vi.mock('node:fs/promises', () => ({
       default: {
@@ -257,6 +261,30 @@ describe('driver-photos — real mode', () => {
     mockReaddir.mockResolvedValue([])
     mockWriteFile.mockResolvedValue(undefined)
     mockUnlink.mockResolvedValue(undefined)
+    mockPlanFindFirst.mockResolvedValue({ missions: [{ id: 'm1' }] })
+  })
+
+  it("GET/POST/DELETE: a driver cannot touch another driver's photos (same tenant)", async () => {
+    mockVerifySession.mockResolvedValue(DRIVER_D1)
+    expect((await rGET(makeGETAuth({ driverId: 'd2', date: '2026-06-01' }))).status).toBe(403)
+    expect((await rPOST(makePOST({ driverId: 'd2', date: '2026-06-01', missionId: 'm1', dataUrl: VALID_DATA_URL }))).status).toBe(403)
+    expect((await rDELETE(makeDELETE({ driverId: 'd2', date: '2026-06-01', missionId: 'm1' }))).status).toBe(403)
+    expect(mockWriteFile).not.toHaveBeenCalled()
+    expect(mockUnlink).not.toHaveBeenCalled()
+  })
+
+  it('POST: a driver can only attach a photo to a mission of its own plan', async () => {
+    mockVerifySession.mockResolvedValue(DRIVER_D1)
+    mockPlanFindFirst.mockResolvedValueOnce({ missions: [{ id: 'other' }] })
+    const res = await rPOST(makePOST({ driverId: 'd1', date: '2026-06-01', missionId: 'm1', dataUrl: VALID_DATA_URL }))
+    expect(res.status).toBe(404)
+    expect(mockWriteFile).not.toHaveBeenCalled()
+  })
+
+  it('POST: a driver signature (<missionId>_sig) is accepted for its own mission', async () => {
+    mockVerifySession.mockResolvedValue(DRIVER_D1)
+    const res = await rPOST(makePOST({ driverId: 'd1', date: '2026-06-01', missionId: 'm1_sig', dataUrl: VALID_DATA_URL }))
+    expect(res.status).toBe(200)
   })
 
   it('GET: returns 403 when driver tenantId mismatch', async () => {
@@ -296,7 +324,8 @@ describe('driver-photos — real mode', () => {
     }))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.url).toMatch(/\/uploads\/photos\//)
+    // Served by the authenticated files route, never from public/.
+    expect(body.url).toBe('/api/files/t1/photos/d1_2026-06-01_m1.jpg')
     expect(mockWriteFile).toHaveBeenCalledOnce()
   })
 
@@ -310,6 +339,7 @@ describe('driver-photos — real mode', () => {
   })
 
   it('DELETE: calls unlink and returns ok', async () => {
+    mockReaddir.mockResolvedValueOnce(['d1_2026-06-01_m1.jpg', 'd1_2026-06-01_m10.jpg'])
     const res = await rDELETE(makeDELETE({ driverId: 'd1', date: '2026-06-01', missionId: 'm1' }))
     expect(res.status).toBe(200)
     expect(mockUnlink).toHaveBeenCalledOnce()

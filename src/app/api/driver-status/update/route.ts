@@ -8,14 +8,17 @@ import { collectInterventionMetric } from '@/lib/metricCollector'
 import { emitEvent } from '@/lib/integrationEvents'
 import { syncMissionToERP } from '@/lib/integrationERP'
 import { withIdempotency } from '@/lib/idempotency'
+import { canActForDriver } from '@/lib/driverAccess'
+import { checkTenantSuspension } from '@/lib/data/context'
+import { MISSION_STATUSES, type MissionStatus } from '@/lib/missionStatus'
 
 const log = createLogger('/api/driver-status/update')
 
 const StatusUpdateSchema = z.object({
-  driverId:   z.string().min(1),
-  missionId:  z.string().min(1),
+  driverId:   z.string().min(1).max(100),
+  missionId:  z.string().min(1).max(100),
   date:       z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  status:     z.enum(['todo', 'en_route', 'arrived', 'started', 'done']),
+  status:     z.enum(MISSION_STATUSES),
   timestamp:  z.string().datetime({ offset: true }).optional(),
   latitude:   z.number().min(-90).max(90).optional(),
   longitude:  z.number().min(-180).max(180).optional(),
@@ -49,13 +52,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const tenantId = driver.tenantId
     const driverFullName = `${driver.firstName ?? ''} ${driver.lastName ?? ''}`.trim() || driverId
 
-    const isOwnDriver = session.driverRef === driverId || session.sub === driverId
-    const isAdminOrDispatcher = (session.role === 'admin' || session.role === 'dispatcher') && session.tenantId === tenantId
-    if (!isOwnDriver && !isAdminOrDispatcher) {
+    if (!canActForDriver(session, driverId, tenantId)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
+    const suspended = await checkTenantSuspension(tenantId, session.role)
+    if (suspended) return suspended
 
-    return await withIdempotency(req, tenantId, 'POST /api/driver-status/update', () => handleStatusUpdate({
+    return await withIdempotency(req, tenantId, 'POST /api/driver-status/update', parsed.data, () => handleStatusUpdate({
       tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, driverFullName,
     }))
   } catch (err) {
@@ -69,11 +72,19 @@ interface StatusUpdateParams {
   driverId: string
   missionId: string
   date: string
-  status: 'todo' | 'en_route' | 'arrived' | 'started' | 'done'
+  status: MissionStatus
   timestamp?: string
   latitude?: number
   longitude?: number
   driverFullName: string
+}
+
+type StatusEntry = { status: string; en_routeAt?: string; arrivedAt?: string; startedAt?: string; doingAt?: string; doneAt?: string; lat?: number; lng?: number }
+
+function planHasMission(missions: unknown, missionId: string): boolean {
+  let arr = missions
+  if (typeof arr === 'string') { try { arr = JSON.parse(arr) } catch { return false } }
+  return Array.isArray(arr) && arr.some(m => m && typeof m === 'object' && (m as { id?: unknown }).id === missionId)
 }
 
 async function handleStatusUpdate({
@@ -83,16 +94,25 @@ async function handleStatusUpdate({
     const ts = timestamp || new Date().toISOString()
 
     const db = getTenantDb(tenantId)
-    let capturedStatuses: Record<string, unknown> | null = null
-    await db.$transaction(async (tx) => {
-      const plan = await tx.plan.findFirst({ where: { driverId, date } })
-      if (!plan) return
+    const outcome = await db.$transaction(async (tx) => {
+      const found = await tx.plan.findFirst({ where: { driverId, date }, select: { id: true } })
+      if (!found) return { kind: 'no-plan' as const }
+      // Row lock before the read-modify-write of the statuses JSON: two concurrent updates for
+      // the same driver/day (offline queue flush + dispatcher, two tabs) would otherwise both
+      // read the same snapshot under READ COMMITTED and the second write would drop the
+      // first mission's status. The id is already tenant-verified by the scoped findFirst.
+      await tx.$queryRaw`SELECT 1 FROM "Plan" WHERE id = ${found.id} FOR UPDATE`
+      const plan = await tx.plan.findFirst({ where: { id: found.id }, select: { id: true, missions: true, statuses: true } })
+      if (!plan) return { kind: 'no-plan' as const }
+      // A status may only be set on a mission of THIS driver's plan — never on any mission id of
+      // the tenant (which would also fire the ERP sync / events for someone else's mission).
+      if (!planHasMission(plan.missions, missionId)) return { kind: 'not-in-plan' as const }
 
-      const statuses = (typeof plan.statuses === 'object' && plan.statuses !== null)
+      const statuses = (typeof plan.statuses === 'object' && plan.statuses !== null && !Array.isArray(plan.statuses))
         ? { ...(plan.statuses as Record<string, unknown>) }
         : {}
 
-      const prev = (statuses[missionId] as Record<string, unknown>) || {}
+      const prev = statuses[missionId]
       statuses[missionId] = {
         ...(typeof prev === 'object' && prev !== null && !Array.isArray(prev) ? prev : {}),
         status,
@@ -105,18 +125,27 @@ async function handleStatusUpdate({
         data: { statuses: statuses as Parameters<typeof tx.plan.update>[0]['data']['statuses'] },
       })
 
-      capturedStatuses = statuses
+      // Same transaction as the status write: a crash between the two must not leave a
+      // persisted status with no audit row.
+      await tx.auditLog.create({
+        data: {
+          userId: driverId,
+          action: 'status_update',
+          entityType: 'mission',
+          entityId: missionId,
+          changes: { status, timestamp: ts, latitude: latitude ?? null, longitude: longitude ?? null },
+        } as Parameters<typeof tx.auditLog.create>[0]['data'],
+      })
+
+      return { kind: 'ok' as const, statuses: statuses as Record<string, StatusEntry> }
     })
 
-    await db.auditLog.create({
-      data: {
-        userId: driverId,
-        action: 'status_update',
-        entityType: 'mission',
-        entityId: missionId,
-        changes: { status, timestamp: ts, latitude: latitude ?? null, longitude: longitude ?? null },
-      } as Parameters<typeof db.auditLog.create>[0]['data'],
-    })
+    if (outcome.kind === 'no-plan') {
+      return NextResponse.json({ error: 'Aucune tournée enregistrée pour ce chauffeur à cette date' }, { status: 404 })
+    }
+    if (outcome.kind === 'not-in-plan') {
+      return NextResponse.json({ error: 'Mission absente de la tournée de ce chauffeur' }, { status: 404 })
+    }
 
     log.info('Status updated', { driverId, missionId, status, date })
 
@@ -128,25 +157,20 @@ async function handleStatusUpdate({
         select: { type: true, clientName: true, wasteTypeLabel: true, address: true },
       }).catch(() => null)
 
-      if (capturedStatuses) {
-        void collectInterventionMetric({
-          tenantId,
-          driverId,
-          missionId,
+      void collectInterventionMetric({ tenantId, driverId, missionId, date, statuses: outcome.statuses })
+
+      // Synthetic steps (VIDER/PAUSE) have no Mission row and nothing to sync.
+      if (missionForERP) {
+        void syncMissionToERP({
+          tenantId, missionId,
+          missionType: missionForERP.type,
+          clientName: missionForERP.clientName ?? '',
+          wasteType: missionForERP.wasteTypeLabel ?? undefined,
           date,
-          statuses: capturedStatuses as Record<string, { status: string; en_routeAt?: string; arrivedAt?: string; startedAt?: string; doneAt?: string; lat?: number; lng?: number }>,
+          driverName: driverFullName,
+          durationMin: 0,
         })
       }
-
-      void syncMissionToERP({
-        tenantId, missionId,
-        missionType: missionForERP?.type ?? '',
-        clientName: missionForERP?.clientName ?? '',
-        wasteType: missionForERP?.wasteTypeLabel ?? undefined,
-        date,
-        driverName: driverFullName,
-        durationMin: 0,
-      })
     }
     if (status === 'en_route') {
       void emitEvent(tenantId, 'driver.en_route', { missionId, driverId, driverName: driverFullName, date })

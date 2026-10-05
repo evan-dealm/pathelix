@@ -12,15 +12,15 @@ const log = createLogger('/api/users')
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const t0       = Date.now()
-  const { role } = getRequestContext(req)
+  const { role, userId } = getRequestContext(req)
 
-  if (role !== 'admin' && role !== 'superadmin') {
-    return NextResponse.json({ error: 'Accès réservé aux administrateurs' }, { status: 403 })
+  if (!(await hasPermission(userId, role, 'manage_users'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
   const tenantId = getTenantId(req)
   const params   = req.nextUrl.searchParams
   const page     = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
-  const limit    = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))
+  const limit    = Math.min(500, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))
 
   try {
     const db = getTenantDb(tenantId)
@@ -70,11 +70,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const tenantId     = getTenantId(req)
     const { password, ...rest } = parsed.data
+    // Only an admin may create admins (see users/[id]/route.ts canManageTarget).
+    if (rest.role === 'ADMIN' && role !== 'admin' && role !== 'superadmin') {
+      return NextResponse.json({ error: 'Seul un administrateur peut créer un compte administrateur' }, { status: 403 })
+    }
+    const userDb = getTenantDb(tenantId)
+    if (rest.driverRef && !(await userDb.driver.findFirst({ where: { id: rest.driverRef }, select: { id: true } }))) {
+      return NextResponse.json({ error: 'Chauffeur lié introuvable' }, { status: 422 })
+    }
     const passwordHash = await bcrypt.hash(password, 12)
 
-    const userDb = getTenantDb(tenantId)
     const user = await userDb.user.create({
-      data: { ...rest, passwordHash } as Parameters<typeof userDb.user.create>[0]['data'],
+      data: { ...rest, email: rest.email.trim().toLowerCase(), passwordHash } as Parameters<typeof userDb.user.create>[0]['data'],
       select: {
         id: true, tenantId: true, email: true, role: true,
         firstName: true, lastName: true, driverRef: true,

@@ -46,9 +46,27 @@ describe('in-memory rate limiter', () => {
 })
 
 describe('getClientIp', () => {
-  it('préfère X-Forwarded-For', () => {
+  // Changed on purpose: this used to assert the LEFT-most entry ('1.2.3.4'), which is whatever
+  // the client chose to send — rotating it bypassed every IP limiter (login brute force). Our
+  // reverse proxy appends the address it saw, so the trustworthy entry is the right-most one.
+  it('utilise l\'entrée X-Forwarded-For ajoutée par notre proxy (la plus à droite)', () => {
     const h = new Headers({ 'x-forwarded-for': '1.2.3.4, 5.6.7.8' })
-    expect(getClientIp(h)).toBe('1.2.3.4')
+    expect(getClientIp(h)).toBe('5.6.7.8')
+  })
+
+  it('ignore une entrée X-Forwarded-For forgée par le client', () => {
+    const a = getClientIp(new Headers({ 'x-forwarded-for': '10.0.0.1, 203.0.113.9' }))
+    const b = getClientIp(new Headers({ 'x-forwarded-for': '10.0.0.2, 203.0.113.9' }))
+    expect(a).toBe(b)
+  })
+
+  it('remonte de TRUSTED_PROXY_COUNT sauts derrière plusieurs proxys', () => {
+    process.env.TRUSTED_PROXY_COUNT = '2'
+    try {
+      expect(getClientIp(new Headers({ 'x-forwarded-for': 'spoof, 198.51.100.4, 10.0.0.5' }))).toBe('198.51.100.4')
+    } finally {
+      delete process.env.TRUSTED_PROXY_COUNT
+    }
   })
 
   it('utilise X-Real-IP si XFF absent', () => {

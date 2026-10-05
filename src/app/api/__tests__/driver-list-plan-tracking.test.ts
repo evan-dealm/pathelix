@@ -32,6 +32,7 @@ vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () =
 vi.mock('@/lib/data/context', () => ({
   getTenantId:       vi.fn(() => 'tenant-test'),
   getRequestContext: vi.fn(() => ({ tenantId: 'tenant-test', userId: 'user-1', role: 'admin', requestId: 'r1' })),
+  checkTenantSuspension: vi.fn(async () => null),
 }))
 
 vi.mock('@/lib/logger', () => ({
@@ -69,7 +70,6 @@ vi.mock('@/lib/vrp/routeCost', () => ({
 import { GET as driverListGET }                        from '@/app/api/driver-list/route'
 import { GET as driverPlanGET }                        from '@/app/api/driver-plan/[id]/route'
 import { POST as redistributePOST }                    from '@/app/api/redistribute/route'
-import { GET as trackingGET, POST as trackingPOST }   from '@/app/api/tracking/route'
 import { verifySession }                               from '@/lib/session'
 import { getRequestContext }                           from '@/lib/data/context'
 
@@ -282,93 +282,4 @@ describe('POST /api/redistribute', () => {
   })
 })
 
-describe('POST /api/tracking', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('returns existing token when mission already has one (200)', async () => {
-    mockPrisma.mission.findFirst.mockResolvedValue({ id: 'm-1', trackingToken: 'existing-token' })
-
-    const res  = await trackingPOST(makePost('http://localhost:3000/api/tracking', { missionId: 'm-1' }))
-    const json = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(json.token).toBe('existing-token')
-  })
-
-  it('creates new tracking token (200)', async () => {
-    mockPrisma.mission.findFirst.mockResolvedValue({ id: 'm-1', trackingToken: null })
-    mockPrisma.mission.update.mockResolvedValue({ id: 'm-1', trackingToken: 'mock-jwt-token' })
-
-    const res  = await trackingPOST(makePost('http://localhost:3000/api/tracking', { missionId: 'm-1' }))
-    const json = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(json.token).toBe('mock-jwt-token')
-  })
-
-  it('returns 404 when mission not found', async () => {
-    mockPrisma.mission.findFirst.mockResolvedValue(null)
-
-    const res = await trackingPOST(makePost('http://localhost:3000/api/tracking', { missionId: 'nope' }))
-    expect(res.status).toBe(404)
-  })
-
-  it('returns 400 for invalid JSON', async () => {
-    const res = await trackingPOST(makeBadJson('http://localhost:3000/api/tracking'))
-    expect(res.status).toBe(400)
-  })
-})
-
-describe('GET /api/tracking', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockPrisma.plan.findMany.mockResolvedValue([])
-  })
-
-  it('returns mission status for valid token (200)', async () => {
-    mockPrisma.mission.findFirst.mockResolvedValue({
-      id: 'm-1', type: 'POSER', address: '10 rue de Lyon', clientName: 'Acme',
-      estimatedDurationMin: 30, completedAt: null, cancelledAt: null,
-      driverComment: null, actualDurationMin: null, tenantId: 'tenant-test',
-    })
-
-    const res  = await trackingGET(makeGet('http://localhost:3000/api/tracking?token=valid-token'))
-    const json = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(json.mission.id).toBe('m-1')
-    expect(json.mission.status).toBe('in_progress')
-  })
-
-  it('returns completed status when completedAt is set', async () => {
-    mockPrisma.mission.findFirst.mockResolvedValue({
-      id: 'm-1', type: 'POSER', address: 'addr', clientName: null,
-      completedAt: new Date(), cancelledAt: null, driverComment: null, actualDurationMin: null,
-    })
-
-    const res  = await trackingGET(makeGet('http://localhost:3000/api/tracking?token=valid-token'))
-    const json = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(json.mission.status).toBe('completed')
-  })
-
-  it('returns 400 when token param missing', async () => {
-    const res = await trackingGET(makeGet('http://localhost:3000/api/tracking'))
-    expect(res.status).toBe(400)
-  })
-
-  it('returns 404 for invalid token', async () => {
-    mockPrisma.mission.findFirst.mockResolvedValue(null)
-
-    const res = await trackingGET(makeGet('http://localhost:3000/api/tracking?token=bad-token'))
-    expect(res.status).toBe(404)
-  })
-
-  it('returns 500 on DB error', async () => {
-    mockPrisma.mission.findFirst.mockRejectedValue(new Error('DB fail'))
-
-    const res = await trackingGET(makeGet('http://localhost:3000/api/tracking?token=tok'))
-    expect(res.status).toBe(500)
-  })
-})
+// POST/GET /api/tracking are covered in tracking.test.ts (opaque tokens, expiry, staff-only creation).

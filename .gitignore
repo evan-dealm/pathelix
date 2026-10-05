@@ -40,3 +40,6 @@ load-tests/results/
 .claude/daemon.pid
 .claude/daemon-session.json
 .manualtest/
+
+# ─── Uploaded files (tenant-namespaced, served by /api/files) ──────────────────
+/data/

@@ -7,7 +7,9 @@ const mockPrisma = vi.hoisted(() => ({
     findMany:  vi.fn(() => Promise.resolve([])),
     update:    vi.fn(),
     delete:    vi.fn(),
+    count:     vi.fn(async () => 2),
   },
+  driver: { findFirst: vi.fn(async () => ({ id: 'd-1' })) },
   userPermission: {
     findMany:   vi.fn(),
     deleteMany: vi.fn(),
@@ -68,6 +70,8 @@ vi.mock('bcryptjs', () => ({
 }))
 
 vi.mock('@/lib/audit', () => ({ auditAsync: vi.fn() }))
+const mockRevoke = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('@/lib/sessionRevocation', () => ({ revokeUserSessions: mockRevoke, forgetSessionVersion: vi.fn() }))
 vi.mock('@/lib/superadminAudit', () => ({ logSuperadminAction: vi.fn() }))
 
 import { GET as userGET, PUT as userPUT, DELETE as userDELETE } from '@/app/api/users/[id]/route'
@@ -160,6 +164,35 @@ describe('PUT /api/users/[id]', () => {
   // AuditLog, before or after the A7/N22 privilege-escalation fix — a role change (or a user
   // creation) left no queryable trace of who did it. Fixed by wiring auditAsync() in, same
   // pattern as drivers/missions/vehicles.
+  it('a dispatcher with manage_users cannot promote anyone to ADMIN (privilege escalation)', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u-x', role: 'dispatcher', requestId: 'r' } as never)
+    mockPrisma.user.findFirst.mockResolvedValue({ ...sampleUser, role: 'DRIVER' })
+    const res = await userPUT(makePut('http://localhost:3000/api/users/u-1', { role: 'ADMIN' }), makeParams('u-1'))
+    expect(res.status).toBe(403)
+    expect(mockPrisma.user.update).not.toHaveBeenCalled()
+  })
+
+  it('a dispatcher with manage_users cannot reset an admin password', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u-x', role: 'dispatcher', requestId: 'r' } as never)
+    mockPrisma.user.findFirst.mockResolvedValue({ ...sampleUser, role: 'ADMIN' })
+    const res = await userPUT(makePut('http://localhost:3000/api/users/u-1', { password: 'a-very-long-password' }), makeParams('u-1'))
+    expect(res.status).toBe(403)
+  })
+
+  it('refuses to demote the last admin', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue({ ...sampleUser, role: 'ADMIN' })
+    mockPrisma.user.count.mockResolvedValueOnce(1)
+    const res = await userPUT(makePut('http://localhost:3000/api/users/u-1', { role: 'DRIVER' }), makeParams('u-1'))
+    expect(res.status).toBe(409)
+  })
+
+  it('revokes the user\'s sessions when its role or password changes', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue({ ...sampleUser, role: 'DISPATCHER' })
+    mockPrisma.user.update.mockResolvedValue({ ...sampleUser, role: 'DRIVER' })
+    await userPUT(makePut('http://localhost:3000/api/users/u-1', { role: 'DRIVER' }), makeParams('u-1'))
+    expect(mockRevoke).toHaveBeenCalledWith('u-1')
+  })
+
   it('logs a role change to the audit trail with before/after values', async () => {
     mockPrisma.user.findFirst.mockResolvedValue(sampleUser) // role: 'admin'
     mockPrisma.user.update.mockResolvedValue({ ...sampleUser, role: 'DISPATCHER' })
@@ -226,6 +259,36 @@ describe('PUT /api/users/[id]', () => {
 
 describe('DELETE /api/users/[id]', () => {
   beforeEach(() => { vi.clearAllMocks() })
+
+  it('refuses to delete the last admin of the tenant', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue({ ...sampleUser, id: 'u-9', role: 'ADMIN' })
+    mockPrisma.user.count.mockResolvedValueOnce(1)
+    const res = await userDELETE(makeDeleteReq('http://localhost:3000/api/users/u-9'), makeParams('u-9'))
+    expect(res.status).toBe(409)
+    expect(mockPrisma.user.delete).not.toHaveBeenCalled()
+  })
+
+  it('refuses self-deletion', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u-1', role: 'admin', requestId: 'r' } as never)
+    mockPrisma.user.findFirst.mockResolvedValue(sampleUser)
+    const res = await userDELETE(makeDeleteReq('http://localhost:3000/api/users/u-1'), makeParams('u-1'))
+    expect(res.status).toBe(409)
+  })
+
+  it('a dispatcher with manage_users cannot delete an admin', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u-x', role: 'dispatcher', requestId: 'r' } as never)
+    mockPrisma.user.findFirst.mockResolvedValue({ ...sampleUser, id: 'u-2', role: 'ADMIN' })
+    const res = await userDELETE(makeDeleteReq('http://localhost:3000/api/users/u-2'), makeParams('u-2'))
+    expect(res.status).toBe(403)
+    expect(mockPrisma.user.delete).not.toHaveBeenCalled()
+  })
+
+  it('revokes the deleted user\'s sessions', async () => {
+    mockPrisma.user.findFirst.mockResolvedValue(sampleUser)
+    mockPrisma.user.delete.mockResolvedValue(sampleUser)
+    await userDELETE(makeDeleteReq('http://localhost:3000/api/users/u-1'), makeParams('u-1'))
+    expect(mockRevoke).toHaveBeenCalledWith('u-1')
+  })
 
   it('deletes user (200)', async () => {
     mockPrisma.user.findFirst.mockResolvedValue(sampleUser)

@@ -28,24 +28,33 @@ vi.mock('@/lib/metricCollector',     () => ({ collectInterventionMetric:  mockCo
 vi.mock('@/lib/integrationERP',      () => ({ syncMissionToERP:           mockSyncERP  }))
 
 // Only exercised by requests carrying an Idempotency-Key header (see idempotency.test.ts for
-// full unit coverage of withIdempotency itself) — a plain in-memory fake is enough here to prove
-// the real route wiring actually prevents a duplicate side effect (double ERP sync/audit log).
-const idempotencyStore = vi.hoisted(() => new Map<string, { status: number; response: unknown }>())
-const mockIdemFindUnique = vi.hoisted(() => vi.fn(async ({ where }: { where: { tenantId_key: { tenantId: string; key: string } } }) =>
-  idempotencyStore.get(`${where.tenantId_key.tenantId}:${where.tenantId_key.key}`) ?? null))
-const mockIdemCreate = vi.hoisted(() => vi.fn(async ({ data }: { data: { key: string; status: number; response: unknown } }) => {
-  idempotencyStore.set(`t1:${data.key}`, { status: data.status, response: data.response })
-  return data
+// full unit coverage of withIdempotency itself) — an in-memory table with the real
+// (tenantId, key) uniqueness is enough to prove the route wiring prevents a duplicate side effect.
+const idemRows = vi.hoisted(() => new Map<string, Record<string, unknown>>())
+const idemDb = vi.hoisted(() => ({
+  create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    const id = String(data.key)
+    if (idemRows.has(id)) throw Object.assign(new Error('unique'), { code: 'P2002' })
+    idemRows.set(id, { ...data, createdAt: new Date() })
+    return data
+  }),
+  findUnique: vi.fn(async ({ where }: { where: { tenantId_key: { key: string } } }) => idemRows.get(where.tenantId_key.key) ?? null),
+  updateMany: vi.fn(async ({ where, data }: { where: { key: string }; data: Record<string, unknown> }) => {
+    const row = idemRows.get(where.key); if (row) Object.assign(row, data); return { count: row ? 1 : 0 }
+  }),
+  deleteMany: vi.fn(async ({ where }: { where: { key: string } }) => ({ count: idemRows.delete(where.key) ? 1 : 0 })),
 }))
+const mockQueryRaw = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => [] as unknown[]))
 vi.mock('@/lib/tenantDb', () => ({
   unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
   getTenantDb: () => ({
-    idempotencyKey: { findUnique: mockIdemFindUnique, create: mockIdemCreate },
+    idempotencyKey: idemDb,
     auditLog:       { create: mockAuditLogCreate },
     mission:        { findFirst: mockMissionFindFirst },
     $transaction:   mockTransaction,
   }),
 }))
+vi.mock('@/lib/data/context', () => ({ checkTenantSuspension: vi.fn(async () => null) }))
 
 import { POST } from '@/app/api/driver-status/update/route'
 
@@ -63,6 +72,8 @@ function makeReq(body: unknown, sessionCookie?: string, idempotencyKey?: string)
   })
 }
 
+const PLAN = { id: 'plan1', statuses: {}, missions: [{ id: 'm1' }, { id: 'vider-1' }] }
+
 const VALID_BODY = {
   driverId:  'd1',
   missionId: 'm1',
@@ -72,11 +83,15 @@ const VALID_BODY = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  idempotencyStore.clear()
+  idemRows.clear()
+  mockPlanFindFirst.mockReset()
+  mockPlanFindFirst.mockResolvedValue(PLAN)
   // Default: transaction executes the callback
   mockTransaction.mockImplementation(async (fn: (_tx: unknown) => Promise<unknown>) => {
     const tx = {
-      plan: { findFirst: mockPlanFindFirst, update: mockPlanUpdate },
+      plan:     { findFirst: mockPlanFindFirst, update: mockPlanUpdate },
+      auditLog: { create: mockAuditLogCreate },
+      $queryRaw: mockQueryRaw,
     }
     return fn(tx)
   })
@@ -138,7 +153,6 @@ describe('POST /api/driver-status/update', () => {
   it('returns 200 when driver updates own status', async () => {
     mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
-    mockPlanFindFirst.mockResolvedValueOnce({ id: 'plan1', statuses: {} })
     mockPlanUpdate.mockResolvedValueOnce({})
     const res = await POST(makeReq(VALID_BODY, 'tok'))
     expect(res.status).toBe(200)
@@ -150,25 +164,63 @@ describe('POST /api/driver-status/update', () => {
   it('returns 200 when admin updates any driver', async () => {
     mockVerifySession.mockResolvedValueOnce(SESSION_ADMIN)
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Paul', lastName: 'Martin' })
-    mockPlanFindFirst.mockResolvedValueOnce({ id: 'plan2', statuses: {} })
     mockPlanUpdate.mockResolvedValueOnce({})
     const res = await POST(makeReq(VALID_BODY, 'tok'))
     expect(res.status).toBe(200)
   })
 
-  it('skips plan update when plan not found (no error)', async () => {
+  it('returns 404 (status not silently dropped) when no plan exists for that driver/date', async () => {
     mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
     mockPlanFindFirst.mockResolvedValueOnce(null)
     const res = await POST(makeReq(VALID_BODY, 'tok'))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
     expect(mockPlanUpdate).not.toHaveBeenCalled()
+    expect(mockPublish).not.toHaveBeenCalled()
+  })
+
+  it('refuses a status on a mission that is not in this driver\'s plan (no ERP sync for someone else\'s mission)', async () => {
+    mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
+    mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
+    const res = await POST(makeReq({ ...VALID_BODY, missionId: 'foreign-mission', status: 'done' }, 'tok'))
+    expect(res.status).toBe(404)
+    await new Promise(r => setTimeout(r, 0))
+    expect(mockPlanUpdate).not.toHaveBeenCalled()
+    expect(mockSyncERP).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("accepts the 'doing' step the driver app sends (was rejected with 422 before)", async () => {
+    mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
+    mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
+    const res = await POST(makeReq({ ...VALID_BODY, status: 'doing' }, 'tok'))
+    expect(res.status).toBe(200)
+    expect(mockPlanUpdate.mock.calls[0][0].data.statuses.m1).toMatchObject({ status: 'doing' })
+  })
+
+  it('locks the plan row before the read-modify-write and writes the audit row in the same transaction', async () => {
+    mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
+    mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
+    await POST(makeReq(VALID_BODY, 'tok'))
+    expect(mockQueryRaw).toHaveBeenCalledOnce()
+    expect(String(mockQueryRaw.mock.calls[0][0])).toContain('FOR UPDATE')
+    expect(mockAuditLogCreate).toHaveBeenCalledOnce()
+    expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(mockPlanUpdate.mock.invocationCallOrder[0])
+  })
+
+  it('does not sync a synthetic step (VIDER) to the ERP', async () => {
+    mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
+    mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
+    mockMissionFindFirst.mockResolvedValueOnce(null)
+    const res = await POST(makeReq({ ...VALID_BODY, missionId: 'vider-1', status: 'done' }, 'tok'))
+    expect(res.status).toBe(200)
+    await new Promise(r => setTimeout(r, 0))
+    expect(mockSyncERP).not.toHaveBeenCalled()
   })
 
   it('emits events and metrics when status=done', async () => {
     mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
-    mockPlanFindFirst.mockResolvedValueOnce({ id: 'plan3', statuses: {} })
     mockPlanUpdate.mockResolvedValueOnce({})
     mockMissionFindFirst.mockResolvedValueOnce({ type: 'POSER', clientName: 'Client A', wasteTypeLabel: 'OM', address: '1 Rue' })
 
@@ -182,7 +234,6 @@ describe('POST /api/driver-status/update', () => {
   it('emits en_route event when status=en_route', async () => {
     mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
-    mockPlanFindFirst.mockResolvedValueOnce({ id: 'plan4', statuses: {} })
     mockPlanUpdate.mockResolvedValueOnce({})
     await POST(makeReq(VALID_BODY, 'tok'))
     await new Promise(r => setTimeout(r, 0))
@@ -192,7 +243,6 @@ describe('POST /api/driver-status/update', () => {
   it('publishes status update via pubsub', async () => {
     mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'Jean', lastName: 'Dupont' })
-    mockPlanFindFirst.mockResolvedValueOnce({ id: 'plan5', statuses: {} })
     mockPlanUpdate.mockResolvedValueOnce({})
     await POST(makeReq(VALID_BODY, 'tok'))
     expect(mockPublish).toHaveBeenCalledWith(expect.objectContaining({
@@ -215,17 +265,16 @@ describe('POST /api/driver-status/update — idempotent replay (offline queue du
   it('a "done" status sent twice with the same Idempotency-Key only syncs to ERP once', async () => {
     mockVerifySession.mockResolvedValue(SESSION_DRIVER)
     mockDriverFindUnique.mockResolvedValue({ tenantId: 't1', firstName: 'A', lastName: 'B' })
-    mockPlanFindFirst.mockResolvedValue({ id: 'plan-1', statuses: {} })
     mockMissionFindFirst.mockResolvedValue({ type: 'POSER', clientName: 'Client A', wasteTypeLabel: 'OM', address: '1 Rue' })
 
     const body = { ...VALID_BODY, status: 'done' }
-    const req1 = makeReq(body, 'tok', 'idem-key-1')
+    const req1 = makeReq(body, 'tok', 'idem-key-0001')
     const res1 = await POST(req1)
     expect(res1.status).toBe(200)
     expect(mockSyncERP).toHaveBeenCalledTimes(1)
     expect(mockAuditLogCreate).toHaveBeenCalledTimes(1)
 
-    const req2 = makeReq(body, 'tok', 'idem-key-1')
+    const req2 = makeReq(body, 'tok', 'idem-key-0001')
     const res2 = await POST(req2)
     expect(res2.status).toBe(200)
     expect(await res2.json()).toEqual(await res1.clone().json())
@@ -239,11 +288,10 @@ describe('POST /api/driver-status/update — idempotent replay (offline queue du
   it('two different Idempotency-Keys are treated as two genuinely different actions', async () => {
     mockVerifySession.mockResolvedValue(SESSION_DRIVER)
     mockDriverFindUnique.mockResolvedValue({ tenantId: 't1', firstName: 'A', lastName: 'B' })
-    mockPlanFindFirst.mockResolvedValue({ id: 'plan-1', statuses: {} })
     mockMissionFindFirst.mockResolvedValue({ type: 'POSER', clientName: 'Client A', wasteTypeLabel: 'OM', address: '1 Rue' })
 
-    await POST(makeReq({ ...VALID_BODY, status: 'done' }, 'tok', 'idem-key-a'))
-    await POST(makeReq({ ...VALID_BODY, status: 'done' }, 'tok', 'idem-key-b'))
+    await POST(makeReq({ ...VALID_BODY, status: 'done' }, 'tok', 'idem-key-000a'))
+    await POST(makeReq({ ...VALID_BODY, status: 'done' }, 'tok', 'idem-key-000b'))
 
     expect(mockSyncERP).toHaveBeenCalledTimes(2)
   })

@@ -57,15 +57,19 @@ model Tenant {
   trackdechetsAccount    TrackdechetsAccount?
   bsds                   Bsd[]
   idempotencyKeys        IdempotencyKey[]
-
-  @@index([slug])
+  userPermissions        UserPermission[]
 }
 
 model User {
   id           String   @id @default(cuid())
   tenantId     String
-  email        String
+  // Globally unique (stored lowercase): login resolves the account — and therefore the tenant —
+  // from the email alone, so two tenants can never hold the same address.
+  email        String   @unique
   passwordHash String
+  // Bumped on password change / role change / deletion — embedded in the session JWT as `sv` and
+  // checked by the middleware, so revoking a user's access doesn't wait for the 24h expiry.
+  sessionVersion Int    @default(0)
   role         UserRole @default(DRIVER)
   firstName    String   @default("")
   lastName     String   @default("")
@@ -73,10 +77,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  permissions  UserPermission[]
 
-  @@unique([tenantId, email])
   @@index([tenantId])
-  @@index([email])
 }
 
 model Driver {
@@ -272,7 +275,9 @@ model Mission {
   signatureUrl         String?         // signature client (URL image)
   externalRef          String?         // référence ERP / bon de travail
   // ─── [2.B] Tracking public ──────────────────────────────────────────────
-  trackingToken        String?         @unique  // JWT pour la page publique /track/[token]
+  // Opaque random token (never a JWT) for the public page /track/[token], with its own expiry.
+  trackingToken        String?         @unique
+  trackingTokenExpiresAt DateTime?
   // ─── [2.E] Incidents ────────────────────────────────────────────────────
   incidentAt           DateTime?       // signalement incident
   incidentType         String?         // 'accident'|'panne'|'refus'|'acces'|'autre'
@@ -517,6 +522,7 @@ model AuditLog {
   @@index([tenantId, entityType])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, createdAt(sort: Desc)])
+  @@index([createdAt])
 }
 
 model Holiday {
@@ -599,6 +605,8 @@ model UserPermission {
   ///       'api_access', 'manage_integrations'
   permission String
   createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([userId, permission])
   @@index([tenantId, userId])
@@ -778,14 +786,15 @@ model PushSubscription {
   tenantId  String
   userId    String?
   driverId  String?
-  endpoint  String   @unique
+  endpoint  String
   p256dh    String
   auth      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@unique([tenantId, endpoint])
+  @@index([endpoint])
   @@index([userId])
   @@index([driverId])
 }
@@ -917,10 +926,12 @@ model Bsd {
 model IdempotencyKey {
   id         String   @id @default(cuid())
   tenantId   String
-  key        String   // l'UUID généré côté client, jamais réutilisé pour une autre action
-  route      String   // ex: "POST /api/driver-status/update" — diagnostic uniquement
-  status     Int      // code HTTP de la réponse d'origine, rejoué tel quel
-  response   Json     // corps de la réponse d'origine, rejoué tel quel
+  key        String   // UUID généré côté client à la mise en file, jamais régénéré au retry
+  route      String   // ex: "POST /api/driver-status/update" — une clé rejouée sur une autre route est refusée
+  requestHash String  @default("") // SHA-256 du corps : même clé + corps différent = refus (422)
+  // 0 = réservée (traitement en cours), sinon code HTTP de la réponse d'origine rejouée telle quelle
+  status     Int      @default(0)
+  response   Json?    // corps de la réponse d'origine, null tant que status = 0
   createdAt  DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

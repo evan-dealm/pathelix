@@ -13,6 +13,8 @@ export interface RequestContext {
   role:      string
   requestId: string
   trade:     string | null
+  /** Driver record bound to a driver session (from the verified JWT), null for staff. */
+  driverRef?: string | null
 }
 
 export function getRequestContext(req: NextRequest): RequestContext {
@@ -29,6 +31,7 @@ export function getRequestContext(req: NextRequest): RequestContext {
     role:      req.headers.get('x-user-role')  ?? 'driver',
     requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
     trade:     req.headers.get('x-tenant-trade') || null,
+    driverRef: req.headers.get('x-driver-ref') || null,
   }
 }
 

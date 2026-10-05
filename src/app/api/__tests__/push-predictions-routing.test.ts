@@ -129,7 +129,26 @@ describe('POST /api/push/subscribe', () => {
     expect(mockPrisma.pushSubscription.upsert).not.toHaveBeenCalled()
   })
 
+  it('rejects an endpoint that is not a browser push service (SSRF)', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'user-1', role: 'admin', requestId: 'req-1', trade: null })
+    for (const endpoint of ['http://fcm.googleapis.com/x', 'https://169.254.169.254/latest', 'https://internal.local/push', 'https://fcm.googleapis.com.evil.com/x']) {
+      const res = await pushSubPOST(makePost('http://localhost/api/push/subscribe', { endpoint, keys: { p256dh: 'k', auth: 'a' } }))
+      expect(res.status).toBe(422)
+    }
+    expect(mockPrisma.pushSubscription.upsert).not.toHaveBeenCalled()
+  })
+
+  it("forbids a driver from subscribing to another driver's notifications", async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'user-1', role: 'driver', driverRef: 'd-1', requestId: 'req-1', trade: null })
+    mockPrisma.driver.findFirst.mockResolvedValue({ id: 'd-2' })
+    const res = await pushSubPOST(makePost('http://localhost/api/push/subscribe', {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: 'k', auth: 'a' }, driverId: 'd-2',
+    }))
+    expect(res.status).toBe(403)
+  })
+
   it('saves subscription when driverId belongs to this tenant', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'user-1', role: 'admin', requestId: 'req-1', trade: null })
     mockPrisma.driver.findFirst.mockResolvedValue({ id: 'd-1' })
     mockPrisma.pushSubscription.upsert.mockResolvedValue({})
     const res = await pushSubPOST(makePost('http://localhost/api/push/subscribe', {

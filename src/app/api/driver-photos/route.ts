@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import path from 'node:path'
-import fs from 'node:fs/promises'
+import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
-import { verifySession, SESSION_COOKIE } from '@/lib/session'
-import { unscopedPrisma } from '@/lib/tenantDb'
+import { verifySession, SESSION_COOKIE, type SessionPayload } from '@/lib/session'
+import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 import { withIdempotency } from '@/lib/idempotency'
+import { canActForDriver, planContainsMission } from '@/lib/driverAccess'
+import { deleteUpload, detectImageExt, listUploads, safeId, uploadUrl, writeUpload } from '@/lib/uploadStorage'
 
 const log = createLogger('/api/driver-photos')
 
@@ -12,86 +13,75 @@ const useMock = process.env.USE_MOCK_DATA !== 'false'
 
 const _mockPhotos = new Map<string, string>()
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'photos')
+const SAFE_ID = /^[a-zA-Z0-9_-]{1,100}$/
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+/** Signatures share the photo pipeline under `<missionId>_sig`. */
+const SIG_SUFFIX = '_sig'
 
-const JPEG_MAGIC = [0xff, 0xd8, 0xff]
-const PNG_MAGIC  = [0x89, 0x50, 0x4e, 0x47]
-const GIF_MAGIC  = [0x47, 0x49, 0x46, 0x38]
+const PhotoSchema = z.object({
+  driverId:  z.string().regex(SAFE_ID),
+  date:      z.string().regex(DATE_RE),
+  missionId: z.string().regex(SAFE_ID),
+  dataUrl:   z.string().regex(/^data:image\/(jpeg|png|webp|gif);base64,/).max(5_500_000, 'Image trop volumineuse (max 4 MB)'),
+})
 
-function isValidImageBuffer(buf: Buffer): boolean {
-  if (buf.length >= 4 && PNG_MAGIC.every((b, i) => buf[i] === b))  return true
-  if (buf.length >= 3 && JPEG_MAGIC.every((b, i) => buf[i] === b)) return true
-  if (buf.length >= 4 && GIF_MAGIC.every((b, i) => buf[i] === b))  return true
-  // WEBP: "RIFF"....."WEBP" — the middle 4 bytes are a little-endian chunk size, not checked
-  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return true
-  return false
+function photoPrefix(driverId: string, date: string): string {
+  return `${safeId(driverId)}_${date}_`
 }
 
-async function ensureUploadDir(): Promise<void> {
-  await fs.mkdir(UPLOAD_DIR, { recursive: true })
-}
+type Access =
+  | { ok: true; tenantId: string; session: SessionPayload }
+  | { ok: false; response: NextResponse }
 
-function photoKey(driverId: string, date: string, missionId: string): string {
-  return `${driverId}|${date}|${missionId}`
-}
-
-function photoFilename(driverId: string, date: string, missionId: string): string {
-
-  const safe = (s: string) => s.replace(/[^a-zA-Z0-9_\-]/g, '_')
-  return `${safe(driverId)}_${safe(date)}_${safe(missionId)}.jpg`
-}
-
-async function verifyDriverTenant(req: NextRequest, driverId: string): Promise<{ ok: true; tenantId: string } | { ok: false; response: NextResponse }> {
+/**
+ * Session + ownership: staff of the driver's tenant, or that driver itself — a driver can never
+ * read, overwrite or delete a colleague's photos/signatures.
+ */
+async function checkAccess(req: NextRequest, driverId: string): Promise<Access> {
   const token   = req.cookies.get(SESSION_COOKIE)?.value ?? null
   const session = token ? await verifySession(token) : null
   if (!session) return { ok: false, response: NextResponse.json({ error: 'Non authentifié' }, { status: 401 }) }
 
-  if (!useMock) {
-    // Tenant not yet known here — verifying which tenant this driverId belongs to is the point
-    // of this lookup, so it must run unscoped, then compared against the session's tenantId.
-    const driver = await unscopedPrisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true } })
-    if (!driver || driver.tenantId !== session.tenantId) {
-      return { ok: false, response: NextResponse.json({ error: 'Chauffeur introuvable ou accès refusé' }, { status: 403 }) }
-    }
+  if (useMock) return { ok: true, tenantId: session.tenantId, session }
+
+  // Tenant not yet known here — this lookup is what determines it, then compared to the session.
+  const driver = await unscopedPrisma.driver.findUnique({ where: { id: driverId }, select: { tenantId: true } })
+  if (!driver || !canActForDriver(session, driverId, driver.tenantId)) {
+    return { ok: false, response: NextResponse.json({ error: 'Chauffeur introuvable ou accès refusé' }, { status: 403 }) }
   }
-  return { ok: true, tenantId: session.tenantId }
+  return { ok: true, tenantId: driver.tenantId, session }
+}
+
+function baseMissionId(missionId: string): string {
+  return missionId.endsWith(SIG_SUFFIX) ? missionId.slice(0, -SIG_SUFFIX.length) : missionId
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { searchParams } = req.nextUrl
-  const driverId  = searchParams.get('driverId')
-  const date      = searchParams.get('date')
-
-  if (!driverId || !date) {
+  const driverId = req.nextUrl.searchParams.get('driverId') ?? ''
+  const date     = req.nextUrl.searchParams.get('date') ?? ''
+  if (!SAFE_ID.test(driverId) || !DATE_RE.test(date)) {
     return NextResponse.json({ error: 'driverId et date requis' }, { status: 400 })
   }
 
-  const check = await verifyDriverTenant(req, driverId)
-  if (!check.ok) return check.response
+  const access = await checkAccess(req, driverId)
+  if (!access.ok) return access.response
 
   if (useMock) {
     const result: Record<string, string> = {}
     for (const [key, url] of _mockPhotos.entries()) {
-      if (key.startsWith(`${driverId}|${date}|`)) {
-        const missionId = key.split('|')[2]
-        result[missionId] = url
-      }
+      const [d, dt, mid] = key.split('|')
+      if (d === driverId && dt === date) result[mid] = url
     }
     return NextResponse.json(result)
   }
 
   try {
-    await ensureUploadDir()
-    const files  = await fs.readdir(UPLOAD_DIR)
-    const prefix = photoFilename(driverId, date, '').replace('.jpg', '')
+    const prefix = photoPrefix(driverId, date)
     const result: Record<string, string> = {}
-
-    for (const f of files) {
-      if (f.startsWith(prefix)) {
-
-        const missionId = f.replace(prefix, '').replace('.jpg', '')
-        result[missionId] = `/uploads/photos/${f}`
-      }
+    for (const name of await listUploads(access.tenantId, 'photos')) {
+      if (!name.startsWith(prefix)) continue
+      const missionId = name.slice(prefix.length).replace(/\.[a-z]+$/, '')
+      result[missionId] = uploadUrl(access.tenantId, 'photos', name)
     }
     return NextResponse.json(result)
   } catch (err) {
@@ -102,70 +92,53 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: unknown
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 })
-  }
+  try { body = await req.json() }
+  catch { return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 }) }
 
-  const { driverId, date, missionId, dataUrl } = body as Record<string, unknown>
-
-  const SAFE_ID_REGEX = /^[a-zA-Z0-9_\-]{1,100}$/
-
-  if (
-    typeof driverId  !== 'string' || !driverId  ||
-    typeof date      !== 'string' || !date      ||
-    typeof missionId !== 'string' || !missionId ||
-    typeof dataUrl   !== 'string' || !/^data:image\/(jpeg|png|webp|gif);base64,/.test(dataUrl)
-  ) {
+  const parsed = PhotoSchema.safeParse(body)
+  if (!parsed.success) {
+    const tooBig = parsed.error.issues.some(i => i.path[0] === 'dataUrl' && i.code === 'too_big')
     return NextResponse.json(
-      { error: 'driverId, date, missionId et dataUrl (image) requis' },
-      { status: 400 },
+      { error: tooBig ? 'Image trop volumineuse (max 4 MB)' : 'driverId, date, missionId et dataUrl (image) requis' },
+      { status: tooBig ? 413 : 400 },
     )
   }
+  const { driverId, date, missionId, dataUrl } = parsed.data
 
-  if (!SAFE_ID_REGEX.test(missionId) || !SAFE_ID_REGEX.test(driverId) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json(
-      { error: 'Format de paramètre invalide' },
-      { status: 400 },
-    )
-  }
+  const access = await checkAccess(req, driverId)
+  if (!access.ok) return access.response
 
-  const check = await verifyDriverTenant(req, driverId as string)
-  if (!check.ok) return check.response
-
-  if (dataUrl.length > 5_500_000) {
-    return NextResponse.json(
-      { error: 'Image trop volumineuse (max 4 MB)' },
-      { status: 413 },
-    )
-  }
-
-  // The data URL's declared MIME type (checked above) is client-controlled and not trustworthy
-  // on its own — verify the decoded bytes are actually one of the accepted image formats before
-  // ever writing them to a statically-served path.
-  const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
-  const buffer      = Buffer.from(base64Data, 'base64')
-  if (!isValidImageBuffer(buffer)) {
+  // The data URL's declared MIME type is client-controlled — the decoded bytes must actually be
+  // one of the accepted image formats, and the stored extension comes from those bytes.
+  const buffer = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+  const ext = detectImageExt(buffer)
+  if (!ext) {
     return NextResponse.json(
       { error: 'Contenu du fichier invalide (ne correspond à aucun format image accepté)' },
       { status: 422 },
     )
   }
 
-  return withIdempotency(req, check.tenantId, 'POST /api/driver-photos', async () => {
+  return withIdempotency(req, access.tenantId, 'POST /api/driver-photos', parsed.data, async () => {
     if (useMock) {
-      _mockPhotos.set(photoKey(driverId, date, missionId), dataUrl)
+      _mockPhotos.set(`${driverId}|${date}|${missionId}`, dataUrl)
       return NextResponse.json({ url: dataUrl })
     }
 
     try {
-      await ensureUploadDir()
+      if (access.session.role === 'driver'
+        && !(await planContainsMission(getTenantDb(access.tenantId), driverId, date, baseMissionId(missionId)))) {
+        return NextResponse.json({ error: 'Mission absente de votre tournée' }, { status: 404 })
+      }
 
-      const filename = photoFilename(driverId, date, missionId)
-      await fs.writeFile(path.join(UPLOAD_DIR, filename), buffer)
-
-      return NextResponse.json({ url: `/uploads/photos/${filename}` })
+      const prefix = photoPrefix(driverId, date)
+      const stem   = `${prefix}${safeId(missionId)}`
+      // One file per mission: drop a previous capture stored under another format.
+      for (const name of await listUploads(access.tenantId, 'photos')) {
+        if (name.startsWith(`${stem}.`)) await deleteUpload(access.tenantId, 'photos', name)
+      }
+      const url = await writeUpload(access.tenantId, 'photos', `${stem}.${ext}`, buffer)
+      return NextResponse.json({ url })
     } catch (err) {
       log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
       return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
@@ -174,28 +147,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
-  const { searchParams } = req.nextUrl
-  const driverId  = searchParams.get('driverId')
-  const date      = searchParams.get('date')
-  const missionId = searchParams.get('missionId')
-
-  if (!driverId || !date || !missionId) {
+  const driverId  = req.nextUrl.searchParams.get('driverId') ?? ''
+  const date      = req.nextUrl.searchParams.get('date') ?? ''
+  const missionId = req.nextUrl.searchParams.get('missionId') ?? ''
+  if (!SAFE_ID.test(driverId) || !DATE_RE.test(date) || !SAFE_ID.test(missionId)) {
     return NextResponse.json({ error: 'driverId, date et missionId requis' }, { status: 400 })
   }
 
-  const check = await verifyDriverTenant(req, driverId)
-  if (!check.ok) return check.response
+  const access = await checkAccess(req, driverId)
+  if (!access.ok) return access.response
 
   if (useMock) {
-    _mockPhotos.delete(photoKey(driverId, date, missionId))
+    _mockPhotos.delete(`${driverId}|${date}|${missionId}`)
     return NextResponse.json({ ok: true })
   }
 
   try {
-    const filename = photoFilename(driverId, date, missionId)
-    await fs.unlink(path.join(UPLOAD_DIR, filename)).catch(err => {
-      log.warn('Failed to delete photo file', { filename, err: err instanceof Error ? err.message : String(err) })
-    })
+    const stem = `${photoPrefix(driverId, date)}${safeId(missionId)}.`
+    for (const name of await listUploads(access.tenantId, 'photos')) {
+      if (name.startsWith(stem)) await deleteUpload(access.tenantId, 'photos', name)
+    }
     return NextResponse.json({ ok: true })
   } catch (err) {
     log.error('DELETE failed', { err: err instanceof Error ? err.message : String(err) })

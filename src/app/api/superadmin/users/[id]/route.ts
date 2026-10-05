@@ -4,6 +4,7 @@ import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { logSuperadminAction } from '@/lib/superadminAudit'
+import { forgetSessionVersion } from '@/lib/sessionRevocation'
 
 const log = createLogger('/api/superadmin/users/[id]')
 
@@ -57,7 +58,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
     if (parsed.data.role)      data.role = parsed.data.role
     if (parsed.data.firstName !== undefined) data.firstName = parsed.data.firstName
     if (parsed.data.lastName !== undefined)  data.lastName = parsed.data.lastName
-    if (parsed.data.email)     data.email = parsed.data.email
+    if (parsed.data.email)     data.email = parsed.data.email.trim().toLowerCase()
     if (parsed.data.driverRef !== undefined) data.driverRef = parsed.data.driverRef
 
     if (parsed.data.password) {
@@ -65,7 +66,9 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       data.passwordHash = await hash(parsed.data.password, 12)
     }
 
+    if (parsed.data.password || parsed.data.role) data.sessionVersion = { increment: 1 }
     const user = await prisma.user.update({ where: { id }, data })
+    forgetSessionVersion(id)
 
     logSuperadminAction({
       superadminId,
@@ -101,6 +104,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     }
 
     await prisma.user.delete({ where: { id } })
+    forgetSessionVersion(id)
 
     logSuperadminAction({
       superadminId,

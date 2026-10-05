@@ -36,7 +36,7 @@ const mockTenantFindUniq = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/db', () => ({
   default: { tenant: { findUnique: mockTenantFindUniq } },
-  prisma:  { user: { findFirst: mockUserFindFirst } },
+  prisma:  { user: { findUnique: mockUserFindFirst } },
 }))
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ describe('POST /api/auth/login — real DB mode', () => {
     vi.mock('bcryptjs', () => ({ compare: mockBcryptCompare }))
     vi.mock('@/lib/db', () => ({
       default: { tenant: { findUnique: mockTenantFindUniq } },
-      prisma:  { user: { findFirst: mockUserFindFirst } },
+      prisma:  { user: { findUnique: mockUserFindFirst } },
     }))
 
     const mod = await import('@/app/api/auth/login/route')
@@ -146,6 +146,19 @@ describe('POST /api/auth/login — real DB mode', () => {
     mockUserFindFirst.mockResolvedValueOnce(null)
     const res = await POST(makeLogin({ email: 'ghost@tenant.com', password: 'pass' }))
     expect(res.status).toBe(401)
+  })
+
+  it('still runs a bcrypt compare for an unknown email (no timing oracle on account existence)', async () => {
+    mockUserFindFirst.mockResolvedValueOnce(null)
+    mockBcryptCompare.mockClear()
+    await POST(makeLogin({ email: 'ghost@tenant.com', password: 'pass' }))
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(1)
+  })
+
+  it('looks the account up by its normalised (lowercase, trimmed) email', async () => {
+    mockUserFindFirst.mockClear()
+    await POST(makeLogin({ email: 'Admin@Tenant.COM', password: 'pass' }))
+    expect(mockUserFindFirst.mock.calls[0][0].where).toEqual({ email: 'admin@tenant.com' })
   })
 
   // ── wrong password ─────────────────────────────────────────────────────────

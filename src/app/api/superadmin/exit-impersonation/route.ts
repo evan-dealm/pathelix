@@ -19,7 +19,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const superadmin = await prisma.user.findUnique({
       where: { id: realSuperadminId },
-      select: { id: true, tenantId: true, role: true },
+      select: { id: true, tenantId: true, role: true, sessionVersion: true },
     })
 
     if (!superadmin || superadmin.role !== 'SUPERADMIN') {
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       sub:      superadmin.id,
       role:     'superadmin',
       tenantId: superadmin.tenantId,
+      sv:       superadmin.sessionVersion,
     })
 
     log.info('Exited impersonation', { superadminId: superadmin.id })

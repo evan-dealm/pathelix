@@ -21,6 +21,8 @@ export interface SessionPayload {
   tenantId:   string
   driverRef?: string
   trade?:     string
+  /** User.sessionVersion at sign time — the middleware rejects the token once the user's version moves on. */
+  sv?:        number
   iat?:       number
   exp?:       number
 }
@@ -132,14 +134,20 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
       !VALID_ROLES.includes(raw.role as typeof VALID_ROLES[number])
     ) return null
 
+    // Legacy tracking links were signed with this same key (sub = "track:<missionId>") and so
+    // verified as driver sessions. They are customer-facing — never a valid session.
+    if ((raw.sub as string).startsWith('track:')) return null
+
     const tenantStr = raw.tenantId as string
     if (tenantStr.length > 64 || !TENANT_ID_RE.test(tenantStr)) return null
 
     const nowSec = Math.floor(Date.now() / 1000)
     const CLOCK_SKEW = 60
-    const exp = typeof raw.exp === 'number' ? raw.exp : undefined
+    // exp is mandatory: signSession always sets it, a token without one is never accepted.
+    if (typeof raw.exp !== 'number') return null
+    const exp = raw.exp
     const iat = typeof raw.iat === 'number' ? raw.iat : undefined
-    if (exp && exp < nowSec) return null
+    if (exp < nowSec) return null
 
     if (iat && iat > nowSec + CLOCK_SKEW) return null
 
@@ -151,6 +159,7 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
       tenantId:  raw.tenantId as string,
       driverRef: (typeof raw.driverRef === 'string' && raw.driverRef) || undefined,
       trade:     (typeof raw.trade === 'string' && raw.trade) || undefined,
+      sv:        typeof raw.sv === 'number' ? raw.sv : undefined,
       iat,
       exp,
     }
