@@ -18,11 +18,14 @@ const StatusUpdateSchema = z.object({
   driverId:   z.string().min(1).max(100),
   missionId:  z.string().min(1).max(100),
   date:       z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  status:     z.enum(MISSION_STATUSES),
+  // Optional when only a weighing ticket is recorded on an already-finished step.
+  status:     z.enum(MISSION_STATUSES).optional(),
   timestamp:  z.string().datetime({ offset: true }).optional(),
   latitude:   z.number().min(-90).max(90).optional(),
   longitude:  z.number().min(-180).max(180).optional(),
-})
+  /** Net weight from the weighing ticket (dump/VIDER steps), in kg. */
+  weightKg:   z.number().positive().max(100_000).optional(),
+}).refine(d => d.status !== undefined || d.weightKg !== undefined, { message: 'status ou weightKg requis' })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
 
@@ -41,7 +44,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { driverId, missionId, date, status, timestamp, latitude, longitude } = parsed.data
+  const { driverId, missionId, date, status, timestamp, latitude, longitude, weightKg } = parsed.data
 
   try {
 
@@ -59,7 +62,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (suspended) return suspended
 
     return await withIdempotency(req, tenantId, 'POST /api/driver-status/update', parsed.data, () => handleStatusUpdate({
-      tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, driverFullName,
+      tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, weightKg, driverFullName,
     }))
   } catch (err) {
     log.error('Status update failed', { err: err instanceof Error ? err.message : String(err) })
@@ -72,14 +75,15 @@ interface StatusUpdateParams {
   driverId: string
   missionId: string
   date: string
-  status: MissionStatus
+  status?: MissionStatus
+  weightKg?: number
   timestamp?: string
   latitude?: number
   longitude?: number
   driverFullName: string
 }
 
-type StatusEntry = { status: string; en_routeAt?: string; arrivedAt?: string; startedAt?: string; doingAt?: string; doneAt?: string; lat?: number; lng?: number }
+type StatusEntry = { status: string; weightKg?: number; en_routeAt?: string; arrivedAt?: string; startedAt?: string; doingAt?: string; doneAt?: string; lat?: number; lng?: number }
 
 function planHasMission(missions: unknown, missionId: string): boolean {
   let arr = missions
@@ -88,7 +92,7 @@ function planHasMission(missions: unknown, missionId: string): boolean {
 }
 
 async function handleStatusUpdate({
-  tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, driverFullName,
+  tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, weightKg, driverFullName,
 }: StatusUpdateParams): Promise<NextResponse> {
   try {
     const ts = timestamp || new Date().toISOString()
@@ -113,10 +117,12 @@ async function handleStatusUpdate({
         : {}
 
       const prev = statuses[missionId]
+      const prevEntry = typeof prev === 'object' && prev !== null && !Array.isArray(prev) ? prev as Record<string, unknown> : {}
       statuses[missionId] = {
-        ...(typeof prev === 'object' && prev !== null && !Array.isArray(prev) ? prev : {}),
-        status,
-        [`${status}At`]: ts,
+        ...prevEntry,
+        status: status ?? prevEntry.status ?? 'todo',
+        ...(status ? { [`${status}At`]: ts } : {}),
+        ...(weightKg !== undefined ? { weightKg, weighedAt: ts } : {}),
         ...(latitude !== undefined ? { lat: latitude, lng: longitude } : {}),
       }
 
@@ -130,10 +136,10 @@ async function handleStatusUpdate({
       await tx.auditLog.create({
         data: {
           userId: driverId,
-          action: 'status_update',
+          action: status ? 'status_update' : 'weight_recorded',
           entityType: 'mission',
           entityId: missionId,
-          changes: { status, timestamp: ts, latitude: latitude ?? null, longitude: longitude ?? null },
+          changes: { status: status ?? null, weightKg: weightKg ?? null, timestamp: ts, latitude: latitude ?? null, longitude: longitude ?? null },
         } as Parameters<typeof tx.auditLog.create>[0]['data'],
       })
 
@@ -147,7 +153,9 @@ async function handleStatusUpdate({
       return NextResponse.json({ error: 'Mission absente de la tournée de ce chauffeur' }, { status: 404 })
     }
 
-    log.info('Status updated', { driverId, missionId, status, date })
+    log.info('Status updated', { driverId, missionId, status, weightKg, date })
+    // Weight-only update on an already-reported step: no status side effects to replay.
+    if (!status) return NextResponse.json({ ok: true, weightKg, timestamp: ts })
 
     if (status === 'done') {
       void emitEvent(tenantId, 'mission.done', { missionId, driverId, driverName: driverFullName, date, status })

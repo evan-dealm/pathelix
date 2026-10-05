@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { driverOwnsMission, isStaff } from '@/lib/driverAccess'
+import { withIdempotency } from '@/lib/idempotency'
 import { createLogger } from '@/lib/logger'
 
 const log = createLogger('/api/mission-comments')
@@ -50,10 +51,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Mission absente de votre tournée' }, { status: 403 })
     }
 
-    const comment = await db.missionComment.create({
-      data: { userId, role, ...parsed.data } as Parameters<typeof db.missionComment.create>[0]['data'],
+    // Comments can be written offline by drivers and replayed by the sync queue.
+    return await withIdempotency(req, tenantId, 'POST /api/mission-comments', parsed.data, async () => {
+      const comment = await db.missionComment.create({
+        data: { userId, role, ...parsed.data } as Parameters<typeof db.missionComment.create>[0]['data'],
+      })
+      return NextResponse.json(comment, { status: 201 })
     })
-    return NextResponse.json(comment, { status: 201 })
   } catch (err) {
     log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

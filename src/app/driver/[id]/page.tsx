@@ -2,56 +2,29 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import { usePlanningStore } from '@/stores/planningStore'
 import { calcTour } from '@/lib/algorithm'
+import type { Driver, PlannedMission, Exutoire } from '@/lib/types'
+import { getMissionTypeLabel } from '@/lib/trades'
 import {
-  type Driver, type PlannedMission, type Exutoire,
-} from '@/lib/types'
-import { getMissionTypeIcon, getMissionTypeLabel } from '@/lib/trades'
-import {
-  enqueueAction, getSyncQueueSize, flushSyncQueue,
-  cacheDayPlan, getCachedDayPlan, getQueuedActions,
+  enqueueAction, sendNow, flushSyncQueue, getQueueStatus, getQueuedActions,
+  retryFailedAction, discardAction, cacheDayPlan, getCachedDayPlan, clearDriverDeviceData,
+  type QueuedAction, type QueueMethod,
 } from '@/lib/syncQueue'
+import { MISSION_STATUSES, isMissionStatus, type MissionStatus } from '@/lib/missionStatus'
 import { compressImage } from '@/lib/imageUtils'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
 import { today } from '@/lib/dateUtils'
+import { SyncBar } from '@/components/driver/SyncBar'
+import { Sheet } from '@/components/driver/Sheet'
+import { SignaturePad } from '@/components/driver/SignaturePad'
+import { IncidentForm, NoteForm, WeightForm } from '@/components/driver/ReportForms'
 import { ScanTicketButton } from '@/components/driver/ScanTicketButton'
-
-function minToHHMM(min: number): string {
-  const h = Math.floor(((min % 1440) + 1440) % 1440 / 60)
-  const m = Math.floor(((min % 1440) + 1440) % 1440 % 60)
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}
-
-function extractExpectedCode(accessNotes: string | null | undefined): string | null {
-  const match = accessNotes?.match(/CODE:([A-Za-z0-9\-_]+)/)
-  return match?.[1] ?? null
-}
-
-function _matchesCode(mission: PlannedMission, input: string): boolean {
-  const trimmed = input.trim()
-  if (!trimmed) return false
-  const expected = extractExpectedCode(mission.accessNotes)
-  if (expected) return trimmed.toLowerCase() === expected.toLowerCase()
-  return true
-}
-
-type MissionStatus = 'todo' | 'en_route' | 'arrived' | 'started' | 'doing' | 'done'
-
-const STATUS_FLOW: MissionStatus[] = ['todo', 'en_route', 'arrived', 'started', 'doing', 'done']
-
-const STATUS_CONFIG: Record<MissionStatus, { label: string; icon: string; bg: string; next: string }> = {
-  todo:     { label: 'En route',         icon: '\u{1F69B}', bg: 'bg-cyan-600 active:bg-cyan-700',    next: 'Demarrer le trajet' },
-  en_route: { label: 'Arrive',           icon: '\u{1F4CD}', bg: 'bg-amber-500 active:bg-amber-600',  next: 'Je suis arrive' },
-  arrived:  { label: 'Debut manoeuvre',   icon: '\u{2699}',  bg: 'bg-orange-500 active:bg-orange-600', next: 'Commencer la manoeuvre' },
-  started:  { label: 'En cours',         icon: '\u{1F4AA}', bg: 'bg-blue-600 active:bg-blue-700',    next: 'Travail en cours' },
-  doing:    { label: 'Termine',          icon: '\u2705',    bg: 'bg-green-600 active:bg-green-700',   next: 'Valider la mission' },
-  done:     { label: 'Mission terminee', icon: '\u2705',    bg: 'bg-green-800',                       next: '' },
-}
+import { STATUS_LABEL, INCIDENT_TYPES, minToHHMM, navigationUrl } from '@/components/driver/driverUi'
 
 type DriverPlanResponse = {
   driver: Driver
   plan: PlannedMission[]
+  statuses?: Record<string, MissionStatus>
   startTime: string
   speedKmh: number
   date: string
@@ -59,702 +32,545 @@ type DriverPlanResponse = {
   exutoires?: Exutoire[]
 }
 
+type SheetKind = 'signature' | 'incident' | 'note' | 'weight' | 'logout' | null
+
+// Each kind of stop has its own short field flow — a dump or a break is not a client job.
+function flowFor(type: string): readonly MissionStatus[] {
+  if (type === 'VIDER') return ['todo', 'en_route', 'arrived', 'done']
+  if (type === 'PAUSE') return ['todo', 'started', 'done']
+  return MISSION_STATUSES
+}
+
+function nextActionLabel(type: string, status: MissionStatus): string | null {
+  const flow = flowFor(type)
+  const next = flow[flow.indexOf(status) + 1]
+  if (!next) return null
+  if (type === 'PAUSE') return next === 'started' ? 'Commencer la pause' : 'Reprendre la route'
+  if (type === 'VIDER' && next === 'done') return 'Vidage terminé'
+  return {
+    en_route: 'Démarrer le trajet', arrived: 'Je suis arrivé', started: 'Commencer la manœuvre',
+    doing: 'Manœuvre terminée', done: 'Valider la mission', todo: '',
+  }[next]
+}
+
+const rank = (s: MissionStatus) => MISSION_STATUSES.indexOf(s)
+
+/** Statuses only move forward: the furthest of the server's and this device's wins. */
+function mergeStatuses(...sources: Array<Record<string, MissionStatus> | undefined>): Record<string, MissionStatus> {
+  const out: Record<string, MissionStatus> = {}
+  for (const src of sources) {
+    for (const [id, st] of Object.entries(src ?? {})) {
+      if (isMissionStatus(st) && (!out[id] || rank(st) > rank(out[id]))) out[id] = st
+    }
+  }
+  return out
+}
+
+function readLocalStatuses(key: string): Record<string, MissionStatus> {
+  try { return JSON.parse(localStorage.getItem(key) ?? '{}') } catch { return {} }
+}
+
+function currentPosition(): Promise<{ latitude: number; longitude: number } | null> {
+  if (!('geolocation' in navigator)) return Promise.resolve(null)
+  return new Promise(resolve => navigator.geolocation.getCurrentPosition(
+    p => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude }),
+    () => resolve(null),
+    { timeout: 3000, enableHighAccuracy: false, maximumAge: 60_000 },
+  ))
+}
+
 export default function DriverPage() {
-  const params   = useParams()
+  const params = useParams()
   const searchParams = useSearchParams()
   const driverId = typeof params.id === 'string' ? params.id : ''
-  const storePlans = usePlanningStore(s => s.plans)
-
-  const [tourDate]   = useState(searchParams?.get('date') || today())
+  const [tourDate] = useState(searchParams?.get('date') || today())
+  const statusKey = `driver-status-${driverId}-${tourDate}`
 
   useGpsTracking({ driverId, intervalMs: 30_000, enabled: Boolean(driverId) })
-  const [apiData, setApiData]   = useState<DriverPlanResponse | null>(null)
-  const [loading, setLoading]   = useState(true)
-  const [apiError, setApiError] = useState<string | null>(null)
-  const exutoires = useMemo(() => apiData?.exutoires ?? [], [apiData])
 
+  const [apiData, setApiData] = useState<DriverPlanResponse | null>(null)
+  const [fromCache, setFromCache] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [statuses, setStatuses] = useState<Record<string, MissionStatus>>({})
-  const [pendingScanMissionId, setPendingScanMissionId] = useState<string | null>(null)
-  const [isOnline, setIsOnline] = useState(true)
-  const [pendingSync, setPendingSync] = useState(0)
+  const [photos, setPhotos] = useState<Record<string, string>>({})
+  const [weights, setWeights] = useState<Record<string, number>>({})
+  const [sheet, setSheet] = useState<SheetKind>(null)
+  const [focusId, setFocusId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
+  // ─── Sync state ────────────────────────────────────────────────────────────
+  const [online, setOnline] = useState(true)
+  const [pending, setPending] = useState(0)
+  const [failed, setFailed] = useState<QueuedAction[]>([])
+  const [authRequired, setAuthRequired] = useState(false)
   const [lastSynced, setLastSynced] = useState<string | null>(null)
-  const [photos, setPhotos]     = useState<Record<string, string>>({})
-  const photoInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
-  const [signatures, setSignatures] = useState<Record<string, string>>({})
-  const sigCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({})
-  const sigDrawing = useRef<Record<string, boolean>>({})
 
-  const updatePendingCount = useCallback(async () => {
-    const count = await getSyncQueueSize()
-    setPendingSync(count)
+  const refreshQueue = useCallback(async () => {
+    try {
+      const s = await getQueueStatus()
+      setPending(s.pending)
+      setFailed(s.failed)
+    } catch { /* IndexedDB unavailable */ }
   }, [])
 
-  const syncLock = useRef(false)
   const syncNow = useCallback(async () => {
-    if (syncLock.current) return
-    syncLock.current = true
     try {
-      const synced = await flushSyncQueue()
-      if (synced > 0) {
-        setLastSynced(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))
-      }
-      await updatePendingCount()
-    } finally {
-      syncLock.current = false
-    }
-  }, [updatePendingCount])
+      const r = await flushSyncQueue(driverId)
+      setAuthRequired(r.authRequired)
+      if (r.synced > 0) setLastSynced(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))
+    } catch { /* retried on the next tick */ }
+    await refreshQueue()
+  }, [driverId, refreshQueue])
 
   useEffect(() => {
-    setIsOnline(navigator.onLine)
-    const on  = () => { setIsOnline(true); void syncNow() }
-    const off = () => setIsOnline(false)
-    window.addEventListener('online',  on)
+    setOnline(navigator.onLine)
+    const on = () => { setOnline(true); void syncNow() }
+    const off = () => setOnline(false)
+    const onQueue = () => { void refreshQueue() }
+    const onSw = (e: MessageEvent) => {
+      if (e.data?.type !== 'SYNC_COMPLETE') return
+      if (e.data.authRequired) setAuthRequired(true)
+      if (e.data.synced > 0) setLastSynced(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))
+      void refreshQueue()
+    }
+    window.addEventListener('online', on)
     window.addEventListener('offline', off)
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
-  }, [syncNow])
-
-  useEffect(() => {
-    if (!('serviceWorker' in navigator)) return
-    function onMessage(e: MessageEvent) {
-      if (e.data?.type === 'SYNC_COMPLETE') {
-        void updatePendingCount()
-        setLastSynced(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))
-      }
+    window.addEventListener('pathelix:sync-queue', onQueue)
+    navigator.serviceWorker?.addEventListener('message', onSw)
+    const tick = setInterval(() => { if (navigator.onLine) void syncNow() }, 15_000)
+    void syncNow()
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+      window.removeEventListener('pathelix:sync-queue', onQueue)
+      navigator.serviceWorker?.removeEventListener('message', onSw)
+      clearInterval(tick)
     }
-    navigator.serviceWorker.addEventListener('message', onMessage)
-    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
-  }, [updatePendingCount])
+  }, [syncNow, refreshQueue])
 
-  useEffect(() => {
-    const id = setInterval(async () => {
-      await updatePendingCount()
-      if (navigator.onLine) void syncNow()
-    }, 15_000)
-    return () => clearInterval(id)
-  }, [syncNow, updatePendingCount])
-
-  const storePlansRef = useRef(storePlans)
-  useEffect(() => { storePlansRef.current = storePlans }, [storePlans])
-
-  const loadData = useCallback(async (dId: string, date: string) => {
-    setLoading(true)
-    setApiError(null)
-    try {
-      const res = await fetch(`/api/driver-plan/${dId}?date=${date}`)
-      if (!res.ok) {
-
-        const cached = await getCachedDayPlan(dId, date)
-        if (cached) {
-          setApiData(cached as DriverPlanResponse)
-          setLoading(false)
-          return
-        }
-        const body: Record<string, unknown> = await res.json().catch(() => ({}))
-        setApiError(typeof body.error === 'string' ? body.error : `Erreur ${res.status}`)
-        setApiData(null)
-        return
-      }
-      const data: DriverPlanResponse = await res.json()
-      setApiData(data)
-
-      void cacheDayPlan(dId, date, data)
-
-      if (data.plan.length === 0) {
-        const storePlan = storePlansRef.current[`${dId}|${date}`] ?? []
-        if (storePlan.length > 0) setApiData(prev => prev ? { ...prev, plan: storePlan } : prev)
-      }
-    } catch {
-
-      const cached = await getCachedDayPlan(dId, date)
-      if (cached) {
-        setApiData(cached as DriverPlanResponse)
-      } else {
-        setApiError('Impossible de contacter le serveur.')
-        setApiData(null)
-      }
-    } finally {
-      setLoading(false)
-    }
+  const flash = useCallback((msg: string) => {
+    setToast(msg)
+    window.setTimeout(() => setToast(t => (t === msg ? null : t)), 3500)
   }, [])
 
-  useEffect(() => {
-    if (driverId) loadData(driverId, tourDate)
-  }, [driverId, tourDate, loadData])
-
-  useEffect(() => {
+  /**
+   * Records an action: queued in IndexedDB (delivered now if online, later otherwise). If the
+   * device can't store it, it is sent directly — and the driver is told if that fails too.
+   */
+  const record = useCallback(async (url: string, body: Record<string, unknown>, label: string, method: QueueMethod = 'POST') => {
     try {
-      const raw = localStorage.getItem(`driver-status-${driverId}-${tourDate}`)
-      if (raw) setStatuses(JSON.parse(raw))
-    } catch {}
-    void updatePendingCount()
-  }, [driverId, tourDate, updatePendingCount])
+      await enqueueAction(url, body, { method, ownerId: driverId, label })
+      void refreshQueue()
+      if (navigator.onLine) window.setTimeout(() => void syncNow(), 300)
+      return true
+    } catch {
+      const ok = navigator.onLine && await sendNow(url, body, method)
+      if (!ok) flash('Impossible d’enregistrer sur ce téléphone hors connexion — réessayez avec du réseau.')
+      return ok
+    }
+  }, [driverId, refreshQueue, syncNow, flash])
 
+  // ─── Loading ───────────────────────────────────────────────────────────────
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    let res: Response
+    try {
+      res = await fetch(`/api/driver-plan/${encodeURIComponent(driverId)}?date=${tourDate}`, { cache: 'no-store' })
+    } catch {
+      // Network failure only: the last copy of today's tour stays usable offline.
+      const cached = await getCachedDayPlan(driverId, tourDate).catch(() => null) as DriverPlanResponse | null
+      if (cached) { setApiData(cached); setFromCache(true) }
+      else setLoadError('Pas de réseau, et la tournée n’a pas encore été chargée sur ce téléphone.')
+      setLoading(false)
+      return
+    }
+    if (res.status === 401) {
+      window.location.href = `/login?from=${encodeURIComponent(`/driver/${driverId}`)}`
+      return
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: unknown }
+      setLoadError(typeof body.error === 'string' ? body.error : `Erreur ${res.status}`)
+      setLoading(false)
+      return
+    }
+    const data = await res.json() as DriverPlanResponse
+    setApiData(data)
+    setFromCache(false)
+    void cacheDayPlan(driverId, tourDate, data).catch(() => undefined)
+    setLoading(false)
+  }, [driverId, tourDate])
+
+  useEffect(() => { if (driverId) void loadData() }, [driverId, loadData])
+
+  // Server statuses + this device's not-yet-synced ones.
+  useEffect(() => {
+    if (!apiData) return
+    setStatuses(mergeStatuses(apiData.statuses, readLocalStatuses(statusKey)))
+  }, [apiData, statusKey])
+
+  // Photos already on the server + those still waiting in the queue.
   useEffect(() => {
     if (!driverId) return
     let cancelled = false
-
-    const serverLoad = fetch(`/api/driver-photos?driverId=${encodeURIComponent(driverId)}&date=${encodeURIComponent(tourDate)}`)
-      .then(r => r.ok ? r.json() as Promise<Record<string, string>> : Promise.resolve({} as Record<string, string>))
+    const server = fetch(`/api/driver-photos?driverId=${encodeURIComponent(driverId)}&date=${tourDate}`)
+      .then(r => r.ok ? r.json() as Promise<Record<string, string>> : {})
       .catch(() => ({} as Record<string, string>))
-
-    // Restore photos/signatures taken offline but not yet synced
-    const pendingLoad = getQueuedActions().then(actions => {
+    const queued = getQueuedActions().then(actions => {
       const acc: Record<string, string> = {}
       for (const a of actions) {
-        if (a.url === '/api/driver-photos' && a.body.driverId === driverId && a.body.date === tourDate) {
-          const mid = a.body.missionId as string
-          const url = a.body.dataUrl as string
-          if (mid && url) acc[mid] = url
+        if (a.url === '/api/driver-photos' && (a.method ?? 'POST') === 'POST' && a.body.driverId === driverId && a.body.date === tourDate) {
+          acc[String(a.body.missionId)] = String(a.body.dataUrl)
         }
       }
       return acc
     }).catch(() => ({} as Record<string, string>))
-
-    Promise.all([serverLoad, pendingLoad]).then(([server, pending]) => {
-      // Server URLs overwrite pending (photo already synced → use persisted URL)
-      if (!cancelled) {
-        setPhotos({ ...pending, ...server })
-        // Restore signatures into state (key ends with _sig)
-        const sigs: Record<string, string> = {}
-        for (const [k, v] of Object.entries(pending)) {
-          if (k.endsWith('_sig')) sigs[k.replace('_sig', '')] = v
-        }
-        if (Object.keys(sigs).length > 0) setSignatures(s => ({ ...sigs, ...s }))
-      }
-    })
-
+    void Promise.all([server, queued]).then(([s, q]) => { if (!cancelled) setPhotos({ ...s, ...q }) })
     return () => { cancelled = true }
   }, [driverId, tourDate])
 
-  const advanceStatus = useCallback((missionId: string) => {
-    setStatuses(prev => {
-      const cur = prev[missionId] ?? 'todo'
-      const curIdx = STATUS_FLOW.indexOf(cur)
-      if (curIdx >= STATUS_FLOW.length - 1) return prev
+  // ─── Derived tour ──────────────────────────────────────────────────────────
+  const driver = apiData?.driver ?? null
+  const steps = useMemo(() => [...(apiData?.plan ?? [])].sort((a, b) => a.sequenceOrder - b.sequenceOrder), [apiData?.plan])
+  const realMissions = useMemo(() => steps.filter(m => !m.isSynthetic), [steps])
+  const doneCount = realMissions.filter(m => statuses[m.id] === 'done').length
+  const current = useMemo(() => steps.find(m => (statuses[m.id] ?? 'todo') !== 'done') ?? null, [steps, statuses])
+  const focused = steps.find(m => m.id === focusId) ?? current
+  const exutoires = useMemo(() => apiData?.exutoires ?? [], [apiData])
 
-      const next = STATUS_FLOW[curIdx + 1]
-      const updated = { ...prev, [missionId]: next }
+  const tour = useMemo(() => {
+    if (!driver || steps.length === 0) return null
+    return calcTour(steps, driver.depotLat, driver.depotLng, apiData?.startTime ?? '07:00', apiData?.speedKmh ?? 50, exutoires.length > 0 ? exutoires : undefined)
+  }, [driver, steps, apiData?.startTime, apiData?.speedKmh, exutoires])
 
-      try { localStorage.setItem(`driver-status-${driverId}-${tourDate}`, JSON.stringify(updated)) } catch {}
+  const stepOf = (m: PlannedMission) => tour?.steps[steps.indexOf(m)]
 
-      const timestamp = new Date().toISOString()
-      const payload: Record<string, unknown> = {
-        driverId, missionId, date: tourDate, status: next, timestamp,
-      }
+  // ─── Actions ───────────────────────────────────────────────────────────────
+  const advance = useCallback(async (m: PlannedMission) => {
+    const cur = statuses[m.id] ?? 'todo'
+    const flow = flowFor(m.type)
+    const next = flow[flow.indexOf(cur) + 1]
+    if (!next) return
+    const updated = { ...statuses, [m.id]: next }
+    setStatuses(updated)
+    try { localStorage.setItem(statusKey, JSON.stringify(updated)) } catch { /* storage blocked */ }
 
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          pos => {
-            payload.latitude = pos.coords.latitude
-            payload.longitude = pos.coords.longitude
-            void enqueueAction('/api/driver-status/update', payload)
-            void updatePendingCount()
-          },
-          () => {
-            void enqueueAction('/api/driver-status/update', payload)
-            void updatePendingCount()
-          },
-          { timeout: 3000, enableHighAccuracy: false },
-        )
-      } else {
-        void enqueueAction('/api/driver-status/update', payload)
-        void updatePendingCount()
-      }
+    const pos = await currentPosition()
+    await record('/api/driver-status/update', {
+      driverId, missionId: m.id, date: tourDate, status: next, timestamp: new Date().toISOString(),
+      ...(pos ?? {}),
+    }, `${m.clientName || m.outletName || getMissionTypeLabel(apiData?.trade, m.type)} : ${STATUS_LABEL[next].toLowerCase()}`)
 
-      if (navigator.onLine) setTimeout(() => void syncNow(), 500)
+    if (next === 'done') {
+      setFocusId(null)
+      if (m.type === 'VIDER') { setFocusId(m.id); setSheet('weight') }
+    }
+  }, [statuses, statusKey, record, driverId, tourDate, apiData?.trade])
 
-      return updated
+  const onPhoto = useCallback(async (m: PlannedMission, file: File) => {
+    const raw = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
     })
-  }, [driverId, tourDate, syncNow, updatePendingCount])
+    const dataUrl = await compressImage(raw, 1280, 0.75)
+    setPhotos(p => ({ ...p, [m.id]: dataUrl }))
+    if (await record('/api/driver-photos', { driverId, date: tourDate, missionId: m.id, dataUrl }, 'Photo')) flash('Photo enregistrée')
+  }, [record, driverId, tourDate, flash])
 
-  const handlePhoto = useCallback((missionId: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = async ev => {
-      const rawUrl = ev.target?.result as string
-      if (!rawUrl) return
-      // Compress to max 1280px JPEG (reduces IDB storage + upload size)
-      const dataUrl = await compressImage(rawUrl, 1280, 0.75)
-      setPhotos(prev => ({ ...prev, [missionId]: dataUrl }))
-      // Queue for reliable offline delivery — replayed automatically on reconnect
-      void enqueueAction('/api/driver-photos', { driverId, date: tourDate, missionId, dataUrl })
-      void updatePendingCount()
-      if (navigator.onLine) setTimeout(() => void syncNow(), 500)
+  const removePhoto = useCallback(async (m: PlannedMission) => {
+    setPhotos(p => { const u = { ...p }; delete u[m.id]; return u })
+    await record('/api/driver-photos', { driverId, date: tourDate, missionId: m.id }, 'Suppression de photo', 'DELETE')
+  }, [record, driverId, tourDate])
+
+  const onSignature = useCallback(async (m: PlannedMission, dataUrl: string) => {
+    setSheet(null)
+    setPhotos(p => ({ ...p, [`${m.id}_sig`]: dataUrl }))
+    if (await record('/api/driver-photos', { driverId, date: tourDate, missionId: `${m.id}_sig`, dataUrl }, 'Signature client')) flash('Signature enregistrée')
+  }, [record, driverId, tourDate, flash])
+
+  const onIncident = useCallback(async (m: PlannedMission, incidentType: string, notes: string) => {
+    setSheet(null)
+    const label = INCIDENT_TYPES.find(t => t.value === incidentType)?.label ?? 'Incident'
+    if (await record('/api/incidents', { missionId: m.id, incidentType, notes }, `Incident : ${label}`)) flash('Incident signalé au dispatch')
+  }, [record, flash])
+
+  const onNote = useCallback(async (m: PlannedMission, content: string) => {
+    setSheet(null)
+    if (await record('/api/mission-comments', { missionId: m.id, content }, 'Note')) flash('Note envoyée au dispatch')
+  }, [record, flash])
+
+  const onWeight = useCallback(async (m: PlannedMission, weightKg: number) => {
+    setSheet(null)
+    setWeights(w => ({ ...w, [m.id]: weightKg }))
+    if (await record('/api/driver-status/update', { driverId, missionId: m.id, date: tourDate, weightKg }, 'Poids du ticket de pesée')) {
+      flash(`Poids enregistré : ${(weightKg / 1000).toLocaleString('fr-FR')} t`)
     }
-    reader.readAsDataURL(file)
-  }, [driverId, tourDate, updatePendingCount, syncNow])
+  }, [record, driverId, tourDate, flash])
 
-  const driver    = apiData?.driver ?? null
-  const startTime = apiData?.startTime ?? '07:00'
-  const speed     = apiData?.speedKmh ?? 50
+  const logout = useCallback(async (force: boolean) => {
+    if (pending > 0 && !force) { setSheet('logout'); return }
+    await clearDriverDeviceData().catch(() => undefined)
+    navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_CACHES' })
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
+    window.location.href = '/login'
+  }, [pending])
 
-  const sorted = useMemo(
-    () => [...(apiData?.plan ?? [])].sort((a, b) => a.sequenceOrder - b.sequenceOrder),
-    [apiData?.plan],
-  )
-
-  const realMissions = useMemo(() => sorted.filter(m => !m.isSynthetic), [sorted])
-  const doneMissions  = realMissions.filter(m => statuses[m.id] === 'done').length
-  const totalMissions = realMissions.length
-
-  const currentMission = useMemo(
-    () => realMissions.find(m => (statuses[m.id] ?? 'todo') !== 'done') ?? null,
-    [realMissions, statuses],
-  )
-  const currentIdx = currentMission ? realMissions.indexOf(currentMission) : -1
-
-  const pendingScanMission = useMemo(
-    () => (pendingScanMissionId ? sorted.find(m => m.id === pendingScanMissionId) ?? null : null),
-    [pendingScanMissionId, sorted],
-  )
-
-  const prevStatusesRef = useRef<Record<string, MissionStatus>>({})
-  useEffect(() => {
-    const prev = prevStatusesRef.current
-    for (const m of sorted) {
-      const wasStatus = prev[m.id] ?? 'todo'
-      const isStatus  = statuses[m.id] ?? 'todo'
-      if (wasStatus !== 'done' && isStatus === 'done' && m.type === 'VIDER') {
-        setPendingScanMissionId(m.id)
-        break
-      }
-    }
-    prevStatusesRef.current = statuses
-  }, [statuses, sorted])
-
-  const tourResult = useMemo(() => {
-    if (!driver || sorted.length === 0) return null
-    return calcTour(sorted, driver.depotLat, driver.depotLng, startTime, speed, exutoires.length > 0 ? exutoires : undefined)
-  }, [driver, sorted, startTime, speed, exutoires])
-
-  function mapsUrl(m: PlannedMission): string {
-    if (m.latitude !== 0 || m.longitude !== 0) {
-      return `https://www.google.com/maps/dir/?api=1&destination=${m.latitude},${m.longitude}`
-    }
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.address)}`
-  }
-
-  const [showAll, setShowAll] = useState(false)
-
+  // ─── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-5xl mb-4 animate-pulse">{'\u{1F69B}'}</div>
-          <p className="text-zinc-400 text-lg">Chargement...</p>
-        </div>
-      </div>
+      <main className="grid min-h-dvh place-items-center bg-[#1A1D21] text-white/60">
+        <p role="status">Chargement de la tournée…</p>
+      </main>
     )
   }
 
-  if (apiError || !driver) {
+  if (loadError || !driver) {
     return (
-    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
-      <div className="text-center">
-        <div className="text-6xl mb-4">{'\u{1F69B}'}</div>
-        <p className="text-zinc-300 text-xl font-bold">Chauffeur introuvable</p>
-        <p className="text-zinc-600 mt-2">{apiError || `ID : ${driverId}`}</p>
-      </div>
-    </div>
+      <main className="grid min-h-dvh place-items-center bg-[#1A1D21] p-6 text-center text-[#EDEEF0]">
+        <div className="max-w-sm">
+          <h1 className="text-xl font-semibold">Tournée indisponible</h1>
+          <p className="mt-2 text-white/60">{loadError ?? 'Chauffeur introuvable.'}</p>
+          <button type="button" onClick={() => void loadData()} className="mt-6 min-h-12 rounded-xl bg-[#FFC21A] px-6 font-semibold text-black">Réessayer</button>
+        </div>
+      </main>
     )
   }
 
-  const progressPct = totalMissions > 0 ? Math.round((doneMissions / totalMissions) * 100) : 0
-  const currentStatus = currentMission ? (statuses[currentMission.id] ?? 'todo') : 'done'
-  const nextAction = currentMission ? STATUS_CONFIG[currentStatus] : null
-  const stepForCurrent = currentMission && tourResult
-    ? tourResult.steps[sorted.indexOf(currentMission)]
-    : null
+  const progress = realMissions.length > 0 ? Math.round((doneCount / realMissions.length) * 100) : 0
+  const focusStatus = focused ? (statuses[focused.id] ?? 'todo') : 'done'
+  const focusAction = focused ? nextActionLabel(focused.type, focusStatus) : null
+  const focusStep = focused ? stepOf(focused) : undefined
+  const isClientStop = focused && !focused.isSynthetic
 
   return (
-    <main id="main-content" className="min-h-screen bg-zinc-950 text-white select-none">
+    <main id="main-content" className="min-h-dvh bg-[#1A1D21] pb-40 font-display text-[#EDEEF0]">
+      <SyncBar
+        online={online}
+        pending={pending}
+        failed={failed}
+        authRequired={authRequired}
+        lastSynced={lastSynced}
+        driverName={driver.firstName}
+        loginHref={`/login?from=${encodeURIComponent(`/driver/${driverId}`)}`}
+        onSyncNow={() => void syncNow()}
+        onRetry={id => void retryFailedAction(id).then(syncNow)}
+        onDiscard={id => void discardAction(id).then(refreshQueue)}
+        onLogout={() => void logout(false)}
+      />
 
-      {}
-      <div className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2 backdrop-blur-sm border-b transition-colors duration-300 ${
-        !isOnline        ? 'bg-red-950/95 border-red-800' :
-        pendingSync > 0  ? 'bg-amber-950/95 border-amber-800' :
-                           'bg-zinc-900/95 border-zinc-800'
-      }`}>
-        <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-400 animate-pulse'}`} />
-          <span className={`text-xs font-medium ${
-            !isOnline ? 'text-red-300' : pendingSync > 0 ? 'text-amber-300' : 'text-zinc-400'
-          }`}>
-            {isOnline ? 'Connecte' : 'Hors ligne'}
-          </span>
-          {pendingSync > 0 && (
-            <span className={`text-xs font-bold ml-1 ${isOnline ? 'text-amber-300' : 'text-red-300'}`}>
-              · {pendingSync} en attente
-            </span>
-          )}
+      <section className="px-4 pt-4" aria-label="Avancement">
+        <div className="flex items-baseline justify-between">
+          <p className="text-sm capitalize text-white/60">
+            {new Date(`${tourDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
+          <p className="text-sm tabular-nums text-white/60">
+            <span className="text-2xl font-semibold text-white">{doneCount}</span>/{realMissions.length} missions
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          {isOnline && pendingSync > 0 && (
-            <button type="button" onClick={() => void syncNow()}
-              className="text-[11px] bg-amber-600 active:bg-amber-700 text-white px-2.5 py-0.5 rounded-full font-bold transition">
-              Sync
-            </button>
-          )}
-          {lastSynced && (
-            <span className={`text-[10px] ${!isOnline ? 'text-red-500' : 'text-zinc-600'}`}>
-              Sync {lastSynced}
-            </span>
-          )}
-          <span className={`text-xs font-medium ${!isOnline ? 'text-red-400' : 'text-zinc-500'}`}>
-            {driver.firstName}
-          </span>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label="Missions terminées">
+          <div className="h-full rounded-full bg-[#2FBF71] transition-[width] duration-500" style={{ width: `${progress}%` }} />
         </div>
-      </div>
+        {fromCache && <p className="mt-2 text-xs text-[#FFD970]">Tournée affichée depuis la dernière copie enregistrée sur le téléphone.</p>}
+      </section>
 
-      {}
-      <div className="pt-12 px-5 pb-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-zinc-400 text-sm font-medium">
-            {new Date(tourDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}
-          </span>
-          <span className="text-2xl font-black">{doneMissions}/{totalMissions}</span>
-        </div>
-        <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
-          <div className="h-full bg-green-500 rounded-full transition-all duration-700 ease-out"
-            style={{ width: `${progressPct}%` }} />
-        </div>
-        <div className="flex justify-between mt-1.5 text-[11px] text-zinc-500">
-          <span>{tourResult ? `${Math.round(tourResult.totalRoadDistKm)} km` : ''}</span>
-          <span>{progressPct}% termine</span>
-        </div>
-      </div>
-
-      {}
-      {pendingScanMission && !showAll ? (
-        <div className="px-5 pb-6">
-          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl">
-            <div className="bg-green-900/30 px-5 py-3 flex items-center gap-2 border-b border-zinc-800">
-              <span className="text-2xl">{'✅'}</span>
-              <span className="font-bold text-sm uppercase tracking-wide text-green-300">Vidage termine</span>
+      {focused ? (
+        <section className="px-4 pt-5" aria-labelledby="stop-title">
+          <article className="rounded-3xl bg-[#262A30] p-5">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-medium text-white/70">
+                {focused.type === 'VIDER' ? 'Vidage' : focused.type === 'PAUSE' ? 'Pause' : getMissionTypeLabel(apiData?.trade, focused.type)}
+                {focused.priority === 1 && <span className="ml-2 rounded-full bg-[#F0483E] px-2 py-0.5 text-xs font-semibold text-white">Urgent</span>}
+              </span>
+              <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs">{STATUS_LABEL[focusStatus]}</span>
             </div>
-            <div className="px-5 py-4 space-y-3">
-              <div>
-                <div className="text-xl font-bold leading-tight">
-                  {pendingScanMission.clientName || pendingScanMission.outletName || 'Mission'}
-                </div>
-                <div className="text-zinc-400 text-sm mt-0.5">{pendingScanMission.address}</div>
+            <h1 id="stop-title" className="mt-3 text-2xl font-semibold leading-tight">
+              {focused.clientName || focused.outletName || (focused.type === 'PAUSE' ? 'Pause réglementaire' : 'Arrêt')}
+            </h1>
+            {focused.type !== 'PAUSE' && <p className="mt-1 text-base text-white/70">{focused.address}</p>}
+
+            <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-2xl bg-black/20 py-2">
+                <dt className="text-xs text-white/50">Arrivée prévue</dt>
+                <dd className="text-lg font-semibold tabular-nums">{focusStep ? minToHHMM(focusStep.arrivalMin) : '—'}</dd>
               </div>
-              <ScanTicketButton
-                missionId={pendingScanMission.id}
-                driverId={driverId}
-                missionType={pendingScanMission.type}
-                status="done"
-              />
-              <button type="button" onClick={() => setPendingScanMissionId(null)}
-                className="w-full py-4 bg-zinc-800 rounded-xl text-zinc-300 text-base font-bold active:bg-zinc-700 transition">
-                Continuer
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : currentMission && !showAll ? (
-        <div className="px-5 pb-6">
-          {}
-          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl">
-            {}
-            <div className="bg-zinc-800/50 px-5 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{getMissionTypeIcon(apiData?.trade, currentMission.type)}</span>
-                <span className="font-bold text-sm uppercase tracking-wide">{getMissionTypeLabel(apiData?.trade, currentMission.type)}</span>
-                {currentMission.priority === 1 && (
-                  <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase">Urgent</span>
+              <div className="rounded-2xl bg-black/20 py-2">
+                <dt className="text-xs text-white/50">Sur place</dt>
+                <dd className="text-lg font-semibold tabular-nums">{focused.estimatedDurationMin + focused.maneuverTimeMin} min</dd>
+              </div>
+              <div className="rounded-2xl bg-black/20 py-2">
+                <dt className="text-xs text-white/50">Trajet</dt>
+                <dd className="text-lg font-semibold tabular-nums">{focusStep && focusStep.roadDistKm > 0 ? `${Math.round(focusStep.roadDistKm * 10) / 10} km` : '—'}</dd>
+              </div>
+            </dl>
+
+            {focused.timeWindow && (
+              <p className="mt-3 rounded-2xl border border-[#FFC21A]/40 px-3 py-2 text-sm text-[#FFD970]">
+                Créneau client : {minToHHMM(focused.timeWindow.openMin)} – {minToHHMM(focused.timeWindow.closeMin)}
+              </p>
+            )}
+            {(focused.wasteTypeLabel || focused.binSize) && (
+              <p className="mt-3 text-sm text-white/70">{[focused.wasteTypeLabel, focused.binSize].filter(Boolean).join(' · ')}</p>
+            )}
+            {focused.accessNotes && (
+              <p className="mt-3 rounded-2xl bg-black/20 px-3 py-2 text-sm"><span className="text-white/50">Accès : </span>{focused.accessNotes}</p>
+            )}
+            {weights[focused.id] !== undefined && (
+              <p className="mt-3 text-sm text-[#7EE2A8]">Pesée : {(weights[focused.id] / 1000).toLocaleString('fr-FR')} t</p>
+            )}
+
+            {(photos[focused.id] || photos[`${focused.id}_sig`]) && (
+              <div className="mt-4 flex gap-2">
+                {photos[focused.id] && (
+                  <figure className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- data: URLs and authenticated /api/files URLs, not optimisable */}
+                    <img src={photos[focused.id]} alt="Photo de l’intervention" className="h-20 w-28 rounded-xl object-cover" />
+                    <button type="button" onClick={() => void removePhoto(focused)} aria-label="Supprimer la photo"
+                      className="absolute -right-2 -top-2 grid h-8 w-8 place-items-center rounded-full bg-black/80 text-lg">×</button>
+                  </figure>
+                )}
+                {photos[`${focused.id}_sig`] && (
+                  // eslint-disable-next-line @next/next/no-img-element -- same as above
+                  <img src={photos[`${focused.id}_sig`]} alt="Signature du client" className="h-20 w-28 rounded-xl bg-white object-contain" />
                 )}
               </div>
-              <span className="text-zinc-500 text-sm font-mono">{currentIdx + 1}/{totalMissions}</span>
-            </div>
+            )}
 
-            {}
-            <div className="px-5 py-4 space-y-3">
-              {}
-              <div>
-                <div className="text-xl font-bold leading-tight">
-                  {currentMission.clientName || currentMission.outletName || 'Mission'}
-                </div>
-                <div className="text-zinc-400 text-sm mt-0.5">{currentMission.address}</div>
-              </div>
-
-              {}
-              <div className="flex flex-wrap gap-2">
-                {stepForCurrent && (
-                  <span className="bg-blue-900/50 text-blue-300 text-sm font-bold px-3 py-1 rounded-full">
-                    {minToHHMM(stepForCurrent.arrivalMin)}
-                  </span>
-                )}
-                <span className="bg-zinc-800 text-zinc-300 text-sm px-3 py-1 rounded-full">
-                  {currentMission.estimatedDurationMin + currentMission.maneuverTimeMin} min
-                </span>
-                {stepForCurrent && stepForCurrent.roadDistKm > 0 && (
-                  <span className="bg-zinc-800 text-zinc-300 text-sm px-3 py-1 rounded-full">
-                    {Math.round(stepForCurrent.roadDistKm * 10) / 10} km
-                  </span>
-                )}
-                {currentMission.wasteTypeLabel && (
-                  <span className="bg-zinc-800 text-zinc-300 text-sm px-3 py-1 rounded-full">
-                    {currentMission.wasteTypeLabel}
-                  </span>
-                )}
-              </div>
-
-              {}
-              {currentMission.timeWindow && (
-                <div className="bg-amber-900/30 border border-amber-700/30 rounded-xl px-4 py-2 text-amber-300 text-sm font-medium">
-                  Creneau : {minToHHMM(currentMission.timeWindow.openMin)} - {minToHHMM(currentMission.timeWindow.closeMin)}
-                </div>
+            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {focused.type !== 'PAUSE' && (
+                <a href={navigationUrl(focused)} target="_blank" rel="noopener noreferrer"
+                  className="col-span-2 flex min-h-14 items-center justify-center rounded-2xl bg-white text-base font-semibold text-black sm:col-span-4">
+                  Itinéraire
+                </a>
               )}
-
-              {}
-              {currentMission.accessNotes && (
-                <div className="bg-yellow-900/30 border border-yellow-700/30 rounded-xl px-4 py-2 text-yellow-300 text-sm">
-                  {currentMission.accessNotes}
-                </div>
+              {isClientStop && (
+                <>
+                  <button type="button" onClick={() => photoInputRef.current?.click()} className="min-h-12 rounded-2xl bg-white/10 font-medium">Photo</button>
+                  <button type="button" onClick={() => setSheet('signature')} className="min-h-12 rounded-2xl bg-white/10 font-medium">Signature</button>
+                  <button type="button" onClick={() => setSheet('note')} className="min-h-12 rounded-2xl bg-white/10 font-medium">Note</button>
+                  <button type="button" onClick={() => setSheet('incident')} className="min-h-12 rounded-2xl bg-[#F0483E]/20 font-medium text-[#FFB4AE]">Incident</button>
+                </>
               )}
-
-              {}
-              {photos[currentMission.id] ? (
-                <div className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photos[currentMission.id]} alt="Photo" className="w-full h-32 object-cover rounded-xl" />
-                  <button type="button" aria-label="Supprimer la photo" onClick={() => setPhotos(p => { const u = { ...p }; delete u[currentMission.id]; return u })}
-                    className="absolute top-2 right-2 bg-black/70 text-white w-8 h-8 rounded-full text-lg">&times;</button>
-                </div>
-              ) : (
-                <div>
-                  <input type="file" accept="image/*" capture="environment" className="hidden"
-                    ref={el => { photoInputRefs.current[currentMission.id] = el }}
-                    title="Prendre une photo"
-                    aria-label="Prendre une photo"
-                    onChange={e => handlePhoto(currentMission.id, e)} />
-                  <button type="button" onClick={() => photoInputRefs.current[currentMission.id]?.click()}
-                    className="w-full py-4 bg-zinc-800 rounded-xl text-zinc-300 text-lg font-bold active:bg-zinc-700 transition">
-                    {'\u{1F4F7}'} Prendre une photo
-                  </button>
-                </div>
-              )}
-
-              {}
-              {signatures[currentMission.id] ? (
-                <div className="relative bg-white rounded-xl overflow-hidden border border-zinc-700">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={signatures[currentMission.id]} alt="Signature" className="w-full h-24 object-contain" />
-                  <button type="button" aria-label="Effacer la signature" onClick={() => setSignatures(s => { const u = { ...s }; delete u[currentMission.id]; return u })}
-                    className="absolute top-2 right-2 bg-black/70 text-white w-8 h-8 rounded-full text-lg">&times;</button>
-                  <div className="absolute bottom-1 left-2 text-[10px] text-zinc-400">Signature client</div>
-                </div>
-              ) : (
-                <div className="rounded-xl overflow-hidden border border-zinc-700 bg-white">
-                  <div className="flex items-center justify-between px-3 py-2 bg-zinc-900 border-b border-zinc-700">
-                    <span className="text-zinc-400 text-sm">✍️ Signature client</span>
-                    <button type="button"
-                      onClick={() => {
-                        const canvas = sigCanvasRefs.current[currentMission.id]
-                        if (!canvas) return
-                        const ctx = canvas.getContext('2d')
-                        if (ctx) { ctx.clearRect(0, 0, canvas.width, canvas.height) }
-                      }}
-                      className="text-zinc-500 text-xs active:text-zinc-300 transition">Effacer</button>
-                  </div>
-                  <canvas
-                    ref={el => { sigCanvasRefs.current[currentMission.id] = el }}
-                    width={340} height={100}
-                    style={{ touchAction: 'none', display: 'block', width: '100%', height: 100, background: '#fff', cursor: 'crosshair' }}
-                    onPointerDown={e => {
-                      const canvas = sigCanvasRefs.current[currentMission.id]
-                      if (!canvas) return
-                      sigDrawing.current[currentMission.id] = true
-                      canvas.setPointerCapture(e.pointerId)
-                      const rect = canvas.getBoundingClientRect()
-                      const ctx = canvas.getContext('2d')
-                      if (!ctx) return
-                      const scaleX = canvas.width / rect.width
-                      const scaleY = canvas.height / rect.height
-                      ctx.strokeStyle = '#111827'
-                      ctx.lineWidth = 2.5
-                      ctx.lineCap = 'round'
-                      ctx.lineJoin = 'round'
-                      ctx.beginPath()
-                      ctx.moveTo((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY)
-                    }}
-                    onPointerMove={e => {
-                      if (!sigDrawing.current[currentMission.id]) return
-                      const canvas = sigCanvasRefs.current[currentMission.id]
-                      if (!canvas) return
-                      const rect = canvas.getBoundingClientRect()
-                      const ctx = canvas.getContext('2d')
-                      if (!ctx) return
-                      const scaleX = canvas.width / rect.width
-                      const scaleY = canvas.height / rect.height
-                      ctx.lineTo((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY)
-                      ctx.stroke()
-                    }}
-                    onPointerUp={() => {
-                      sigDrawing.current[currentMission.id] = false
-                      const canvas = sigCanvasRefs.current[currentMission.id]
-                      if (!canvas) return
-                      const sigUrl = canvas.toDataURL('image/png')
-                      setSignatures(s => ({ ...s, [currentMission.id]: sigUrl }))
-                      // Persist signature offline — same queue as photos, missionId_sig suffix
-                      void enqueueAction('/api/driver-photos', {
-                        driverId, date: tourDate, missionId: `${currentMission.id}_sig`, dataUrl: sigUrl,
-                      })
-                      void updatePendingCount()
-                      if (navigator.onLine) setTimeout(() => void syncNow(), 500)
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {}
-            <div className="px-5 pb-5 space-y-3">
-              {}
-              <a href={mapsUrl(currentMission)} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center gap-3 w-full py-5 bg-blue-600 active:bg-blue-700 rounded-2xl text-white text-xl font-black transition shadow-lg shadow-blue-900/30">
-                {'\u{1F5FA}'} NAVIGUER
-              </a>
-
-              {}
-              {currentStatus !== 'done' && nextAction && (
-                <button type="button" aria-label={nextAction.next} onClick={() => advanceStatus(currentMission.id)}
-                  className={`w-full py-6 rounded-2xl text-white text-xl font-black transition shadow-lg ${nextAction.bg}`}>
-                  <span className="text-2xl mr-2">{nextAction.icon}</span>
-                  {nextAction.next.toUpperCase()}
+              {focused.type === 'VIDER' && (
+                <button type="button" onClick={() => setSheet('weight')} className="col-span-2 min-h-12 rounded-2xl bg-white/10 font-medium sm:col-span-4">
+                  {weights[focused.id] !== undefined ? 'Corriger le poids' : 'Saisir le ticket de pesée'}
                 </button>
               )}
             </div>
-          </div>
-
-          {}
-          <button type="button" onClick={() => setShowAll(true)}
-            className="w-full mt-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-400 text-sm font-medium active:bg-zinc-800 transition">
-            Voir toutes les missions ({totalMissions})
-          </button>
-        </div>
+            <input ref={photoInputRef} type="file" accept="image/*" capture="environment" className="hidden" aria-label="Prendre une photo"
+              onChange={e => { const f = e.target.files?.[0]; if (f && focused) void onPhoto(focused, f); e.target.value = '' }} />
+          </article>
+        </section>
+      ) : realMissions.length > 0 ? (
+        <section className="px-4 pt-8 text-center">
+          <h1 className="text-3xl font-semibold text-[#7EE2A8]">Tournée terminée</h1>
+          <p className="mt-2 text-white/60">{realMissions.length} mission{realMissions.length > 1 ? 's' : ''} réalisée{realMissions.length > 1 ? 's' : ''}.</p>
+          {pending > 0 && <p className="mt-3 text-sm text-[#FFD970]">Gardez l’application ouverte avec du réseau : {pending} envoi{pending > 1 ? 's' : ''} en attente.</p>}
+        </section>
       ) : (
-
-        <div className="px-5 pb-8 space-y-2">
-          {currentMission && (
-            <button type="button" onClick={() => setShowAll(false)}
-              className="w-full mb-3 py-3 bg-blue-900/50 border border-blue-700/50 rounded-xl text-blue-300 text-sm font-bold active:bg-blue-800/50 transition">
-              Revenir a la mission en cours
-            </button>
-          )}
-
-          {realMissions.length === 0 && (
-            <div className="text-center py-20">
-              <div className="text-6xl mb-4">{'\u{1F4CB}'}</div>
-              <p className="text-zinc-500 text-lg">Aucune mission pour aujourd&apos;hui</p>
-            </div>
-          )}
-
-          {realMissions.map((m, idx) => {
-            const st = statuses[m.id] ?? 'todo'
-            const isDone = st === 'done'
-            const isCurrent = m.id === currentMission?.id
-
-            return (
-              <div key={m.id}
-                className={`rounded-xl border p-4 transition-all ${
-                  isDone ? 'bg-zinc-900/40 border-zinc-800/50 opacity-50' :
-                  isCurrent ? 'bg-blue-950/60 border-blue-700/50 shadow-lg' :
-                  'bg-zinc-900 border-zinc-800'
-                }`}>
-                <div className="flex items-center gap-3">
-                  {}
-                  <button type="button" onClick={() => !isDone && advanceStatus(m.id)}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-black shrink-0 transition ${
-                      isDone ? 'bg-green-700 text-white' :
-                      st === 'doing' || st === 'started' ? 'bg-blue-600 text-white animate-pulse' :
-                      st === 'en_route' ? 'bg-cyan-600 text-white' :
-                      st === 'arrived' ? 'bg-amber-500 text-white' :
-                      'bg-zinc-800 text-zinc-400 active:bg-zinc-600'
-                    }`}>
-                    {isDone ? '\u2713' : idx + 1}
-                  </button>
-
-                  {}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-base truncate">
-                      {m.clientName || m.outletName || m.address}
-                    </div>
-                    <div className="text-zinc-500 text-xs truncate">{m.address}</div>
-                    <div className="flex gap-2 mt-1 text-xs text-zinc-500">
-                      <span>{getMissionTypeIcon(apiData?.trade, m.type)} {getMissionTypeLabel(apiData?.trade, m.type)}</span>
-                      <span>{m.estimatedDurationMin + m.maneuverTimeMin}min</span>
-                      {m.priority === 1 && <span className="text-red-400 font-bold">P1</span>}
-                    </div>
-                  </div>
-
-                  {}
-                  <a href={mapsUrl(m)} target="_blank" rel="noopener noreferrer"
-                    className="w-12 h-12 bg-blue-600 active:bg-blue-700 rounded-xl flex items-center justify-center text-xl shrink-0">
-                    {'\u{1F5FA}'}
-                  </a>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+        <section className="px-4 pt-8 text-center">
+          <h1 className="text-xl font-semibold">Aucune mission ce jour</h1>
+          <p className="mt-2 text-white/60">Votre tournée apparaîtra ici dès que le dispatch l’aura publiée.</p>
+          <button type="button" onClick={() => void loadData()} className="mt-5 min-h-12 rounded-xl bg-white/10 px-5 font-semibold">Actualiser</button>
+        </section>
       )}
 
-      {}
-      {!currentMission && totalMissions > 0 && !showAll && (
-        <div className="px-5 pb-8 text-center">
-          <div className="text-7xl mb-4">{'\u{1F389}'}</div>
-          <p className="text-3xl font-black text-green-400">Journee terminee !</p>
-          <p className="text-zinc-500 mt-2">{totalMissions} mission{totalMissions > 1 ? 's' : ''} completee{totalMissions > 1 ? 's' : ''}</p>
-          {pendingSync > 0 && (
-            <p className="text-amber-400 text-sm mt-4">{pendingSync} action{pendingSync > 1 ? 's' : ''} en attente de synchronisation</p>
-          )}
-          <button type="button" onClick={() => setShowAll(true)}
-            className="mt-6 py-3 px-6 bg-zinc-800 rounded-xl text-zinc-300 font-medium active:bg-zinc-700 transition">
-            Voir le recapitulatif
+      {tour && tour.warnings.length > 0 && (
+        <section className="mx-4 mt-4 rounded-2xl border border-[#F0483E]/30 p-4 text-sm text-[#FFB4AE]" aria-label="Alertes de tournée">
+          <ul className="space-y-1">{tour.warnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
+        </section>
+      )}
+
+      {steps.length > 0 && (
+        <section className="px-4 pt-6" aria-labelledby="route-title">
+          <h2 id="route-title" className="mb-3 text-base font-semibold text-white/80">Ma tournée</h2>
+          <ol className="relative space-y-2 before:absolute before:bottom-6 before:left-5 before:top-6 before:w-px before:bg-white/10">
+            {steps.map((m, i) => {
+              const st = statuses[m.id] ?? 'todo'
+              const done = st === 'done'
+              const isCurrent = m.id === current?.id
+              const step = stepOf(m)
+              return (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    onClick={() => setFocusId(m.id === current?.id ? null : m.id)}
+                    aria-current={m.id === focused?.id ? 'step' : undefined}
+                    className={`relative flex w-full items-center gap-3 rounded-2xl p-2 pr-3 text-left ${m.id === focused?.id ? 'bg-[#262A30]' : 'hover:bg-white/5'}`}
+                  >
+                    <span className={`z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold tabular-nums ${
+                      done ? 'bg-[#2FBF71] text-black' : isCurrent ? 'bg-[#FFC21A] text-black' : m.isSynthetic ? 'bg-[#1A1D21] text-white/50 ring-1 ring-white/15' : 'bg-[#33383F] text-white'
+                    }`} aria-hidden>
+                      {done ? '✓' : m.type === 'VIDER' ? 'V' : m.type === 'PAUSE' ? 'P' : i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate font-medium ${done ? 'text-white/40 line-through' : ''}`}>
+                        {m.clientName || m.outletName || (m.type === 'PAUSE' ? 'Pause' : m.address)}
+                      </span>
+                      <span className="block truncate text-xs text-white/50">
+                        {step ? minToHHMM(step.arrivalMin) : ''}{m.type !== 'PAUSE' ? ` · ${m.address}` : ''}
+                      </span>
+                    </span>
+                    {!done && st !== 'todo' && <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-xs">{STATUS_LABEL[st]}</span>}
+                    {m.priority === 1 && !done && <span className="shrink-0 text-xs font-semibold text-[#FF8A80]">Urgent</span>}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      )}
+
+      {focused && focusAction && (
+        <div className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[#1A1D21] via-[#1A1D21] to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6">
+          <button
+            type="button"
+            onClick={() => void advance(focused)}
+            className="min-h-16 w-full rounded-2xl bg-[#FFC21A] text-xl font-semibold text-black shadow-[0_8px_24px_rgba(255,194,26,0.25)] active:scale-[0.99] focus-visible:outline focus-visible:outline-4 focus-visible:outline-white"
+          >
+            {focusAction}
           </button>
         </div>
       )}
 
-      {}
-      {tourResult && tourResult.warnings.length > 0 && (
-        <div className="px-5 pb-6">
-          <div className="bg-red-950/50 border border-red-800/30 rounded-xl p-4 space-y-1">
-            {tourResult.warnings.map((w, i) => (
-              <div key={i} className="text-sm text-red-300">{w.message}</div>
-            ))}
-          </div>
-        </div>
-      )}
+      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-28 z-40 flex justify-center px-4">
+        {toast && <p className="rounded-full bg-black/85 px-4 py-2 text-sm text-white">{toast}</p>}
+      </div>
 
-      {}
-      {!isOnline && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-red-950 border-t-2 border-red-700 px-5 py-3.5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex h-3.5 w-3.5 shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500" />
-                </span>
-                <span className="text-red-100 font-black text-base uppercase tracking-wide">Hors ligne</span>
-              </div>
-              <p className="text-red-400 text-xs mt-1 ml-6">
-                {'\u{1F4CD}'} GPS actif
-                {pendingSync > 0
-                  ? ` · ${pendingSync} action${pendingSync > 1 ? 's' : ''} en file d’attente`
-                  : ' · Actions sauvegardees localement'}
-              </p>
-            </div>
-            <div className="text-4xl opacity-40">{'\u{1F4E1}'}</div>
-          </div>
-        </div>
+      {focused && (
+        <>
+          <Sheet open={sheet === 'signature'} title="Signature du client" onClose={() => setSheet(null)}>
+            {sheet === 'signature' && <SignaturePad onConfirm={url => void onSignature(focused, url)} onCancel={() => setSheet(null)} />}
+          </Sheet>
+          <Sheet open={sheet === 'incident'} title="Signaler un incident" onClose={() => setSheet(null)}>
+            {sheet === 'incident' && <IncidentForm onSubmit={(t, n) => void onIncident(focused, t, n)} />}
+          </Sheet>
+          <Sheet open={sheet === 'note'} title="Note pour le dispatch" onClose={() => setSheet(null)}>
+            {sheet === 'note' && <NoteForm onSubmit={c => void onNote(focused, c)} />}
+          </Sheet>
+          <Sheet open={sheet === 'weight'} title="Ticket de pesée" onClose={() => setSheet(null)}>
+            {sheet === 'weight' && (
+              <>
+                <ScanTicketButton missionId={focused.id} onWeight={kg => void onWeight(focused, kg)} />
+                <WeightForm initialKg={weights[focused.id]} onSubmit={kg => void onWeight(focused, kg)} />
+              </>
+            )}
+          </Sheet>
+        </>
       )}
-
-      {}
-      {!isOnline && <div className="h-20" />}
+      <Sheet open={sheet === 'logout'} title="Envois en attente" onClose={() => setSheet(null)}>
+        <p className="text-white/70">
+          {pending} action{pending > 1 ? 's n’ont' : ' n’a'} pas encore été envoyée{pending > 1 ? 's' : ''}. Si vous vous déconnectez maintenant, elle{pending > 1 ? 's seront perdues' : ' sera perdue'}.
+        </p>
+        <div className="mt-5 grid gap-2">
+          <button type="button" onClick={() => { setSheet(null); void syncNow() }} className="min-h-12 rounded-xl bg-[#FFC21A] font-semibold text-black">Rester et envoyer</button>
+          <button type="button" onClick={() => void logout(true)} className="min-h-12 rounded-xl bg-white/10 font-semibold">Se déconnecter quand même</button>
+        </div>
+      </Sheet>
     </main>
   )
 }

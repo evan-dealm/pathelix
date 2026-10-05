@@ -1,222 +1,101 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
-
-interface ScanTicketButtonProps {
-  missionId:   string
-  driverId:    string
-  missionType: string
-  status:      string
-}
-
-type ScanState =
-  | { phase: 'idle' }
-  | { phase: 'uploading' }
-  | { phase: 'polling'; jobId: string; attempt: number }
-  | { phase: 'done'; weight: string }
-  | { phase: 'manual' }
-  | { phase: 'error'; message: string }
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const POLL_INTERVAL_MS = 3_000
 const POLL_TIMEOUT_MS  = 60_000
 
-export function ScanTicketButton({ missionId, driverId, missionType, status }: ScanTicketButtonProps) {
-  if (missionType !== 'VIDER' || status !== 'done' || !process.env.NEXT_PUBLIC_AI_ENGINE_URL) {
-    return null
-  }
-
-  return <ScanTicketCore missionId={missionId} driverId={driverId} />
+/** Parses an OCR weight ("1.42 t", "1 420 kg", "1420") into kg. */
+export function parseTicketWeightKg(raw: string): number | null {
+  const s = raw.toLowerCase().replace(/\s/g, '').replace(',', '.')
+  const n = parseFloat(s)
+  if (!Number.isFinite(n) || n <= 0) return null
+  if (s.includes('kg')) return Math.round(n)
+  if (s.includes('t')) return Math.round(n * 1000)
+  return n < 100 ? Math.round(n * 1000) : Math.round(n) // bare number: tonnes if small
 }
 
-function ScanTicketCore({ missionId, driverId }: { missionId: string; driverId: string }) {
-  const [state, setState] = useState<ScanState>({ phase: 'idle' })
-  const [manualWeight, setManualWeight] = useState('')
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const startTimeRef = useRef<number>(0)
+type Phase = 'idle' | 'uploading' | 'reading' | 'error'
 
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current)
-      pollTimerRef.current = null
-    }
-  }, [])
+/**
+ * Reads the weighing ticket with the OCR engine (only when it is deployed —
+ * NEXT_PUBLIC_AI_ENGINE_URL) and hands the weight back to the form, which the driver confirms.
+ * Needs the network: offline, the driver types the weight instead.
+ */
+export function ScanTicketButton({ missionId, onWeight }: { missionId: string; onWeight: (_kg: number) => void }) {
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [message, setMessage] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const pollJob = useCallback((jobId: string) => {
-    stopPolling()
-    const elapsed = Date.now() - startTimeRef.current
-    if (elapsed >= POLL_TIMEOUT_MS) {
-      setState({ phase: 'manual' })
-      return
-    }
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
-    pollTimerRef.current = setTimeout(async () => {
+  const fail = useCallback((msg: string) => { setPhase('error'); setMessage(msg) }, [])
+
+  const poll = useCallback((jobId: string, startedAt: number) => {
+    if (Date.now() - startedAt > POLL_TIMEOUT_MS) { fail('Lecture trop longue — saisissez le poids.'); return }
+    timer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/ai/jobs/${jobId}`)
-        if (!res.ok) {
-          setState({ phase: 'manual' })
-          return
-        }
-        const job = await res.json()
-
+        const res = await fetch(`/api/ai/jobs/${encodeURIComponent(jobId)}`)
+        if (!res.ok) { fail('Lecture impossible — saisissez le poids.'); return }
+        const job = await res.json() as { status: string; outputData?: { weight?: unknown } }
         if (job.status === 'done') {
-          const weight = (job.outputData as Record<string, unknown>)?.weight as string | undefined
-          if (weight) {
-            setState({ phase: 'done', weight: String(weight) })
-          } else {
-            setState({ phase: 'manual' })
-          }
+          const w = job.outputData?.weight
+          const kg = w !== null && w !== undefined ? parseTicketWeightKg(String(w)) : null
+          if (kg) { setPhase('idle'); onWeight(kg) } else fail('Poids illisible — saisissez-le.')
         } else if (job.status === 'failed' || job.status === 'expired') {
-          setState({ phase: 'manual' })
+          fail('Lecture impossible — saisissez le poids.')
         } else {
-          setState(prev =>
-            prev.phase === 'polling'
-              ? { phase: 'polling', jobId, attempt: prev.attempt + 1 }
-              : prev,
-          )
-          pollJob(jobId)
+          poll(jobId, startedAt)
         }
       } catch {
-        setState({ phase: 'manual' })
+        fail('Réseau indisponible — saisissez le poids.')
       }
     }, POLL_INTERVAL_MS)
-  }, [stopPolling])
+  }, [fail, onWeight])
 
-  const handleFile = useCallback(async (file: File) => {
-    setState({ phase: 'uploading' })
+  const upload = useCallback(async (file: File) => {
+    setPhase('uploading')
     try {
       const form = new FormData()
       form.append('file', file)
       form.append('missionId', missionId)
-
       const res = await fetch('/api/ai/ocr', { method: 'POST', body: form })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setState({ phase: 'error', message: (err as Record<string, string>).error ?? `Erreur ${res.status}` })
+        const err = await res.json().catch(() => ({})) as { error?: unknown }
+        fail(typeof err.error === 'string' ? err.error : `Envoi refusé (${res.status})`)
         return
       }
-      const { jobId } = await res.json()
-      startTimeRef.current = Date.now()
-      setState({ phase: 'polling', jobId, attempt: 0 })
-      pollJob(jobId)
+      const { jobId } = await res.json() as { jobId: string }
+      setPhase('reading')
+      poll(jobId, Date.now())
     } catch {
-      setState({ phase: 'error', message: 'Erreur réseau' })
+      fail('Réseau indisponible — saisissez le poids.')
     }
-  }, [missionId, pollJob])
+  }, [missionId, poll, fail])
 
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) void handleFile(file)
-  }, [handleFile])
-
-  const handleSaveManual = useCallback(() => {
-    if (!manualWeight.trim()) return
-    fetch('/api/driver-status/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ driverId, missionId, manualWeight: manualWeight.trim() }),
-    }).catch(() => {})
-    setState({ phase: 'done', weight: manualWeight.trim() })
-  }, [driverId, missionId, manualWeight])
-
-  if (state.phase === 'done') {
-    return (
-      <div className="bg-green-900/40 border border-green-700/40 rounded-xl px-4 py-3 flex items-center gap-3">
-        <span className="text-2xl">✅</span>
-        <div>
-          <div className="text-green-300 text-sm font-semibold">Poids enregistré</div>
-          <div className="text-green-400 text-lg font-bold">{state.weight}</div>
-        </div>
-      </div>
-    )
-  }
-
-  if (state.phase === 'manual') {
-    return (
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 space-y-2">
-        <div className="text-zinc-300 text-sm">Saisie manuelle du poids</div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            inputMode="decimal"
-            value={manualWeight}
-            onChange={e => setManualWeight(e.target.value)}
-            placeholder="ex: 1.42t"
-            className="flex-1 bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
-          <button
-            type="button"
-            onClick={handleSaveManual}
-            disabled={!manualWeight.trim()}
-            className="px-4 py-2 bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-semibold rounded-lg"
-          >
-            OK
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={() => setState({ phase: 'idle' })}
-          className="text-xs text-zinc-500 hover:text-zinc-300"
-        >
-          Annuler
-        </button>
-      </div>
-    )
-  }
-
-  if (state.phase === 'error') {
-    return (
-      <div className="bg-red-900/30 border border-red-700/30 rounded-xl px-4 py-3 space-y-2">
-        <div className="text-red-400 text-sm">{state.message}</div>
-        <button
-          type="button"
-          onClick={() => setState({ phase: 'idle' })}
-          className="text-xs text-zinc-400 hover:text-zinc-200"
-        >
-          Réessayer
-        </button>
-      </div>
-    )
-  }
-
-  if (state.phase === 'uploading' || state.phase === 'polling') {
-    return (
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-4 flex items-center gap-3">
-        <span className="inline-block w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-        <span className="text-zinc-400 text-sm">
-          {state.phase === 'uploading' ? 'Envoi du ticket...' : 'Lecture en cours...'}
-        </span>
-        <button
-          type="button"
-          onClick={() => { stopPolling(); setState({ phase: 'manual' }) }}
-          className="ml-auto text-xs text-zinc-500 hover:text-zinc-300"
-        >
-          Saisie manuelle
-        </button>
-      </div>
-    )
-  }
+  if (!process.env.NEXT_PUBLIC_AI_ENGINE_URL) return null
 
   return (
-    <div className="space-y-2">
+    <div className="mb-4">
       <input
-        ref={fileInputRef}
+        ref={inputRef}
         type="file"
         accept="image/*"
         capture="environment"
         className="hidden"
-        title="Scanner le ticket"
-        aria-label="Scanner le ticket de pesée"
-        onChange={handleInputChange}
+        aria-label="Photographier le ticket de pesée"
+        onChange={e => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = '' }}
       />
       <button
         type="button"
-        onClick={() => fileInputRef.current?.click()}
-        className="w-full py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-300 text-sm font-semibold active:bg-zinc-700 transition flex items-center justify-center gap-2"
+        disabled={phase === 'uploading' || phase === 'reading'}
+        onClick={() => inputRef.current?.click()}
+        className="min-h-12 w-full rounded-xl border border-white/15 bg-black/20 font-semibold disabled:opacity-60"
       >
-        <span className="text-lg">📷</span>
-        Scanner le ticket de pesée
+        {phase === 'uploading' ? 'Envoi du ticket…' : phase === 'reading' ? 'Lecture du ticket…' : 'Lire le ticket avec l’appareil photo'}
       </button>
+      {phase === 'error' && <p className="mt-2 text-sm text-[#FFB4AE]" role="alert">{message}</p>}
     </div>
   )
 }

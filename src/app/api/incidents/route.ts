@@ -5,6 +5,7 @@ import { createLogger }              from '@/lib/logger'
 import { broadcastIncident }         from '@/lib/incidentBroadcast'
 import { getTenantDb }                from '@/lib/tenantDb'
 import { driverOwnsMission, isStaff } from '@/lib/driverAccess'
+import { withIdempotency }           from '@/lib/idempotency'
 
 const log = createLogger('/api/incidents')
 
@@ -35,28 +36,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Mission absente de votre tournée' }, { status: 403 })
   }
 
-  try {
-    const updated = await db.mission.updateMany({
-      where: { id: missionId },
-      data:  { incidentAt: new Date(), incidentType, incidentNotes: notes ?? '' },
-    })
-    if (updated.count === 0) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
+  // Reported from the driver app's offline queue: a replayed delivery must not re-broadcast.
+  const target = mission
+  return withIdempotency(req, tenantId, 'POST /api/incidents', parsed.data, () => reportIncident())
 
-    broadcastIncident(tenantId, {
-      missionId,
-      incidentType,
-      notes:       notes ?? '',
-      address:     mission.address,
-      clientName:  mission.clientName ?? '',
-      reportedBy:  userId,
-      reportedAt:  new Date().toISOString(),
-    })
+  async function reportIncident(): Promise<NextResponse> {
+    try {
+      const updated = await db.mission.updateMany({
+        where: { id: missionId },
+        data:  { incidentAt: new Date(), incidentType, incidentNotes: notes ?? '' },
+      })
+      if (updated.count === 0) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
 
-    log.info('Incident reported', { tenantId, missionId, incidentType, userId })
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    log.error('Incident POST failed', { err: err instanceof Error ? err.message : String(err) })
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+      broadcastIncident(tenantId, {
+        missionId,
+        incidentType,
+        notes:       notes ?? '',
+        address:     target.address,
+        clientName:  target.clientName ?? '',
+        reportedBy:  userId,
+        reportedAt:  new Date().toISOString(),
+      })
+
+      log.info('Incident reported', { tenantId, missionId, incidentType, userId })
+      return NextResponse.json({ ok: true })
+    } catch (err) {
+      log.error('Incident POST failed', { err: err instanceof Error ? err.message : String(err) })
+      return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    }
   }
 }
 
