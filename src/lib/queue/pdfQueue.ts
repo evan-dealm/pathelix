@@ -1,7 +1,7 @@
 import { Queue, QueueEvents, type ConnectionOptions } from 'bullmq'
 import type { TourPdfProps } from '@/lib/tourPdf'
 import type { MonthlyReportData } from '@/lib/pdfReport'
-import { redisConnection, REDIS_URL } from './connection'
+import { queueConnectionOptions, workerConnectionOptions, withTimeout } from './connection'
 
 export type PdfJobData =
   | { kind: 'tour';   tenantId: string; props: TourPdfProps }
@@ -16,14 +16,11 @@ export const PDF_QUEUE_NAME = 'pdf-generation'
 let _pdfQueue: Queue<PdfJobData, PdfJobResult> | null = null
 let _pdfQueueEvents: QueueEvents | null = null
 
-function conn(): ConnectionOptions {
-  return (REDIS_URL ? { url: REDIS_URL } : redisConnection) as ConnectionOptions
-}
 
 export function getPdfQueue(): Queue<PdfJobData, PdfJobResult> {
   if (!_pdfQueue) {
     _pdfQueue = new Queue<PdfJobData, PdfJobResult>(PDF_QUEUE_NAME, {
-      connection:        conn(),
+      connection:        queueConnectionOptions() as ConnectionOptions,
       defaultJobOptions: {
         attempts:         2,
         backoff:          { type: 'fixed', delay: 1_000 },
@@ -38,7 +35,8 @@ export function getPdfQueue(): Queue<PdfJobData, PdfJobResult> {
 
 function getPdfQueueEvents(): QueueEvents {
   if (!_pdfQueueEvents) {
-    _pdfQueueEvents = new QueueEvents(PDF_QUEUE_NAME, { connection: conn() })
+    // QueueEvents uses blocking stream reads: it needs the worker-style connection.
+    _pdfQueueEvents = new QueueEvents(PDF_QUEUE_NAME, { connection: workerConnectionOptions() as ConnectionOptions })
     _pdfQueueEvents.on('error', () => {})
   }
   return _pdfQueueEvents
@@ -55,9 +53,9 @@ export async function generatePdfViaWorker(
   timeoutMs = 20_000,
 ): Promise<Buffer> {
   const queue = getPdfQueue()
-  const job = await queue.add(data.kind, data, {
+  const job = await withTimeout(queue.add(data.kind, data, {
     jobId: `${data.kind}:${data.tenantId}:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  })
+  }), 3_000, 'enqueue PDF job')
 
   const result = await job.waitUntilFinished(getPdfQueueEvents(), timeoutMs)
   return Buffer.from(result.base64, 'base64')

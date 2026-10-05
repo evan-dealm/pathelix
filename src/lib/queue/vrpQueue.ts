@@ -1,7 +1,10 @@
 import { Queue, type ConnectionOptions } from 'bullmq'
 import type { Mission, Driver, Exutoire, OptimizationResult } from '@/lib/types'
 import type { OptimizeOptions } from '@/lib/vrp/types'
-import { redisConnection, REDIS_URL } from './connection'
+import { queueConnectionOptions, withTimeout } from './connection'
+
+/** Bound on any Redis round-trip made while serving an HTTP request. */
+const REDIS_OP_TIMEOUT_MS = 3_000
 
 export interface VrpJobData {
   tenantId:      string
@@ -21,9 +24,8 @@ let _vrpQueue: Queue<VrpJobData, VrpJobResult> | null = null
 
 export function getVrpQueue(): Queue<VrpJobData, VrpJobResult> {
   if (!_vrpQueue) {
-    const conn = REDIS_URL ? { url: REDIS_URL } : redisConnection
     _vrpQueue = new Queue<VrpJobData, VrpJobResult>(VRP_QUEUE_NAME, {
-      connection:         conn as ConnectionOptions,
+      connection:         queueConnectionOptions() as ConnectionOptions,
       defaultJobOptions:  {
         attempts:         3,
         backoff:          { type: 'exponential', delay: 2_000 },
@@ -44,11 +46,10 @@ export async function enqueueVrpJob(
   const queue  = getVrpQueue()
   const jobName = `vrp:${data.tenantId}:${data.date}`
 
-  const job = await queue.add(jobName, data, {
+  const job = await withTimeout(queue.add(jobName, data, {
     priority,
-
     jobId: `${data.tenantId}:${data.date}:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  })
+  }), REDIS_OP_TIMEOUT_MS, 'enqueue VRP job')
 
   if (!job.id) throw new Error('BullMQ did not assign a job ID')
   return job.id
@@ -61,11 +62,11 @@ export async function getVrpJobStatus(jobId: string): Promise<{
   progress?: number
 }> {
   const queue = getVrpQueue()
-  const job   = await queue.getJob(jobId)
+  const job   = await withTimeout(queue.getJob(jobId), REDIS_OP_TIMEOUT_MS, 'read VRP job')
 
   if (!job) return { status: 'unknown' }
 
-  const state = await job.getState()
+  const state = await withTimeout(job.getState(), REDIS_OP_TIMEOUT_MS, 'read VRP job state')
 
   if (state === 'completed') {
     return { status: 'completed', result: job.returnvalue }
@@ -88,4 +89,14 @@ export async function getVrpJobStatus(jobId: string): Promise<{
   }
 
   return { status: 'waiting' }
+}
+
+/** True when at least one VRP worker is connected — false (not a hang) when Redis is down. */
+export async function hasActiveVrpWorker(): Promise<boolean> {
+  try {
+    const workers = await withTimeout(getVrpQueue().getWorkers(), REDIS_OP_TIMEOUT_MS, 'list VRP workers')
+    return workers.length > 0
+  } catch {
+    return false
+  }
 }

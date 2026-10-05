@@ -1,108 +1,62 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 vi.mock('@/lib/env', () => ({ validateEnv: vi.fn() }))
 
-const mockDeleteMany = vi.hoisted(() => vi.fn())
-const mockIdempotencyDeleteMany = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({
-  default: {
-    auditLog:       { deleteMany: mockDeleteMany },
-    idempotencyKey: { deleteMany: mockIdempotencyDeleteMany },
-  },
-}))
-
-// Prevent main() from connecting to Redis or calling process.exit
-vi.mock('@/lib/redisClient', () => ({
-  getRedisClient: vi.fn(async () => null),
-}))
+const mockExec = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/db', () => ({ default: { $executeRawUnsafe: mockExec, $disconnect: vi.fn() } }))
 vi.mock('bullmq', () => ({
-  Worker: vi.fn(() => ({ on: vi.fn() })),
-  Queue:  vi.fn(() => ({ add: vi.fn() })),
+  Worker: vi.fn(() => ({ on: vi.fn(), close: vi.fn() })),
+  Queue:  vi.fn(() => ({ add: vi.fn(), on: vi.fn(), close: vi.fn() })),
 }))
-vi.spyOn(process, 'exit').mockImplementation((() => {}) as never)
 
-import { purgeExpiredAuditLogs, purgeExpiredIdempotencyKeys } from '../auditRetentionWorker'
+import {
+  purgeExpiredAuditLogs, purgeExpiredIdempotencyKeys, purgeExpiredDriverPositions, purgeExpiredAiJobs,
+} from '../auditRetentionWorker'
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  vi.unstubAllEnvs()
-})
-afterEach(() => {
-  vi.unstubAllEnvs()
-})
+beforeEach(() => mockExec.mockReset())
 
-describe('purgeExpiredAuditLogs', () => {
-  it('deletes audit logs older than AUDIT_RETENTION_DAYS (default 365)', async () => {
-    mockDeleteMany.mockResolvedValue({ count: 42 })
+const daysBetween = (d: Date) => (Date.now() - d.getTime()) / 86_400_000
 
+describe('retention purges', () => {
+  it('deletes audit logs older than 365 days, in bounded batches until nothing is left', async () => {
+    mockExec.mockResolvedValueOnce(5000).mockResolvedValueOnce(5000).mockResolvedValueOnce(12)
     const result = await purgeExpiredAuditLogs()
-
-    expect(mockDeleteMany).toHaveBeenCalledOnce()
-    const call = mockDeleteMany.mock.calls[0][0]
-    expect(call.where.createdAt.lt).toBeInstanceOf(Date)
-
-    // Cutoff should be ~365 days ago
-    const cutoff = call.where.createdAt.lt as Date
-    const diffDays = (Date.now() - cutoff.getTime()) / (1000 * 60 * 60 * 24)
-    expect(diffDays).toBeGreaterThan(364)
-    expect(diffDays).toBeLessThan(366)
-
-    expect(result.deleted).toBe(42)
-    expect(typeof result.cutoff).toBe('string')
+    expect(result.deleted).toBe(10_012)
+    expect(mockExec).toHaveBeenCalledTimes(3)
+    const [sql, cutoff] = mockExec.mock.calls[0] as [string, Date]
+    expect(sql).toContain('DELETE FROM "AuditLog"')
+    expect(sql).toContain('LIMIT 5000')
+    expect(daysBetween(cutoff)).toBeGreaterThan(364)
+    expect(daysBetween(cutoff)).toBeLessThan(366)
   })
 
-  it('respects AUDIT_RETENTION_DAYS env override (30 days)', async () => {
-    vi.stubEnv('AUDIT_RETENTION_DAYS', '30')
-    vi.resetModules()
-    const { purgeExpiredAuditLogs: purge } = await import('../auditRetentionWorker')
-
-    mockDeleteMany.mockResolvedValue({ count: 5 })
-    await purge()
-
-    const cutoff = mockDeleteMany.mock.calls[0][0].where.createdAt.lt as Date
-    const diffDays = (Date.now() - cutoff.getTime()) / (1000 * 60 * 60 * 24)
-    expect(diffDays).toBeGreaterThan(29)
-    expect(diffDays).toBeLessThan(31)
+  it('keeps 30 days of GPS positions by default (the table had no retention at all)', async () => {
+    mockExec.mockResolvedValueOnce(3)
+    const result = await purgeExpiredDriverPositions()
+    expect(result.deleted).toBe(3)
+    const [sql, cutoff] = mockExec.mock.calls[0] as [string, Date]
+    expect(sql).toContain('"DriverPosition" WHERE "recordedAt" <')
+    expect(Math.round(daysBetween(cutoff))).toBe(30)
   })
 
-  it('returns deleted count 0 when nothing to purge', async () => {
-    mockDeleteMany.mockResolvedValue({ count: 0 })
-    const result = await purgeExpiredAuditLogs()
-    expect(result.deleted).toBe(0)
+  it('keeps idempotency keys 48h', async () => {
+    mockExec.mockResolvedValueOnce(0)
+    await purgeExpiredIdempotencyKeys()
+    const [, cutoff] = mockExec.mock.calls[0] as [string, Date]
+    expect(Math.round((Date.now() - cutoff.getTime()) / 3_600_000)).toBe(48)
   })
 
-  it('propagates DB error (does not swallow)', async () => {
-    mockDeleteMany.mockRejectedValue(new Error('DB connection lost'))
-    await expect(purgeExpiredAuditLogs()).rejects.toThrow('DB connection lost')
-  })
-})
-
-describe('purgeExpiredIdempotencyKeys', () => {
-  it('deletes idempotency keys older than 48h', async () => {
-    mockIdempotencyDeleteMany.mockResolvedValue({ count: 7 })
-
-    const result = await purgeExpiredIdempotencyKeys()
-
-    expect(mockIdempotencyDeleteMany).toHaveBeenCalledOnce()
-    const cutoff = mockIdempotencyDeleteMany.mock.calls[0][0].where.createdAt.lt as Date
-    const diffHours = (Date.now() - cutoff.getTime()) / (1000 * 60 * 60)
-    expect(diffHours).toBeGreaterThan(47.9)
-    expect(diffHours).toBeLessThan(48.1)
-
-    expect(result.deleted).toBe(7)
+  it('removes AI jobs past their own expiry', async () => {
+    mockExec.mockResolvedValueOnce(1)
+    await purgeExpiredAiJobs()
+    expect(mockExec.mock.calls[0][0]).toContain('"AiJob" WHERE "expiresAt" <')
   })
 
-  it('returns deleted count 0 when nothing to purge', async () => {
-    mockIdempotencyDeleteMany.mockResolvedValue({ count: 0 })
-    const result = await purgeExpiredIdempotencyKeys()
-    expect(result.deleted).toBe(0)
-  })
-
-  it('propagates DB error (does not swallow)', async () => {
-    mockIdempotencyDeleteMany.mockRejectedValue(new Error('DB connection lost'))
-    await expect(purgeExpiredIdempotencyKeys()).rejects.toThrow('DB connection lost')
+  it('propagates DB errors (the job is marked failed, never silently "done")', async () => {
+    mockExec.mockRejectedValueOnce(new Error('DB down'))
+    await expect(purgeExpiredAuditLogs()).rejects.toThrow('DB down')
   })
 })

@@ -3,7 +3,8 @@
 import { Worker, Queue, Job }                 from 'bullmq'
 import { RRule }                               from 'rrule'
 import { createLogger }                       from '@/lib/logger'
-import { getRedisClient }                     from '@/lib/redisClient'
+import { workerConnectionOptions }            from '@/lib/queue/connection'
+import { installWorkerLifecycle }             from './lifecycle'
 import { MissionType }                        from '@/generated/prisma'
 import prisma                                 from '@/lib/db'
 import { validateEnv }                        from '@/lib/env'
@@ -145,12 +146,9 @@ export async function processRecurringMissions(_job: Job) {
 }
 
 async function main() {
-  const redis = await getRedisClient()
-  if (!redis) { log.error('Redis unavailable — recurring worker cannot start'); process.exit(1) }
-
-  const connection = { host: process.env.REDIS_HOST || 'localhost', port: parseInt(process.env.REDIS_PORT || '6379', 10) || 6379 }
-
+  const connection = workerConnectionOptions()
   const queue = new Queue(QUEUE_NAME, { connection })
+  queue.on('error', err => log.warn('Queue error', { err: err.message }))
 
   await queue.add('generate', {}, {
     repeat:   { pattern: '0 1 * * *' },
@@ -159,7 +157,9 @@ async function main() {
     removeOnFail:     5,
   })
 
-  await queue.add('generate-now', {}, { removeOnComplete: 1 })
+  // Catch-up run at start-up (a day missed while the worker was down), at most once per day —
+  // the fixed jobId makes every restart of the same day a no-op.
+  await queue.add('generate-now', {}, { jobId: `recurring-catchup-${new Date().toISOString().slice(0, 10)}`, removeOnComplete: 7 })
 
   const worker = new Worker(QUEUE_NAME, processRecurringMissions, {
     connection,
@@ -168,6 +168,9 @@ async function main() {
 
   worker.on('completed', job => log.info('Job completed', { id: job.id, result: job.returnvalue }))
   worker.on('failed',    (job, err) => log.error('Job failed', { id: job?.id, err: err.message }))
+  worker.on('error',     err => log.error('Worker error', { err: err.message }))
+
+  installWorkerLifecycle(log, [() => worker.close(), () => queue.close(), () => prisma.$disconnect()])
 
   log.info('Recurring missions worker started (CRON 01:00 daily)')
 }

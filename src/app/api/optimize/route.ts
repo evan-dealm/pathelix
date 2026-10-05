@@ -11,7 +11,7 @@ import { getAllExutoires }              from '@/lib/data/exutoires'
 import { drainByDate }                  from '@/lib/missionQueue'
 import { loadShedder, shedResponse }   from '@/lib/loadShedder'
 import { metrics, METRIC }             from '@/lib/metrics'
-import { enqueueVrpJob, getVrpQueue }  from '@/lib/queue/vrpQueue'
+import { enqueueVrpJob, hasActiveVrpWorker } from '@/lib/queue/vrpQueue'
 import { runVRP }                       from '@/lib/vrp/index'
 import type { Mission }                 from '@/lib/types'
 import { broadcastToTenant, type PushSubRecord } from '@/lib/webPush'
@@ -171,11 +171,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     try {
-
-      const workers = await getVrpQueue().getWorkers()
-      if (workers.length === 0) {
-        throw new Error('no-workers')
-      }
+      // Bounded: with Redis down this used to hang forever and the sync fallback never ran.
+      if (!(await hasActiveVrpWorker())) throw new Error('no-workers')
 
       const jobId = await enqueueVrpJob({
         tenantId,

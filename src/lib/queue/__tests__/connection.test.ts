@@ -1,45 +1,52 @@
-import { describe, it, expect } from 'vitest'
-import { redisConnection, workerRedisConnection, REDIS_URL } from '../connection'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { redisBaseOptions, queueConnectionOptions, workerConnectionOptions, withTimeout, TimeoutError } from '../connection'
 
-describe('redisConnection', () => {
-  it('uses localhost defaults when env not set', () => {
-    expect(redisConnection.host).toBe(process.env.REDIS_HOST ?? 'localhost')
-    expect(redisConnection.port).toBe(parseInt(process.env.REDIS_PORT ?? '6379', 10))
-    expect(redisConnection.lazyConnect).toBe(true)
-    expect(redisConnection.maxRetriesPerRequest).toBeNull()
-    expect(redisConnection.enableReadyCheck).toBe(false)
+afterEach(() => vi.unstubAllEnvs())
+
+describe('redisBaseOptions', () => {
+  it('parses REDIS_URL including auth, db and TLS (ioredis ignores a `url` option, BullMQ got none of it)', () => {
+    vi.stubEnv('REDIS_URL', 'rediss://app:s%40cret@redis.internal:6380/2')
+    expect(redisBaseOptions()).toEqual({
+      host: 'redis.internal', port: 6380, username: 'app', password: 's@cret', db: 2, tls: {},
+    })
   })
 
-  it('retryStrategy returns null after >2 retries', () => {
-    expect(redisConnection.retryStrategy(3)).toBeNull()
-    expect(redisConnection.retryStrategy(10)).toBeNull()
-  })
-
-  it('retryStrategy returns delay for first 2 retries', () => {
-    expect(redisConnection.retryStrategy(1)).toBe(200)
-    expect(redisConnection.retryStrategy(2)).toBe(400)
-  })
-})
-
-describe('workerRedisConnection', () => {
-  it('has longer timeouts than redisConnection', () => {
-    expect(workerRedisConnection.connectTimeout).toBeGreaterThan(redisConnection.connectTimeout!)
-    expect(workerRedisConnection.lazyConnect).toBe(true)
-  })
-
-  it('retryStrategy returns null after >10 retries', () => {
-    expect(workerRedisConnection.retryStrategy(11)).toBeNull()
-  })
-
-  it('retryStrategy caps delay at 5000ms', () => {
-    expect(workerRedisConnection.retryStrategy(10)).toBe(5000)
-    expect(workerRedisConnection.retryStrategy(1)).toBe(500)
+  it('falls back to REDIS_HOST/PORT/PASSWORD', () => {
+    vi.stubEnv('REDIS_URL', '')
+    vi.stubEnv('REDIS_HOST', 'cache')
+    vi.stubEnv('REDIS_PORT', '6390')
+    vi.stubEnv('REDIS_PASSWORD', 'pw')
+    expect(redisBaseOptions()).toMatchObject({ host: 'cache', port: 6390, password: 'pw', db: 0 })
   })
 })
 
-describe('REDIS_URL', () => {
-  it('is undefined when REDIS_URL env not set', () => {
-    // In test env without REDIS_URL, value should be undefined
-    expect(REDIS_URL).toBe(process.env.REDIS_URL ?? undefined)
+describe('connection profiles', () => {
+  it('never gives up reconnecting (a null retryStrategy left a dead queue singleton until restart)', () => {
+    for (const opts of [queueConnectionOptions(), workerConnectionOptions()]) {
+      const retry = opts.retryStrategy!
+      expect(retry(1)).toBe(500)
+      expect(retry(3)).toBe(1500)
+      expect(retry(1000)).toBe(10_000)
+    }
+  })
+
+  it('web-side producers fail fast instead of queueing commands while Redis is down', () => {
+    const o = queueConnectionOptions()
+    expect(o.enableOfflineQueue).toBe(false)
+    expect(o.commandTimeout).toBeLessThanOrEqual(3_000)
+  })
+
+  it('workers use maxRetriesPerRequest: null as BullMQ requires', () => {
+    expect(workerConnectionOptions().maxRetriesPerRequest).toBeNull()
+  })
+})
+
+describe('withTimeout', () => {
+  it('resolves when the promise settles in time', async () => {
+    await expect(withTimeout(Promise.resolve(42), 50, 'op')).resolves.toBe(42)
+  })
+
+  it('rejects with TimeoutError when it does not', async () => {
+    await expect(withTimeout(new Promise(() => undefined), 20, 'hang')).rejects.toBeInstanceOf(TimeoutError)
   })
 })

@@ -20,10 +20,9 @@ vi.mock('bullmq', () => ({
   Queue: vi.fn().mockImplementation(() => mockQueue),
 }))
 
-vi.mock('@/lib/queue/connection', () => ({
-  redisConnection: { host: 'localhost', port: 6379 },
-  REDIS_URL: undefined,
-  workerRedisConnection: { host: 'localhost', port: 6379 },
+vi.mock('@/lib/queue/connection', async (orig) => ({
+  ...(await orig<typeof import('@/lib/queue/connection')>()),
+  queueConnectionOptions: () => ({ host: 'localhost', port: 6379 }),
 }))
 
 import { getVrpQueue, enqueueVrpJob, getVrpJobStatus, VRP_QUEUE_NAME } from '@/lib/queue/vrpQueue'
@@ -133,22 +132,12 @@ describe('getVrpJobStatus', () => {
   })
 })
 
-// ── connection.ts retryStrategy ──────────────────────────────────────────────
-
-describe('redisConnection.retryStrategy', () => {
-  it('returns backoff delay for attempts <= 2', async () => {
-    const { redisConnection } = await import('@/lib/queue/connection')
-    const actual = { ...redisConnection, host: 'localhost', port: 6379 }
-
-    const fakeConn = {
-      retryStrategy(times: number): number | null {
-        if (times > 2) return null
-        return times * 200
-      }
-    }
-    expect(fakeConn.retryStrategy(1)).toBe(200)
-    expect(fakeConn.retryStrategy(2)).toBe(400)
-    expect(fakeConn.retryStrategy(3)).toBeNull()
-    expect(actual).toBeDefined()
+describe('hasActiveVrpWorker', () => {
+  it('reports no worker (instead of hanging) when listing workers fails or stalls', async () => {
+    const { hasActiveVrpWorker } = await import('@/lib/queue/vrpQueue')
+    ;(mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi.fn().mockRejectedValueOnce(new Error('Connection is closed.'))
+    expect(await hasActiveVrpWorker()).toBe(false)
+    ;(mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi.fn().mockResolvedValueOnce([{ id: 'w1' }])
+    expect(await hasActiveVrpWorker()).toBe(true)
   })
 })

@@ -60,13 +60,19 @@ async function computeProfiles(): Promise<void> {
 
     let totalUpserts = 0
 
+    let failedTenants = 0
     for (const tenant of tenants) {
-      const upserts = await computeTenantProfile(prisma, tenant.id)
-      totalUpserts += upserts
-      if (upserts > 0) {
-        log.info(`Tenant ${tenant.name}: ${upserts} coefficients updated`)
+      // One tenant's bad data must not stop the nightly run for every tenant after it.
+      try {
+        const upserts = await computeTenantProfile(prisma, tenant.id)
+        totalUpserts += upserts
+        if (upserts > 0) log.info(`Tenant ${tenant.name}: ${upserts} coefficients updated`)
+      } catch (err) {
+        failedTenants++
+        log.error('ML profile failed for tenant — skipped', { tenantId: tenant.id, err: err instanceof Error ? err.message : String(err) })
       }
     }
+    if (failedTenants > 0) log.warn('ML profile run finished with failures', { failedTenants })
 
     log.info(`ML profile computation complete`, {
       tenants: tenants.length,

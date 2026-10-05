@@ -13,7 +13,8 @@ import { validateEnv } from '@/lib/env'
 validateEnv()
 import { Worker, type Job } from 'bullmq'
 import { PDF_QUEUE_NAME, type PdfJobData, type PdfJobResult } from '@/lib/queue/pdfQueue'
-import { workerRedisConnection, REDIS_URL } from '@/lib/queue/connection'
+import { workerConnectionOptions } from '@/lib/queue/connection'
+import { installWorkerLifecycle } from './lifecycle'
 import { renderTourPdf } from '@/lib/tourPdf'
 import { generateMonthlyReportPdf } from '@/lib/pdfReport'
 import { createLogger } from '@/lib/logger'
@@ -39,13 +40,12 @@ async function processJob(job: Job<PdfJobData, PdfJobResult>): Promise<PdfJobRes
 }
 
 const concurrency = parseInt(process.env.PDF_CONCURRENCY ?? '2', 10) || 2
-const conn = REDIS_URL ? { url: REDIS_URL } : workerRedisConnection
 
 const worker = new Worker<PdfJobData, PdfJobResult>(
   PDF_QUEUE_NAME,
   processJob,
   {
-    connection:   conn as never,
+    connection:   workerConnectionOptions() as never,
     concurrency,
     lockDuration: 30_000,
   },
@@ -63,13 +63,6 @@ worker.on('error', err => {
   log.error('Worker error', { err: err instanceof Error ? err.message : String(err) })
 })
 
-async function shutdown(): Promise<void> {
-  log.info('Worker shutting down…')
-  await worker.close()
-  process.exit(0)
-}
-
-process.on('SIGTERM', shutdown)
-process.on('SIGINT',  shutdown)
+installWorkerLifecycle(log, [() => worker.close()])
 
 log.info('PDF Worker started', { queue: PDF_QUEUE_NAME, concurrency })

@@ -7,12 +7,13 @@ import { Worker, type Job } from 'bullmq'
 import { PrismaClient } from '@/generated/prisma'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { VRP_QUEUE_NAME, type VrpJobData, type VrpJobResult } from '@/lib/queue/vrpQueue'
-import { workerRedisConnection, REDIS_URL } from '@/lib/queue/connection'
+import { workerConnectionOptions } from '@/lib/queue/connection'
+import { installWorkerLifecycle } from './lifecycle'
 import { runVRP } from '@/lib/vrp/index'
 import { buildWarmStartFromReference } from '@/lib/vrp/warmStart'
 import { createLogger } from '@/lib/logger'
 import type { PlannedMission } from '@/lib/types'
-import { startTrafficAggregation } from '@/services/trafficAggregator'
+import { startTrafficAggregation, stopTrafficAggregation } from '@/services/trafficAggregator'
 import { broadcastToTenant, type PushSubRecord } from '@/lib/webPush'
 import { getRedisClient } from '@/lib/redisClient'
 
@@ -224,13 +225,12 @@ async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<VrpJobRes
 }
 
 const concurrency = parseInt(process.env.VRP_CONCURRENCY ?? '1', 10) || 1
-const conn = REDIS_URL ? { url: REDIS_URL } : workerRedisConnection
 
 const worker = new Worker<VrpJobData, VrpJobResult>(
   VRP_QUEUE_NAME,
   processJob,
   {
-    connection:  conn as never,
+    connection:  workerConnectionOptions() as never,
     concurrency,
 
     lockDuration: 300_000,
@@ -255,14 +255,11 @@ worker.on('error', err => {
   log.error('Worker error', { err: err instanceof Error ? err.message : String(err) })
 })
 
-async function shutdown(): Promise<void> {
-  log.info('Worker shutting down…')
-  await worker.close()
-  process.exit(0)
-}
-
-process.on('SIGTERM', shutdown)
-process.on('SIGINT',  shutdown)
+installWorkerLifecycle(log, [
+  () => worker.close(),
+  async () => stopTrafficAggregation(),
+  async () => { await _prisma?.$disconnect() },
+])
 
 log.info('VRP Worker started', { queue: VRP_QUEUE_NAME, concurrency })
 

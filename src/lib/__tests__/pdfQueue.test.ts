@@ -19,9 +19,10 @@ vi.mock('bullmq', () => ({
   QueueEvents: vi.fn().mockImplementation(() => mockQueueEvents),
 }))
 
-vi.mock('@/lib/queue/connection', () => ({
-  redisConnection: { host: 'localhost', port: 6379 },
-  REDIS_URL: undefined,
+vi.mock('@/lib/queue/connection', async (orig) => ({
+  ...(await orig<typeof import('@/lib/queue/connection')>()),
+  queueConnectionOptions:  () => ({ host: 'localhost', port: 6379 }),
+  workerConnectionOptions: () => ({ host: 'localhost', port: 6379 }),
 }))
 
 import { getPdfQueue, generatePdfViaWorker, PDF_QUEUE_NAME, type PdfJobData } from '@/lib/queue/pdfQueue'
