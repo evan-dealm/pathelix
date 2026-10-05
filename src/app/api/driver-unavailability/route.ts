@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }    from 'next/server'
+import { tenantRefsError } from '@/lib/tenantRefs'
 import { DriverUnavailabilitySchema }   from '@/lib/schemas'
 import { createLogger }                 from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
@@ -61,6 +62,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const db = getTenantDb(tenantId)
+    const refErr = await tenantRefsError(db, parsed.data as Record<string, unknown>)
+    if (refErr) return refErr
     const unavailability = await db.driverUnavailability.create({
       data: { ...parsed.data } as Parameters<typeof db.driverUnavailability.create>[0]['data'],
     })

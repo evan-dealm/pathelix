@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { escapeHtml } from '@/lib/maplibre/escapeHtml'
+import { escapeHtml } from '@/lib/html'
 
 describe('escapeHtml', () => {
   it('escapes a script tag (stored XSS via a mission/client name)', () => {

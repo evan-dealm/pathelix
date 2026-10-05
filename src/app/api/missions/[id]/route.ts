@@ -3,6 +3,7 @@ import { MissionUpdateSchema } from '@/lib/schemas'
 import { createLogger } from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getMission, updateMission, deleteMission } from '@/lib/data/missions'
+import { ForeignTenantRefError } from '@/lib/tenantRefs'
 import { redisCache } from '@/lib/redisCache'
 import { auditAsync } from '@/lib/audit'
 import { hasPermission } from '@/lib/permissions'
@@ -53,6 +54,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
     auditAsync(req, 'mission.update', 'Mission', id, parsed.data as Record<string, unknown>)
     return NextResponse.json(mission)
   } catch (err) {
+    if (err instanceof ForeignTenantRefError) return NextResponse.json({ error: err.message }, { status: 422 })
     log.error('PUT failed', { id, err: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
@@ -61,7 +63,6 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id } = await params
   const { tenantId, userId, role } = getRequestContext(req)
-  if (role === 'dispatcher') return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   if (!(await hasPermission(userId, role, 'manage_missions'))) {
     return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import { useMapLibreMap } from '@/hooks/useMapLibreMap'
 import { toLngLat } from '@/lib/maplibre/coords'
-import { escapeHtml } from '@/lib/maplibre/escapeHtml'
+import { escapeHtml } from '@/lib/html'
 
 const DRIVER_COLORS = [
   '#3B82F6', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6',

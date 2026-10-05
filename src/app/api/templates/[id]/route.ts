@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }  from 'next/server'
+import { tenantRefsError } from '@/lib/tenantRefs'
 import { getRequestContext }         from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
 import { redisCache }                from '@/lib/redisCache'
@@ -38,6 +39,8 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   }
 
   try {
+    const refErr = await tenantRefsError(getTenantDb(tenantId), data)
+    if (refErr) return refErr
     const template = await getTenantDb(tenantId).missionTemplate.update({
       where: { id },
       data,

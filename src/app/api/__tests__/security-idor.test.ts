@@ -429,10 +429,13 @@ describe('RBAC: role enforcement on sensitive routes', () => {
     expect(res.status).toBe(403)
   })
 
-  it('dispatcher cannot delete missions (403)', async () => {
+  // Changed on purpose: DELETE used to hard-block the dispatcher role on top of the permission
+  // check, although dispatchers hold manage_*s by default and the UI offered (and optimistically
+  // applied) the delete — the item silently came back on reload. The permission alone decides now.
+  it('dispatcher with the default manage_missions permission is not blocked by role', async () => {
     setTenant('tenant-A', 'dispatcher', 'user-disp')
     const res = await missionDel(makeDelete('http://localhost/api/missions/m-1'), makeParams('m-1'))
-    expect(res.status).toBe(403)
+    expect(res.status).not.toBe(403)
   })
 
   // Regression A7: this used to document a real gap — the role check only blocked 'dispatcher',

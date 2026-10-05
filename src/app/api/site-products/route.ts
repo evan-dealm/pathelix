@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { tenantRefsError } from '@/lib/tenantRefs'
 import { z } from 'zod'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
@@ -76,6 +77,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ])
     if (!client) return NextResponse.json({ error: 'Client introuvable pour ce tenant' }, { status: 404 })
     if (!site) return NextResponse.json({ error: 'Site introuvable pour ce tenant' }, { status: 404 })
+    const refErr = await tenantRefsError(db, { defaultExutoireId })
+    if (refErr) return refErr
 
     await db.clientSite.upsert({
       where: { clientId_siteId: { clientId, siteId } },

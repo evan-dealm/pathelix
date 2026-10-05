@@ -17,7 +17,8 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     return NextResponse.json({ error: 'jobId requis' }, { status: 400 })
   }
 
-  if (!jobId.startsWith(tenantId)) {
+  // Job ids are "<tenantId>:…" — the separator matters: tenant "t_demo" must not match "t_demo2:…".
+  if (!jobId.startsWith(`${tenantId}:`)) {
     return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
   }
 

@@ -1,6 +1,11 @@
 import { createLogger } from '@/lib/logger'
+import { getTenantDb } from '@/lib/tenantDb'
+import { decryptConfig } from '@/lib/configCrypto'
+import { safeFetch } from '@/lib/outboundUrl'
 
 const log = createLogger('integrationERP')
+
+const ERP_TIMEOUT_MS = 10_000
 
 interface MissionBillingData {
   tenantId: string
@@ -18,24 +23,25 @@ interface MissionBillingData {
 
 export async function syncMissionToERP(data: MissionBillingData): Promise<void> {
   try {
-    const prisma = (await import('@/lib/db')).default
-    const integrations = await prisma.integration.findMany({
-      where: { tenantId: data.tenantId, enabled: true, type: { in: ['sage', 'sap'] } },
+    const db = getTenantDb(data.tenantId)
+    const integrations = await db.integration.findMany({
+      where: { enabled: true, type: { in: ['sage', 'sap'] } },
       select: { type: true, config: true, id: true },
     })
 
     for (const integ of integrations) {
-      const config = (integ.config ?? {}) as Record<string, unknown>
       try {
+        // Stored encrypted (src/lib/configCrypto.ts) — the raw value has no apiKey/baseUrl.
+        const config = decryptConfig(integ.config)
         if (integ.type === 'sage') {
           await syncToSage(config, data)
         } else if (integ.type === 'sap') {
           await syncToSAP(config, data)
         }
-        await prisma.integration.update({ where: { id: integ.id }, data: { lastSyncAt: new Date(), lastError: null } })
+        await db.integration.update({ where: { id: integ.id }, data: { lastSyncAt: new Date(), lastError: null } })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        await prisma.integration.update({ where: { id: integ.id }, data: { lastError: msg } }).catch(() => {})
+        await db.integration.update({ where: { id: integ.id }, data: { lastError: msg } }).catch(() => {})
         log.warn('ERP sync failed', { type: integ.type, err: msg })
       }
     }
@@ -65,6 +71,7 @@ async function syncToSage(config: Record<string, unknown>, data: MissionBillingD
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(ERP_TIMEOUT_MS),
   })
 
   if (!res.ok) throw new Error(`Sage API ${res.status}`)
@@ -88,7 +95,8 @@ async function syncToSAP(config: Record<string, unknown>, data: MissionBillingDa
     }],
   }
 
-  const res = await fetch(`${baseUrl}/b1s/v1/DeliveryNotes`, {
+  const res = await safeFetch(`${baseUrl.replace(/\/+$/, '')}/b1s/v1/DeliveryNotes`, {
+    timeoutMs: ERP_TIMEOUT_MS,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

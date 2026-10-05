@@ -4,6 +4,7 @@ import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { encryptConfig } from '@/lib/configCrypto'
+import { invalidateIntegrationCache } from '@/lib/integrationEvents'
 import { hasPermission } from '@/lib/permissions'
 import { auditAsync } from '@/lib/audit'
 
@@ -94,6 +95,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     })
 
+    invalidateIntegrationCache(tenantId)
     log.info('Integration configured', { tenantId, type: parsed.data.type })
     auditAsync(req, 'integration.configure', 'Integration', integration.id, {
       type: parsed.data.type,

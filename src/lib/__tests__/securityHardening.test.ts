@@ -150,3 +150,65 @@ describe('uploadStorage', () => {
     vi.unstubAllEnvs()
   })
 })
+
+// ─── outboundUrl.ts ───────────────────────────────────────────────────────────
+
+describe('SSRF guard (outboundUrl)', () => {
+  it.each([
+    ['127.0.0.1', true], ['127.0.0.2', true], ['10.1.2.3', true], ['172.20.0.5', true],
+    ['192.168.1.1', true], ['169.254.169.254', true], ['100.64.1.1', true], ['0.0.0.0', true],
+    ['::1', true], ['::ffff:127.0.0.1', true], ['fd12:3456::1', true], ['fe80::1', true],
+    ['8.8.8.8', false], ['2a00:1450:4007:80e::200e', false],
+  ])('isPrivateAddress(%s) = %s', async (ip, expected) => {
+    const { isPrivateAddress } = await import('@/lib/outboundUrl')
+    expect(isPrivateAddress(ip)).toBe(expected)
+  })
+
+  it.each([
+    'http://127.0.0.1:6379/', 'http://[::1]/', 'http://[::ffff:7f00:1]/', 'http://169.254.169.254/latest/meta-data',
+    'file:///etc/passwd', 'gopher://x/', 'http://user:pw@8.8.8.8/',
+  ])('assertPublicUrl rejects %s', async (url) => {
+    const { assertPublicUrl } = await import('@/lib/outboundUrl')
+    await expect(assertPublicUrl(url)).rejects.toThrow()
+  })
+
+  it('accepts a public IP literal and an explicitly allowed internal host', async () => {
+    const { assertPublicUrl } = await import('@/lib/outboundUrl')
+    await expect(assertPublicUrl('https://8.8.8.8/x')).resolves.toBeInstanceOf(URL)
+    vi.stubEnv('OUTBOUND_ALLOWED_HOSTS', 'osrm, valhalla')
+    await expect(assertPublicUrl('http://osrm:5000/route')).resolves.toBeInstanceOf(URL)
+    vi.unstubAllEnvs()
+  })
+})
+
+// ─── tenantRefs.ts ────────────────────────────────────────────────────────────
+
+describe('assertTenantRefs', () => {
+  const dbWith = (known: Record<string, string[]>) => new Proxy({}, {
+    get: (_t, model: string) => ({
+      findFirst: async ({ where }: { where: { id: string } }) => (known[model] ?? []).includes(where.id) ? { id: where.id } : null,
+      count: async ({ where }: { where: { id: { in: string[] } } }) => where.id.in.filter(id => (known[model] ?? []).includes(id)).length,
+    }),
+  }) as never
+
+  it('accepts references that exist in the tenant and ignores unset/cleared ones', async () => {
+    const { assertTenantRefs } = await import('@/lib/tenantRefs')
+    await expect(assertTenantRefs(dbWith({ client: ['c1'], exutoire: ['e1'] }), {
+      clientId: 'c1', linkedExutoireId: 'e1', siteId: null, productId: '',
+    })).resolves.toBeUndefined()
+  })
+
+  it.each([
+    ['clientId', 'client'], ['siteId', 'site'], ['productId', 'siteProduct'], ['linkedExutoireId', 'exutoire'],
+    ['dependsOnId', 'mission'], ['driverId', 'driver'], ['defaultExutoireId', 'exutoire'],
+  ])('rejects a %s that is not in the tenant (another tenant\'s id)', async (field) => {
+    const { assertTenantRefs, ForeignTenantRefError } = await import('@/lib/tenantRefs')
+    await expect(assertTenantRefs(dbWith({}), { [field]: 'foreign-id' })).rejects.toBeInstanceOf(ForeignTenantRefError)
+  })
+
+  it('assertTenantDrivers rejects a batch containing one foreign driver', async () => {
+    const { assertTenantDrivers } = await import('@/lib/tenantRefs')
+    await expect(assertTenantDrivers(dbWith({ driver: ['d1', 'd2'] }), ['d1', 'd2', 'd1'])).resolves.toBeUndefined()
+    await expect(assertTenantDrivers(dbWith({ driver: ['d1'] }), ['d1', 'other-tenant-driver'])).rejects.toThrow()
+  })
+})

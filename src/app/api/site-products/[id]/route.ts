@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { tenantRefsError } from '@/lib/tenantRefs'
 import { z } from 'zod'
 import { getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
@@ -35,6 +36,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const data = parsed.data as Record<string, unknown>
     if (Object.keys(data).length === 0) return NextResponse.json({ error: 'Aucun champ modifiable' }, { status: 400 })
+    const refErr = await tenantRefsError(db, data)
+    if (refErr) return refErr
 
     const updated = await db.siteProduct.updateMany({
       where: { id },

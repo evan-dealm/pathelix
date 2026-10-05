@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { assertTenantDrivers, ForeignTenantRefError } from '@/lib/tenantRefs'
+import { hasPermission } from '@/lib/permissions'
 import type { PlannedMission }       from '@/lib/types'
 import { PlanSchema }                from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
@@ -76,6 +78,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const tenantId = getTenantId(req)
+  const { userId, role } = getRequestContext(req)
+  // Writing plans = publishing tours to drivers: same permission as optimising.
+  if (!(await hasPermission(userId, role, 'optimize'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   let body: unknown
   try { body = await req.json() }
@@ -117,10 +124,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const db = getTenantDb(tenantId)
-    const BATCH = 50
-    for (let i = 0; i < plans.length; i += BATCH) {
-      await Promise.all(plans.slice(i, i + BATCH).map(plan =>
-        db.plan.upsert({
+    // Plan.driverId has a plain FK: a driver id of another tenant would be accepted and its
+    // name/depot later read back through the relation (reports, p1-risk).
+    try {
+      await assertTenantDrivers(db, plans.map(p => p.driverId))
+    } catch (err) {
+      if (err instanceof ForeignTenantRefError) return NextResponse.json({ error: 'Chauffeur inconnu dans un des plans' }, { status: 422 })
+      throw err
+    }
+    // All-or-nothing: a failure half-way used to leave some drivers' plans saved and others not.
+    await db.$transaction(async (tx) => {
+      for (const plan of plans) {
+        await tx.plan.upsert({
           // The compound unique key structurally requires tenantId here — this is not a manual
           // tenant-scope check to remove, it's part of the DB constraint's shape.
           where: {
@@ -132,15 +147,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             missions:  plan.missions as object[],
             startTime: plan.startTime ?? '07:00',
             speedKmh:  plan.speedKmh  ?? 50,
-          } as Parameters<typeof db.plan.upsert>[0]['create'],
+          } as Parameters<typeof tx.plan.upsert>[0]['create'],
           update: {
             missions:  plan.missions as object[],
             startTime: plan.startTime ?? '07:00',
             speedKmh:  plan.speedKmh  ?? 50,
           },
-        }),
-      ))
-    }
+        })
+      }
+    }, { timeout: 30_000 })
 
     const affectedDates = new Set(plans.map(p => p.date))
     for (const d of affectedDates) void redisCache.invalidate('plans', tenantId, d)

@@ -93,7 +93,7 @@ describe('GET /api/optimize/[jobId]', () => {
 
   it('returns job status when found (200)', async () => {
     vi.mocked(getVrpJobStatus).mockResolvedValue({ status: 'completed', result: { assignments: {}, unassignedMissions: [], stats: { assignedMissions: 0, totalMissions: 0, score: 0, timeTakenMs: 0 }, warnings: [] } } as never)
-    const res  = await jobGet(makeGet('http://localhost/api/optimize/tenant-1-job-123'), makeJobParams('tenant-1-job-123'))
+    const res  = await jobGet(makeGet('http://localhost/api/optimize/tenant-1:job-123'), makeJobParams('tenant-1:job-123'))
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.status).toBe('completed')
@@ -101,25 +101,31 @@ describe('GET /api/optimize/[jobId]', () => {
 
   it('returns 404 when job unknown', async () => {
     vi.mocked(getVrpJobStatus).mockResolvedValue({ status: 'unknown' })
-    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-1-job-missing'), makeJobParams('tenant-1-job-missing'))
+    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-1:job-missing'), makeJobParams('tenant-1:job-missing'))
     expect(res.status).toBe(404)
   })
 
   it('returns 403 when jobId does not start with tenantId (IDOR protection)', async () => {
     vi.mocked(getTenantId).mockReturnValue('tenant-A')
-    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-B-job-123'), makeJobParams('tenant-B-job-123'))
+    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-B:job-123'), makeJobParams('tenant-B:job-123'))
+    expect(res.status).toBe(403)
+  })
+
+  it("returns 403 for another tenant whose id merely starts with the caller's id (t_demo vs t_demo2)", async () => {
+    vi.mocked(getTenantId).mockReturnValue('tenant-A')
+    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-A2:job-1'), makeJobParams('tenant-A2:job-1'))
     expect(res.status).toBe(403)
   })
 
   it('adds Retry-After header when job is active', async () => {
     vi.mocked(getVrpJobStatus).mockResolvedValue({ status: 'active' })
-    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-1-job-active'), makeJobParams('tenant-1-job-active'))
+    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-1:job-active'), makeJobParams('tenant-1:job-active'))
     expect(res.headers.get('Retry-After')).toBe('2')
   })
 
   it('returns 500 on error', async () => {
     vi.mocked(getVrpJobStatus).mockRejectedValue(new Error('Queue error'))
-    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-1-job-err'), makeJobParams('tenant-1-job-err'))
+    const res = await jobGet(makeGet('http://localhost/api/optimize/tenant-1:job-err'), makeJobParams('tenant-1:job-err'))
     expect(res.status).toBe(500)
   })
 })

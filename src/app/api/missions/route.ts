@@ -4,6 +4,7 @@ import { peekQueue }                      from '@/lib/missionQueue'
 import { createLogger }                   from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getAllMissions, getMissionsByDate, createMission } from '@/lib/data/missions'
+import { ForeignTenantRefError } from '@/lib/tenantRefs'
 import { redisCache }                     from '@/lib/redisCache'
 import { auditAsync }                     from '@/lib/audit'
 import { createTenantRateLimiter }        from '@/lib/rateLimit'
@@ -124,6 +125,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/missions', method: 'POST', status: '201' })
     return NextResponse.json(mission, { status: 201 })
   } catch (err) {
+    if (err instanceof ForeignTenantRefError) return NextResponse.json({ error: err.message }, { status: 422 })
     // P2003 : clientId / driverId / linkedExutoireId référence un enregistrement inexistant
     // (ex. supprimé entre le chargement du formulaire et la soumission) — erreur client, pas serveur
     if (err instanceof Error && (err as { code?: string }).code === 'P2003') {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }   from 'next/server'
+import { ForeignTenantRefError } from '@/lib/tenantRefs'
 import { DriverSchema }                from '@/lib/schemas'
 import { createLogger }                from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/drivers', method: 'POST', status: '201' })
     return NextResponse.json(driver, { status: 201, headers: { 'Cache-Control': 'no-cache' } })
   } catch (err) {
+    if (err instanceof ForeignTenantRefError) return NextResponse.json({ error: err.message }, { status: 422 })
     log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
     metrics.increment(METRIC.API_ERRORS, { route: '/api/drivers', type: 'server_error' })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

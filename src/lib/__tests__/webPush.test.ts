@@ -19,7 +19,7 @@ vi.mock('@/lib/logger', () => ({
 import { sendPushNotification, broadcastToTenant } from '@/lib/webPush'
 import type { PushSubRecord, PushPayload } from '@/lib/webPush'
 
-const testSub: PushSubRecord  = { endpoint: 'https://push.example.com/ep1', p256dh: 'key1', auth: 'auth1' }
+const testSub: PushSubRecord  = { endpoint: 'https://fcm.googleapis.com/fcm/send/ep1', p256dh: 'key1', auth: 'auth1' }
 const testPayload: PushPayload = { title: 'Mission update', body: 'En route vers vous' }
 
 beforeEach(() => {
@@ -68,9 +68,9 @@ describe('sendPushNotification', () => {
 
 describe('broadcastToTenant', () => {
   const subs: PushSubRecord[] = [
-    { endpoint: 'https://ep1.example.com', p256dh: 'k1', auth: 'a1' },
-    { endpoint: 'https://ep2.example.com', p256dh: 'k2', auth: 'a2' },
-    { endpoint: 'https://ep3.example.com', p256dh: 'k3', auth: 'a3' },
+    { endpoint: 'https://fcm.googleapis.com/fcm/send/ep1', p256dh: 'k1', auth: 'a1' },
+    { endpoint: 'https://fcm.googleapis.com/fcm/send/ep2', p256dh: 'k2', auth: 'a2' },
+    { endpoint: 'https://fcm.googleapis.com/fcm/send/ep3', p256dh: 'k3', auth: 'a3' },
   ]
 
   it('counts sent correctly when all succeed', async () => {
@@ -109,5 +109,12 @@ describe('broadcastToTenant', () => {
     expect(sent).toBe(0)
     expect(failed).toBe(0)
     expect(expired).toEqual([])
+  })
+})
+
+describe('sendPushNotification — endpoint allowlist', () => {
+  it('never contacts an endpoint outside the browser push services (legacy rows) and flags it for deletion', async () => {
+    const res = await sendPushNotification({ endpoint: 'http://10.0.0.5/internal', p256dh: 'k', auth: 'a' }, { title: 't', body: 'b' })
+    expect(res).toEqual({ ok: false, expired: true })
   })
 })

@@ -7,7 +7,7 @@ import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
 
 import { useMapLibreMap } from '@/hooks/useMapLibreMap'
 import { toLngLat } from '@/lib/maplibre/coords'
-import { escapeHtml } from '@/lib/maplibre/escapeHtml'
+import { escapeHtml } from '@/lib/html'
 import { ensureEmojiImage, installEmojiImageFallback } from '@/lib/maplibre/emojiIcon'
 import type { Driver, Exutoire } from '@/lib/types'
 import { MISSION_TYPE_HEX } from '@/lib/types'

@@ -3,6 +3,7 @@ import type { DriverInput } from '@/lib/schemas'
 import { prismaRowToDriver } from '@/lib/prismaMappers'
 import { getDriverStore } from '@/app/api/drivers/_store'
 import { getTenantDb } from '@/lib/tenantDb'
+import { assertTenantRefs } from '@/lib/tenantRefs'
 
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
@@ -59,6 +60,7 @@ export async function createDriver(tenantId: string, data: DriverInput): Promise
     return driver
   }
   const db  = getTenantDb(tenantId)
+  await assertTenantRefs(db, data as Record<string, unknown>)
   const row = await db.driver.create({
     data: { ...data } as Parameters<typeof db.driver.create>[0]['data'],
   })
@@ -79,6 +81,7 @@ export async function updateDriver(
   }
   try {
     const db  = getTenantDb(tenantId)
+    await assertTenantRefs(db, data as Record<string, unknown>)
     const row = await db.driver.update({
       where: { id },
       data:  data as Parameters<typeof db.driver.update>[0]['data'],

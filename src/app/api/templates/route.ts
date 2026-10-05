@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { tenantRefsError } from '@/lib/tenantRefs'
 import { z }                         from 'zod'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger }              from '@/lib/logger'
@@ -89,6 +90,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const db = getTenantDb(tenantId)
+    const refErr = await tenantRefsError(db, rest as Record<string, unknown>)
+    if (refErr) return refErr
     const template = await db.missionTemplate.create({
       data: {
         ...rest,

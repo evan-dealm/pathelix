@@ -4,7 +4,11 @@ const mockPrisma = vi.hoisted(() => ({
   integration: { findMany: vi.fn() },
 }))
 
-vi.mock('@/lib/db', () => ({ default: mockPrisma }))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: () => mockPrisma }))
+// DNS-based SSRF guard is unit-tested in securityHardening.test.ts — here it only forwards.
+vi.mock('@/lib/outboundUrl', () => ({
+  safeFetch: (url: string, init: RequestInit) => fetch(url, init),
+}))
 
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({
@@ -18,13 +22,14 @@ vi.mock('@/lib/logger', () => ({
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
 
-import { emitEvent } from '@/lib/integrationEvents'
+import { emitEvent, invalidateIntegrationCache } from '@/lib/integrationEvents'
 
 const OLD_DATABASE_URL = process.env.DATABASE_URL
 
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.DATABASE_URL = 'postgresql://test'
+  invalidateIntegrationCache('t-1')
   mockFetch.mockResolvedValue({ ok: true, json: vi.fn() })
 })
 
@@ -140,5 +145,32 @@ describe('emitEvent', () => {
     mockFetch.mockRejectedValue(new Error('Network error'))
 
     await expect(emitEvent('t-1', 'tour.published', {})).resolves.not.toThrow()
+  })
+
+  it('decrypts stored (AES-GCM) configs before using them', async () => {
+    process.env.INTEGRATION_ENCRYPTION_KEY = 'a'.repeat(64)
+    const { encryptConfig } = await import('@/lib/configCrypto')
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { type: 'slack', config: encryptConfig({ webhookUrl: 'https://hooks.slack.com/encrypted' }) },
+    ])
+    await emitEvent('t-1', 'mission.done', { driverName: 'Jean' })
+    expect(mockFetch.mock.calls[0][0]).toBe('https://hooks.slack.com/encrypted')
+    delete process.env.INTEGRATION_ENCRYPTION_KEY
+  })
+
+  it('does not post every GPS ping to Slack/Teams', async () => {
+    mockPrisma.integration.findMany.mockResolvedValue([
+      { type: 'slack', config: { webhookUrl: 'https://hooks.slack.com/test' } },
+      { type: 'teams', config: { webhookUrl: 'https://outlook.office.com/webhook/x' } },
+    ])
+    await emitEvent('t-1', 'driver.position', { lat: 45, lng: 4 })
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('caches the integration list per tenant between events', async () => {
+    mockPrisma.integration.findMany.mockResolvedValue([])
+    await emitEvent('t-1', 'mission.done', {})
+    await emitEvent('t-1', 'mission.done', {})
+    expect(mockPrisma.integration.findMany).toHaveBeenCalledTimes(1)
   })
 })

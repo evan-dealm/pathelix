@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
+import { assertPublicUrl, BlockedUrlError } from '@/lib/outboundUrl'
+import { hasPermission } from '@/lib/permissions'
 
 const log = createLogger('/api/integrations/test')
 
@@ -12,28 +14,19 @@ const TestSchema = z.object({
 
 const TEST_TIMEOUT_MS = 5000
 
-function isInternalUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    const host = parsed.hostname
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true
-    if (host.endsWith('.internal') || host.endsWith('.local')) return true
-    if (host.startsWith('10.') || host.startsWith('192.168.')) return true
-    // Full RFC 1918 172.16.x.x – 172.31.x.x range
-    const m = host.match(/^172\.(\d+)\./)
-    if (m && parseInt(m[1], 10) >= 16 && parseInt(m[1], 10) <= 31) return true
-    // Cloud instance metadata services
-    if (host.startsWith('169.254.')) return true
-    return false
-  } catch { return true }
+/** Null when the URL may be fetched, otherwise a user-facing reason (see src/lib/outboundUrl.ts). */
+async function blockedReason(url: string): Promise<string | null> {
+  try { await assertPublicUrl(url); return null }
+  catch (err) { return err instanceof BlockedUrlError ? err.message : 'URL refusée' }
 }
 
-const SSRF_BLOCKED = { ok: false, message: 'URL interne non autorisee pour les tests' } as const
+const ssrfBlocked = (reason: string): TestResult => ({ ok: false, message: `URL refusée : ${reason}` })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'superadmin') {
-    return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  const { role, userId } = getRequestContext(req)
+  // Same permission as saving an integration — someone allowed to configure it can test it.
+  if (!(await hasPermission(userId, role, 'manage_integrations'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let raw: unknown
@@ -98,7 +91,8 @@ async function testOSRM(config: Record<string, unknown>): Promise<TestResult> {
   const url = String(config.url ?? '')
   if (!url) return { ok: false, message: 'URL OSRM requise' }
   try { new URL(url) } catch { return { ok: false, message: 'Format d\'URL invalide' } }
-  if (isInternalUrl(url)) return SSRF_BLOCKED
+  const blocked = await blockedReason(url)
+  if (blocked) return ssrfBlocked(blocked)
 
   try {
     const controller = new AbortController()
@@ -106,6 +100,7 @@ async function testOSRM(config: Record<string, unknown>): Promise<TestResult> {
 
     const res = await fetch(`${url}/nearest/v1/driving/6.1294,45.8992`, {
       signal: controller.signal,
+      redirect: 'manual',
       headers: { 'User-Agent': 'Pathelix/1.0' },
     })
     clearTimeout(timer)
@@ -191,7 +186,8 @@ async function testSAP(config: Record<string, unknown>): Promise<TestResult> {
   const clientId = String(config.clientId ?? '')
   const clientSecret = String(config.clientSecret ?? '')
   if (!baseUrl) return { ok: false, message: 'URL SAP requise' }
-  if (isInternalUrl(baseUrl)) return SSRF_BLOCKED
+  const blocked = await blockedReason(baseUrl)
+  if (blocked) return ssrfBlocked(blocked)
   if (!clientId || !clientSecret) return { ok: false, message: 'Client ID et Secret requis' }
 
   try {
@@ -199,6 +195,7 @@ async function testSAP(config: Record<string, unknown>): Promise<TestResult> {
     const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS)
 
     const res = await fetch(baseUrl, {
+      redirect: 'manual',
       signal: controller.signal,
       headers: { 'X-Client-Id': clientId },
     })
@@ -256,13 +253,15 @@ async function testWebhook(config: Record<string, unknown>, label: string): Prom
   try { new URL(url) }
   catch { return { ok: false, message: 'Format d\'URL invalide' } }
 
-  if (isInternalUrl(url)) return SSRF_BLOCKED
+  const blocked = await blockedReason(url)
+  if (blocked) return ssrfBlocked(blocked)
 
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS)
 
     const res = await fetch(url, {
+      redirect: 'manual',
       method: 'POST',
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json', 'User-Agent': 'Pathelix/1.0 (test)' },

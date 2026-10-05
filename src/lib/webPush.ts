@@ -1,5 +1,9 @@
 import webpush from 'web-push'
 import { createLogger } from '@/lib/logger'
+import { isAllowedPushEndpoint } from '@/lib/pushEndpoints'
+
+const PUSH_TIMEOUT_MS = 10_000
+const BROADCAST_CONCURRENCY = 20
 
 const log = createLogger('webPush')
 
@@ -44,11 +48,15 @@ export async function sendPushNotification(
     return { ok: false, expired: false }
   }
 
+  // Rows saved before the endpoint allowlist existed are never contacted (SSRF) — and are
+  // reported as expired so callers clean them up.
+  if (!isAllowedPushEndpoint(sub.endpoint)) return { ok: false, expired: true }
+
   try {
     await webpush.sendNotification(
       { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
       JSON.stringify(payload),
-      { urgency: 'normal' },
+      { urgency: 'normal', timeout: PUSH_TIMEOUT_MS },
     )
     return { ok: true, expired: false }
   } catch (err: unknown) {
@@ -65,7 +73,11 @@ export async function broadcastToTenant(
   subs:    PushSubRecord[],
   payload: PushPayload,
 ): Promise<{ sent: number; failed: number; expired: string[] }> {
-  const results = await Promise.all(subs.map(s => sendPushNotification(s, payload)))
+  // Bounded concurrency: a large tenant must not open hundreds of simultaneous requests.
+  const results: PushSendResult[] = []
+  for (let i = 0; i < subs.length; i += BROADCAST_CONCURRENCY) {
+    results.push(...await Promise.all(subs.slice(i, i + BROADCAST_CONCURRENCY).map(s => sendPushNotification(s, payload))))
+  }
   let sent = 0, failed = 0
   const expired: string[] = []
 

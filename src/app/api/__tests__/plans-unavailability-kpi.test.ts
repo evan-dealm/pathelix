@@ -15,6 +15,12 @@ const mockPrisma = vi.hoisted(() => ({
   mission: {
     groupBy: vi.fn(),
   },
+  // Referenced driver ids are verified against the tenant before any write.
+  driver: {
+    findFirst: vi.fn(async () => ({ id: 'd-1' })),
+    count:     vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => where.id.in.length),
+  },
+  $transaction: vi.fn(async (fn: (_tx: unknown) => Promise<unknown>) => fn(mockPrisma)),
 }))
 
 vi.hoisted(() => { process.env.USE_MOCK_DATA = 'false' })
@@ -118,6 +124,14 @@ describe('POST /api/plans', () => {
 
     expect(res.status).toBe(200)
     expect(json.saved).toBe(1)
+  })
+
+  it('rejects a plan whose driverId belongs to another tenant (422, nothing written)', async () => {
+    mockPrisma.driver.count.mockResolvedValueOnce(0)
+    mockPrisma.plan.upsert.mockClear()
+    const res = await plansPOST(makePost('http://localhost:3000/api/plans', samplePlan))
+    expect(res.status).toBe(422)
+    expect(mockPrisma.plan.upsert).not.toHaveBeenCalled()
   })
 
   it('saves array of plans (200)', async () => {

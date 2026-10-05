@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { tenantRefsError } from '@/lib/tenantRefs'
+import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext }         from '@/lib/data/context'
 import { handleApiError }            from '@/lib/apiError'
 import { createLogger }              from '@/lib/logger'
@@ -102,6 +104,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 409 },
       )
     }
+
+    // Checked BEFORE the Trackdéchets call: a BSD must never be filed for another tenant's mission.
+    const refErr = await tenantRefsError(getTenantDb(tenantId), { missionId: parsed.data.missionId })
+    if (refErr) return refErr
 
     const token   = getTokenFromAccount(account)
     const tdForm  = await createBsddInTd(token, parsed.data)

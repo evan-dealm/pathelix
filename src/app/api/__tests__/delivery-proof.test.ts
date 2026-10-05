@@ -7,6 +7,7 @@ import { NextRequest } from 'next/server'
 const mockPrisma = vi.hoisted(() => ({
   mission:       { findFirst: vi.fn() },
   deliveryProof: { upsert: vi.fn() },
+  driver:        { findFirst: vi.fn(async () => ({ id: 'driver-1' })) },
 }))
 
 vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))

@@ -27,6 +27,9 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
+const mockMissionFindFirst = vi.hoisted(() => vi.fn(async () => ({ id: 'm-1' })))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: () => ({ mission: { findFirst: mockMissionFindFirst } }) }))
+
 vi.mock('@/lib/trackdechets/bsdService', () => ({
   createBsddInTd: vi.fn(),
   getTokenFromAccount: vi.fn(() => 'plain-token'),

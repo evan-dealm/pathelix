@@ -59,8 +59,10 @@ const TENANT_SCOPED_MODELS = new Set([
 
 const READ_OR_DELETE_WHERE_OPS = new Set([
   'findFirst', 'findFirstOrThrow', 'findMany', 'findUnique', 'findUniqueOrThrow',
-  'count', 'aggregate', 'groupBy', 'update', 'updateMany', 'delete', 'deleteMany',
+  'count', 'aggregate', 'groupBy', 'update', 'updateMany', 'updateManyAndReturn', 'delete', 'deleteMany',
 ])
+
+const CREATE_OPS = new Set(['create', 'createMany', 'createManyAndReturn'])
 
 /**
  * A plain top-level merge (not an `AND`-wrapper) is correct here: Prisma treats every key on a
@@ -104,12 +106,16 @@ export function getTenantDb(tenantId: string) {
 
           if (READ_OR_DELETE_WHERE_OPS.has(operation)) {
             args.where = scopedWhere(args.where, tenantId)
-          } else if (operation === 'create' || operation === 'createMany') {
+          } else if (CREATE_OPS.has(operation)) {
             args.data = scopedCreateData(args.data, tenantId, model)
           } else if (operation === 'upsert') {
             args.where  = scopedWhere(args.where, tenantId)
             args.create = scopedCreateData(args.create, tenantId, model)
             // `update` on an upsert never changes tenantId — no need to touch args.update.
+          } else {
+            // Fail closed: an operation added by a future Prisma version must be reviewed and
+            // scoped here, never silently run unscoped against a tenant-scoped model.
+            throw new Error(`getTenantDb: operation "${operation}" on ${model} is not tenant-scoped`)
           }
 
           return query(args)

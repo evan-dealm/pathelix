@@ -162,11 +162,14 @@ describe('DELETE /api/drivers/[id]', () => {
     expect(json.ok).toBe(true)
   })
 
-  it('returns 403 for dispatcher role', async () => {
-    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
+  // Changed on purpose: DELETE used to hard-block the dispatcher role on top of the permission
+  // check, although dispatchers hold manage_*s by default and the UI offered (and optimistically
+  // applied) the delete — the item silently came back on reload. The permission alone decides now.
+  it('lets a dispatcher holding manage_drivers (role default) delete', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u-disp-del', role: 'dispatcher', requestId: 'r' } as never)
 
     const res = await DELETE(makeDelete('d-1'), makeParams('d-1'))
-    expect(res.status).toBe(403)
+    expect(res.status).not.toBe(403)
   })
 
   // Phase 0.2 (mutation-testing pass): the dispatcher test above is caught by the earlier

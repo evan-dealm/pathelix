@@ -4,16 +4,19 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-const mockFindMany = vi.fn()
-const mockUpdate = vi.fn()
+const mockFindMany = vi.hoisted(() => vi.fn())
+const mockUpdate = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/db', () => ({
-  default: {
+vi.mock('@/lib/tenantDb', () => ({
+  getTenantDb: () => ({
     integration: {
       findMany: mockFindMany,
       update:   mockUpdate,
     },
-  },
+  }),
+}))
+vi.mock('@/lib/outboundUrl', () => ({
+  safeFetch: (url: string, init: RequestInit) => fetch(url, init),
 }))
 
 import { syncMissionToERP } from '../integrationERP'

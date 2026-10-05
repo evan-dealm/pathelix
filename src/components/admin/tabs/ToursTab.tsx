@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { escapeHtml } from '@/lib/html'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import dynamic from 'next/dynamic'
 import { Exutoire, PlannedMission, MISSION_TYPE_HEX, MISSION_TYPE_LABELS } from '@/lib/types'
@@ -276,12 +277,12 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
         const waste = [pm.wasteTypeLabel, pm.binSize].filter(Boolean).join(' — ') || '—'
         return `<tr style="border-bottom:1px solid #e5e7eb">
           <td style="padding:6px 8px;color:#6b7280;text-align:center;font-weight:600">${i + 1}</td>
-          <td style="padding:6px 8px;font-family:monospace;white-space:nowrap;font-size:12px">${step ? step.arrivalStr : '—'} → ${step ? step.departureStr : '—'}</td>
-          <td style="padding:6px 8px;font-weight:600">${pm.clientName || pm.outletName || '—'}</td>
-          <td style="padding:6px 8px;color:#374151;font-size:12px">${pm.address}</td>
-          <td style="padding:6px 8px;font-size:12px">${label}</td>
-          <td style="padding:6px 8px;color:#374151;font-size:12px">${waste}</td>
-          <td style="padding:6px 8px;color:#6b7280;font-size:11px">${pm.accessNotes || '—'}</td>
+          <td style="padding:6px 8px;font-family:monospace;white-space:nowrap;font-size:12px">${escapeHtml(step ? step.arrivalStr : '—')} → ${escapeHtml(step ? step.departureStr : '—')}</td>
+          <td style="padding:6px 8px;font-weight:600">${escapeHtml(pm.clientName || pm.outletName || '—')}</td>
+          <td style="padding:6px 8px;color:#374151;font-size:12px">${escapeHtml(pm.address)}</td>
+          <td style="padding:6px 8px;font-size:12px">${escapeHtml(label)}</td>
+          <td style="padding:6px 8px;color:#374151;font-size:12px">${escapeHtml(waste)}</td>
+          <td style="padding:6px 8px;color:#6b7280;font-size:11px">${escapeHtml(pm.accessNotes || '—')}</td>
         </tr>`
       }).join('')
 
@@ -289,12 +290,12 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
 
       return `
         <div style="${isLastDriver ? '' : 'page-break-after:always;'}margin-bottom:32px">
-          <h2 style="margin:0 0 4px 0;font-size:20px;color:#0055A4">Feuille de route — ${dateFormatted}</h2>
+          <h2 style="margin:0 0 4px 0;font-size:20px;color:#0055A4">Feuille de route — ${escapeHtml(dateFormatted)}</h2>
           <div style="display:flex;align-items:flex-end;justify-content:space-between;border-bottom:2px solid #0055A4;padding-bottom:8px;margin-bottom:12px">
             <div>
-              <div style="font-size:16px;font-weight:700;margin-bottom:2px">${driver.firstName} ${driver.lastName}</div>
-              <div style="color:#6b7280;font-size:12px">Secteur : ${driver.sector} · Dépôt : ${driver.depotName}</div>
-              <div style="color:#6b7280;font-size:12px">Heure de départ : <b>${startTime}</b></div>
+              <div style="font-size:16px;font-weight:700;margin-bottom:2px">${escapeHtml(driver.firstName)} ${escapeHtml(driver.lastName)}</div>
+              <div style="color:#6b7280;font-size:12px">Secteur : ${escapeHtml(driver.sector)} · Dépôt : ${escapeHtml(driver.depotName)}</div>
+              <div style="color:#6b7280;font-size:12px">Heure de départ : <b>${escapeHtml(startTime)}</b></div>
             </div>
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -315,16 +316,16 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
             <div><b>Missions :</b> ${realMissions.length}</div>
             ${res ? `<div><b>Distance totale :</b> ${res.totalRoadDistKm} km</div>` : ''}
             ${res ? `<div><b>Durée totale :</b> ${formatDuration(res.totalDurationMin)}</div>` : ''}
-            ${res ? `<div><b>Fin estimée :</b> ${res.finishStr}</div>` : ''}
+            ${res ? `<div><b>Fin estimée :</b> ${escapeHtml(res.finishStr)}</div>` : ''}
           </div>
           ${res?.warnings.length ? `<div style="margin-top:8px;padding:8px;background:#fef3c7;border-radius:4px;font-size:11px;color:#92400e">
-            ⚠ ${res.warnings.map(w => w.message).join(' · ')}
+            ⚠ ${res.warnings.map(w => escapeHtml(w.message)).join(' · ')}
           </div>` : ''}
         </div>`
     }).join('')
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-      <title>Feuilles de route — ${tourDate}</title>
+      <title>Feuilles de route — ${escapeHtml(tourDate)}</title>
       <style>
         body { font-family: Arial, sans-serif; color: #111; margin: 24px; }
         table { border-collapse: collapse; }
@@ -336,7 +337,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
       </style>
     </head><body>
       <div class="no-print" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;padding:12px;background:#f3f4f6;border-radius:8px">
-        <span style="font-size:14px;color:#374151">${driversForPrint.length} feuille(s) de route — ${dateFormatted}</span>
+        <span style="font-size:14px;color:#374151">${driversForPrint.length} feuille(s) de route — ${escapeHtml(dateFormatted)}</span>
         <button onclick="window.print()" style="padding:8px 16px;background:#0055A4;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Imprimer / Enregistrer en PDF</button>
       </div>
       ${rows}
@@ -371,7 +372,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
 
     const html = `<!DOCTYPE html><html lang="fr"><head>
       <meta charset="UTF-8">
-      <title>${pageTitle}</title>
+      <title>${escapeHtml(pageTitle)}</title>
       <style>
         body { font-family: Arial, sans-serif; color: #111; margin: 32px; font-size: 14px; }
         h1 { font-size: 20px; margin-bottom: 4px; }
@@ -390,18 +391,18 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
       <button onclick="window.print()" style="float:right;padding:6px 14px;background:#0055A4;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimer</button>
       <h1>BON DE PASSAGE</h1>
       <div class="subtitle">
-        Date : ${tourDate} &nbsp;|&nbsp;
-        Chauffeur : ${driver.firstName} ${driver.lastName} &nbsp;|&nbsp;
-        Secteur : ${driver.sector}
+        Date : ${escapeHtml(tourDate)} &nbsp;|&nbsp;
+        Chauffeur : ${escapeHtml(driver.firstName)} ${escapeHtml(driver.lastName)} &nbsp;|&nbsp;
+        Secteur : ${escapeHtml(driver.sector)}
       </div>
       <div class="section">
-        <div class="row"><span class="label">Type</span><span class="value">${typeLabel}</span></div>
-        <div class="row"><span class="label">Client</span><span class="value">${clientName}</span></div>
-        <div class="row"><span class="label">Adresse</span><span class="value">${mission.address}</span></div>
-        <div class="row"><span class="label">Horaire prévu</span><span class="value">${arrivalStr} → ${departureStr}</span></div>
-        <div class="row"><span class="label">Type de déchet</span><span class="value">${wasteLabel}</span></div>
-        <div class="row"><span class="label">Taille benne</span><span class="value">${binSizeLabel}</span></div>
-        <div class="row"><span class="label">Notes d'accès</span><span class="value">${accessNotes}</span></div>
+        <div class="row"><span class="label">Type</span><span class="value">${escapeHtml(typeLabel)}</span></div>
+        <div class="row"><span class="label">Client</span><span class="value">${escapeHtml(clientName)}</span></div>
+        <div class="row"><span class="label">Adresse</span><span class="value">${escapeHtml(mission.address)}</span></div>
+        <div class="row"><span class="label">Horaire prévu</span><span class="value">${escapeHtml(arrivalStr)} → ${escapeHtml(departureStr)}</span></div>
+        <div class="row"><span class="label">Type de déchet</span><span class="value">${escapeHtml(wasteLabel)}</span></div>
+        <div class="row"><span class="label">Taille benne</span><span class="value">${escapeHtml(binSizeLabel)}</span></div>
+        <div class="row"><span class="label">Notes d'accès</span><span class="value">${escapeHtml(accessNotes)}</span></div>
       </div>
       <div class="section">
         <div style="font-weight:600;margin-bottom:10px;">Zone à compléter sur site :</div>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
-import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, invalidatePermCache } from '@/lib/permissions'
+import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, invalidatePermCache, hasPermission } from '@/lib/permissions'
 import { auditAsync } from '@/lib/audit'
 
 const UpdatePermsSchema = z.object({
@@ -11,8 +11,13 @@ const UpdatePermsSchema = z.object({
 })
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId } = getRequestContext(req)
+  const { tenantId, userId, role } = getRequestContext(req)
   const targetUserId = req.nextUrl.searchParams.get('userId')
+
+  // Anyone may read their own permissions (UI gating); reading someone else's is user management.
+  if (targetUserId && targetUserId !== userId && !(await hasPermission(userId, role, 'manage_users'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   if (!targetUserId) {
 

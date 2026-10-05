@@ -3,6 +3,7 @@ import type { MissionInput } from '@/lib/schemas'
 import { prismaRowToMission } from '@/lib/prismaMappers'
 import { getMissionStore } from '@/app/api/missions/_store'
 import { getTenantDb } from '@/lib/tenantDb'
+import { assertTenantRefs, ForeignTenantRefError } from '@/lib/tenantRefs'
 
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
@@ -121,6 +122,7 @@ export async function createMission(tenantId: string, data: MissionInput): Promi
   }
   const flat = flattenTimeWindow(data)
   const db   = getTenantDb(tenantId)
+  await assertTenantRefs(db, flat as Record<string, unknown>)
   const row  = await db.mission.create({
     data: { ...flat } as Parameters<typeof db.mission.create>[0]['data'],
   })
@@ -143,6 +145,8 @@ export async function updateMission(
   try {
 
     const db  = getTenantDb(tenantId)
+    await assertTenantRefs(db, data as Record<string, unknown>)
+    if (data.dependsOnId === id) throw new ForeignTenantRefError('dependsOnId')
     const row = await db.mission.update({
       where: { id },
       data:  flattenTimeWindow(data) as Parameters<typeof db.mission.update>[0]['data'],

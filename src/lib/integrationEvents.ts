@@ -1,6 +1,48 @@
 import { createLogger } from '@/lib/logger'
+import { getTenantDb } from '@/lib/tenantDb'
+import { decryptConfig } from '@/lib/configCrypto'
+import { safeFetch } from '@/lib/outboundUrl'
 
 const log = createLogger('integrationEvents')
+
+const WEBHOOK_TIMEOUT_MS = 8_000
+
+/** High-frequency technical events are only delivered to custom webhooks that opt in to them —
+ *  never to Slack/Teams channels (one message per GPS ping per driver). */
+const CHAT_SILENT_EVENTS = new Set<string>(['driver.position'])
+
+type EnabledIntegration = { type: string; config: Record<string, unknown> }
+
+// emitEvent runs on every GPS ping / status change: the enabled-integration list is cached per
+// tenant instead of hitting the database each time. Invalidated when integrations are saved.
+const CACHE_TTL_MS = 60_000
+const _cache = new Map<string, { at: number; items: EnabledIntegration[] }>()
+
+export function invalidateIntegrationCache(tenantId: string): void {
+  _cache.delete(tenantId)
+}
+
+async function enabledIntegrations(tenantId: string): Promise<EnabledIntegration[]> {
+  const hit = _cache.get(tenantId)
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.items
+  const rows = await getTenantDb(tenantId).integration.findMany({
+    where: { enabled: true, type: { in: ['slack', 'teams', 'custom_webhook', 'twilio_sms'] } },
+    select: { type: true, config: true },
+  })
+  const items: EnabledIntegration[] = []
+  for (const row of rows) {
+    try {
+      // Configs are stored AES-GCM encrypted (src/lib/configCrypto.ts) — reading them raw meant
+      // every webhook URL / token was undefined and no notification was ever sent.
+      items.push({ type: row.type, config: decryptConfig(row.config) })
+    } catch (err) {
+      log.warn('Integration config unreadable — skipped', { tenantId, type: row.type, err: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  if (_cache.size > 1000) _cache.clear()
+  _cache.set(tenantId, { at: Date.now(), items })
+  return items
+}
 
 export type EventType =
   | 'mission.created'
@@ -33,23 +75,19 @@ export async function emitEvent(
   if (!process.env.DATABASE_URL) return
 
   try {
-    const prisma = (await import('@/lib/db')).default
-    const integrations = await prisma.integration.findMany({
-      where: { tenantId, enabled: true },
-      select: { type: true, config: true },
-    })
+    const integrations = await enabledIntegrations(tenantId)
 
     const promises: Promise<void>[] = []
 
     for (const integration of integrations) {
-      const config = (integration.config ?? {}) as Record<string, unknown>
+      const config = integration.config
 
       switch (integration.type) {
         case 'slack':
-          promises.push(sendSlack(config, event))
+          if (!CHAT_SILENT_EVENTS.has(type)) promises.push(sendSlack(config, event))
           break
         case 'teams':
-          promises.push(sendTeams(config, event))
+          if (!CHAT_SILENT_EVENTS.has(type)) promises.push(sendTeams(config, event))
           break
         case 'custom_webhook':
           promises.push(sendCustomWebhook(config, event))
@@ -84,7 +122,8 @@ async function sendSlack(config: Record<string, unknown>, event: IntegrationEven
     : '#3B82F6'
 
   try {
-    await fetch(webhookUrl, {
+    await safeFetch(webhookUrl, {
+      timeoutMs: WEBHOOK_TIMEOUT_MS,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -111,7 +150,8 @@ async function sendTeams(config: Record<string, unknown>, event: IntegrationEven
     : 'accent'
 
   try {
-    await fetch(webhookUrl, {
+    await safeFetch(webhookUrl, {
+      timeoutMs: WEBHOOK_TIMEOUT_MS,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -137,6 +177,8 @@ async function sendCustomWebhook(config: Record<string, unknown>, event: Integra
 
   const configuredEvents = String(config.events ?? '').split(',').map(s => s.trim()).filter(Boolean)
   if (configuredEvents.length > 0 && !configuredEvents.includes(event.type)) return
+  // GPS pings only when explicitly subscribed to.
+  if (configuredEvents.length === 0 && CHAT_SILENT_EVENTS.has(event.type)) return
 
   const payload = JSON.stringify(event)
 
@@ -153,9 +195,10 @@ async function sendCustomWebhook(config: Record<string, unknown>, event: Integra
   }
 
   try {
-    await fetch(url, { method: 'POST', headers, body: payload })
+    await safeFetch(url, { timeoutMs: WEBHOOK_TIMEOUT_MS, method: 'POST', headers, body: payload })
   } catch (err) {
-    log.warn('Custom webhook failed', { url, err: err instanceof Error ? err.message : String(err) })
+    // No URL in the log: webhook URLs routinely embed a secret token.
+    log.warn('Custom webhook failed', { type: event.type, err: err instanceof Error ? err.message : String(err) })
   }
 }
 
@@ -181,8 +224,10 @@ async function sendTwilioSMS(config: Record<string, unknown>, event: Integration
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: body.toString(),
+      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     })
-    log.info('SMS sent', { to: clientPhone, driver: driverName })
+    // End-customer phone numbers are personal data — only the last digits are logged.
+    log.info('SMS sent', { to: `…${clientPhone.slice(-2)}` })
   } catch (err) {
     log.warn('Twilio SMS failed', { err: err instanceof Error ? err.message : String(err) })
   }
