@@ -277,11 +277,19 @@ export function calcTour(
   for (let _mi = 0; _mi < missions.length; _mi++) {
     const mission = missions[_mi]
 
-    if (!isFinite(mission.latitude) || !isFinite(mission.longitude)) {
-      warnings.push({
-        message:  `Mission "${mission.address}" : coordonnées GPS invalides — mission ignorée dans le calcul de trajet`,
-        severity: 'warning',
-      })
+    // (0, 0) is how the app stores "not geocoded yet" (imports, manual entry without address
+    // lookup) — treating it as a real point added a trip to the Gulf of Guinea and hundreds of
+    // hours of "driving" to the tour.
+    const missingCoords = !isFinite(mission.latitude) || !isFinite(mission.longitude)
+      || (mission.latitude === 0 && mission.longitude === 0)
+    if (missingCoords) {
+      // A break happens wherever the truck is: no position needed, nothing to warn about.
+      if (mission.type !== 'PAUSE') {
+        warnings.push({
+          message:  `Mission "${mission.address}" : coordonnées GPS manquantes — trajet non calculé`,
+          severity: 'warning',
+        })
+      }
       const onSiteMin    = Math.max(0, mission.estimatedDurationMin) + Math.max(0, mission.maneuverTimeMin ?? 0)
       const departureMin = currentMin + onSiteMin
       steps.push({

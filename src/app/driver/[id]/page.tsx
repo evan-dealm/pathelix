@@ -53,6 +53,12 @@ function nextActionLabel(type: string, status: MissionStatus): string | null {
   }[next]
 }
 
+/** "Lundi 5 octobre" — sentence case, as French writes dates (CSS capitalize would also cap the month). */
+function longDate(date: string): string {
+  const s = new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 const rank = (s: MissionStatus) => MISSION_STATUSES.indexOf(s)
 
 /** Statuses only move forward: the furthest of the server's and this device's wins. */
@@ -365,9 +371,7 @@ export default function DriverPage() {
 
       <section className="px-4 pt-4" aria-label="Avancement">
         <div className="flex items-baseline justify-between">
-          <p className="text-sm capitalize text-white/60">
-            {new Date(`${tourDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
+          <p className="text-sm text-white/60">{longDate(tourDate)}</p>
           <p className="text-sm tabular-nums text-white/60">
             <span className="text-2xl font-semibold text-white">{doneCount}</span>/{realMissions.length} missions
           </p>

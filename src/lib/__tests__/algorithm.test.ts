@@ -212,8 +212,22 @@ describe('calcTour', () => {
     const mission = makeMission({ latitude: NaN, longitude: NaN })
     const result = calcTour([mission], 48.85, 2.35, '07:00', 50)
 
-    expect(result.warnings.some(w => w.message.includes('GPS invalides'))).toBe(true)
+    expect(result.warnings.some(w => w.message.includes('GPS manquantes'))).toBe(true)
     expect(result.steps[0].hasMissingCoords).toBe(true)
+  })
+
+  it('treats (0, 0) — the "not geocoded" marker — as missing coordinates, not as a real trip', () => {
+    const mission = makeMission({ latitude: 0, longitude: 0 })
+    const result = calcTour([mission], 46.1, 5.8, '07:00', 50)
+    expect(result.steps[0].hasMissingCoords).toBe(true)
+    expect(result.totalRoadDistKm).toBe(0)
+    expect(result.warnings.some(w => w.message.includes('GPS manquantes'))).toBe(true)
+  })
+
+  it('does not warn for a break (PAUSE) without coordinates', () => {
+    const pause = makeMission({ type: 'PAUSE', latitude: 0, longitude: 0, isSynthetic: true } as never)
+    const result = calcTour([pause], 46.1, 5.8, '07:00', 50)
+    expect(result.warnings.some(w => w.message.includes('GPS'))).toBe(false)
   })
 
   it('warns on time window violation (late arrival)', () => {
