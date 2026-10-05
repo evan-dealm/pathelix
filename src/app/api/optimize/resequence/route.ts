@@ -11,6 +11,9 @@ import { computeSolutionCost } from '@/lib/vrp/routeCost'
 import type { CostContext, ALNSParams } from '@/lib/vrp/types'
 import type { Mission } from '@/lib/types'
 import { prismaRowToMission } from '@/lib/prismaMappers'
+import { hasPermission } from '@/lib/permissions'
+import { unscopedPrisma } from '@/lib/tenantDb'
+import { isLocked, lockedSteps, mergeLockedAndOptimized, nowMinutesInTimeZone, parsePlanMissions } from '@/lib/vrp/livePlan'
 
 const log = createLogger('/api/optimize/resequence')
 
@@ -20,9 +23,9 @@ const ResequenceSchema = z.object({
 })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'dispatcher') {
-    return NextResponse.json({ error: 'Accès réservé aux admins et dispatchers' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'optimize'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let raw: unknown
@@ -52,20 +55,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const statuses = (typeof plan.statuses === 'object' && plan.statuses !== null)
-      ? plan.statuses as Record<string, { status?: string }>
+      ? plan.statuses as Record<string, unknown>
       : {}
 
-    const planMissions = Array.isArray(plan.missions)
-      ? plan.missions as unknown as Array<{ id: string }>
-      : typeof plan.missions === 'string'
-        ? JSON.parse(plan.missions) as Array<{ id: string }>
-        : []
-
+    const planMissions = parsePlanMissions(plan.missions)
+    // Steps already acted on (en route, on site, done…) keep their place; only the untouched
+    // client missions are re-sequenced (synthetic dump/break steps are regenerated).
+    const locked = lockedSteps(planMissions, statuses)
     const remainingMissionIds = planMissions
-      .filter(m => {
-        const s = statuses[m.id]
-        return !s || s.status !== 'done'
-      })
+      .filter(m => !m.isSynthetic && !isLocked(statuses[m.id]))
       .map(m => m.id)
 
     if (remainingMissionIds.length <= 1) {
@@ -84,14 +82,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const exutoires = await getAllExutoires(tenantId)
 
+    const plannedStartMin = (() => {
+      const t = plan.startTime ?? '07:00'
+      const parts = t.split(':').map(Number)
+      return Math.max(0, Math.min(23, parts[0] || 0)) * 60 + Math.max(0, Math.min(59, parts[1] || 0))
+    })()
+    // Once the day has started, the remainder starts now (tenant local time), not at 07:00.
+    const tenant = locked.length > 0
+      ? await unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } })
+      : null
     const ctx: CostContext = {
       depotLat:     driver.depotLat,
       depotLng:     driver.depotLng,
-      startTimeMin: (() => {
-        const t = plan.startTime ?? '07:00'
-        const parts = t.split(':').map(Number)
-        return Math.max(0, Math.min(23, parts[0] || 0)) * 60 + Math.max(0, Math.min(59, parts[1] || 0))
-      })(),
+      startTimeMin: locked.length > 0
+        ? Math.max(plannedStartMin, nowMinutesInTimeZone(tenant?.timezone ?? 'Europe/Paris'))
+        : plannedStartMin,
       speedKmh:     Math.max(1, Math.min(130, plan.speedKmh ?? 50)),
       exutoires,
       date,
@@ -115,16 +120,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       : initial
 
     const result = formatSolutionForAPI(optimized, [driver], ctx)
-    const driverPlan = result.assignments[driverId]
+    // Locked steps first — done/in-progress missions used to be dropped from the plan here.
+    const driverPlan = mergeLockedAndOptimized(locked, result.assignments[driverId] ?? [])
 
-    if (driverPlan) {
-      await db.plan.update({
-        where: { id: plan.id },
-        data: {
-          missions: driverPlan as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
-        },
-      })
-    }
+    await db.plan.update({
+      where: { id: plan.id },
+      data: {
+        missions: driverPlan as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
+      },
+    })
 
     log.info('Resequence completed', {
       driverId,

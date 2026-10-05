@@ -32,6 +32,7 @@ const mockPrisma = vi.hoisted(() => ({
   },
   tenantSettings: {
     upsert: vi.fn(),
+    findUnique: vi.fn(async () => null),
   },
   $transaction: vi.fn(async (ops: unknown) => {
     if (typeof ops === 'function') return ops(mockPrisma)

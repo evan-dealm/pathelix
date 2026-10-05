@@ -12,6 +12,11 @@ import { metrics, METRIC } from '@/lib/metrics'
 import type { Mission } from '@/lib/types'
 import { broadcastToTenant, type PushSubRecord } from '@/lib/webPush'
 import { getRedisClient } from '@/lib/redisClient'
+import { hasPermission } from '@/lib/permissions'
+import { unscopedPrisma } from '@/lib/tenantDb'
+import {
+  isLocked, lockedSteps, mergeLockedAndOptimized, minutesToHHMM, nowMinutesInTimeZone, parsePlanMissions,
+} from '@/lib/vrp/livePlan'
 
 const log = createLogger('/api/optimize/live')
 
@@ -66,16 +71,15 @@ const LiveOptimizeSchema = z.object({
   }).optional(),
 })
 
-const LOCKED_STATUSES = new Set(['done', 'started', 'arrived'])
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const loadSlot = loadShedder.acquire()
   if (loadSlot === 'shed') return shedResponse() as NextResponse
 
   try {
-    const { tenantId, role } = getRequestContext(req)
-    if (role !== 'admin' && role !== 'dispatcher' && role !== 'superadmin') {
-      return NextResponse.json({ error: 'Accès réservé aux admins et dispatchers' }, { status: 403 })
+    const { tenantId, role, userId } = getRequestContext(req)
+    if (!(await hasPermission(userId, role, 'optimize'))) {
+      return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
     }
 
     let raw: unknown
@@ -91,11 +95,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const startTs = Date.now()
 
     const db = getTenantDb(tenantId)
-    const [allDrivers, allMissions, allExutoires, tenantSettings] = await Promise.all([
+    const [allDrivers, allMissions, allExutoires, tenantSettings, tenant] = await Promise.all([
       getAllDrivers(tenantId),
       getMissionsByDate(tenantId, date),
       getAllExutoires(tenantId),
       db.tenantSettings.findUnique({ where: { tenantId } }),
+      unscopedPrisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } }),
     ])
 
     const drivers = (requestedDriverIds
@@ -107,22 +112,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Aucun chauffeur disponible' }, { status: 422 })
     }
 
-    const plans = await db.plan.findMany({
-      where: { date, driverId: { in: drivers.map(d => d.id) } },
-      select: { driverId: true, statuses: true, startTime: true },
+    const scopeIds = new Set(drivers.map(d => d.id))
+    const allPlans = await db.plan.findMany({
+      where: { date },
+      select: { driverId: true, statuses: true, startTime: true, missions: true },
     })
+    const plans = allPlans.filter(p => scopeIds.has(p.driverId))
 
     const planMap = new Map(plans.map(p => [p.driverId, p]))
 
+    // Missions held by drivers outside this re-optimisation stay with them — they used to be
+    // re-planned too and ended up in two drivers' tours.
+    const heldElsewhere = new Set<string>()
+    for (const p of allPlans) {
+      if (scopeIds.has(p.driverId)) continue
+      for (const m of parsePlanMissions(p.missions)) heldElsewhere.add(m.id)
+    }
+
     const driverStartOverrides = new Map<string, { lat: number; lng: number; timeMin: number }>()
     const lockedMissionIds = new Set<string>()
+    const lockedByDriver = new Map<string, ReturnType<typeof lockedSteps>>()
 
-    const now = new Date()
-    const currentTimeMin = now.getHours() * 60 + now.getMinutes()
+    // "Now" in the tenant's time zone — the server runs in UTC.
+    const currentTimeMin = nowMinutesInTimeZone(tenant?.timezone ?? 'Europe/Paris')
 
     for (const driver of drivers) {
       const plan = planMap.get(driver.id)
       if (!plan?.statuses || typeof plan.statuses !== 'object') continue
+
+      lockedByDriver.set(driver.id, lockedSteps(parsePlanMissions(plan.missions), plan.statuses as Record<string, unknown>))
 
       const statuses = plan.statuses as Record<string, {
         status?: string
@@ -141,9 +159,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       for (const [missionId, s] of Object.entries(statuses)) {
         if (!s || typeof s !== 'object') continue
 
-        if (s.status && LOCKED_STATUSES.has(s.status)) {
-          lockedMissionIds.add(missionId)
-        }
+        // Any step the driver has acted on (en route included) is locked.
+        if (isLocked(s)) lockedMissionIds.add(missionId)
 
         if (s.lat && s.lng) {
           const ts = s.doneAt || s.startedAt || s.arrivedAt || s.en_routeAt
@@ -168,7 +185,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const activeMissions: Mission[] = allMissions.filter(m =>
-      !m.archived && !m.needsGeocode && !lockedMissionIds.has(m.id),
+      !m.archived && !m.needsGeocode && !lockedMissionIds.has(m.id) && !heldElsewhere.has(m.id),
     )
 
     if (activeMissions.length === 0) {
@@ -200,7 +217,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       seed: Date.now() % 10000,
       defaultSpeedKmh: tenantSettings?.defaultSpeedKmh ?? 50,
       valhallaFactor:  tenantSettings?.valhallaFactor  ?? 1.60,
-      defaultStartTime: `${Math.floor(currentTimeMin / 60).toString().padStart(2, '0')}:${(currentTimeMin % 60).toString().padStart(2, '0')}`,
+      defaultStartTime: minutesToHHMM(currentTimeMin),
       weights: {
         distance: options?.weights?.distance ?? 0.5,
         punctuality: options?.weights?.punctuality ?? 1.0,
@@ -212,27 +229,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       _driverStartOverrides: driverStartOverrides,
     } as Parameters<typeof runVRP>[4] & { _driverStartOverrides: typeof driverStartOverrides })
 
-    for (const driver of drivers) {
-      const driverPlan = result.assignments[driver.id]
-      if (!driverPlan || driverPlan.length === 0) continue
-
-      await db.plan.upsert({
-        // The compound unique key structurally requires tenantId here — this is not a manual
-        // tenant-scope check to remove, it's part of the DB constraint's shape.
-        where: {
-          tenantId_driverId_date: { tenantId, driverId: driver.id, date },
-        },
-        update: {
-          missions: driverPlan as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
-        },
-        create: {
-          driverId: driver.id,
-          date,
-          missions: driverPlan as unknown as Parameters<typeof db.plan.create>[0]['data']['missions'],
-          startTime: `${Math.floor(currentTimeMin / 60).toString().padStart(2, '0')}:${(currentTimeMin % 60).toString().padStart(2, '0')}`,
-        } as Parameters<typeof db.plan.upsert>[0]['create'],
-      })
-    }
+    // Every driver in scope gets its plan rewritten — even with nothing new (otherwise it kept
+    // missions the optimiser just gave to someone else) — locked steps first, in one transaction.
+    await db.$transaction(async (tx) => {
+      for (const driver of drivers) {
+        const merged = mergeLockedAndOptimized(lockedByDriver.get(driver.id) ?? [], result.assignments[driver.id] ?? [])
+        const missionsJson = merged as unknown as Parameters<typeof tx.plan.update>[0]['data']['missions']
+        await tx.plan.upsert({
+          // The compound unique key structurally requires tenantId here.
+          where:  { tenantId_driverId_date: { tenantId, driverId: driver.id, date } },
+          update: { missions: missionsJson },
+          create: {
+            driverId: driver.id,
+            date,
+            missions: missionsJson,
+            startTime: minutesToHHMM(currentTimeMin),
+          } as Parameters<typeof tx.plan.upsert>[0]['create'],
+        })
+      }
+    }, { timeout: 30_000 })
 
     metrics.increment(METRIC.VRP_ENQUEUED, { tenantId, type: 'live' })
 

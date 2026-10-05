@@ -21,7 +21,9 @@ const mockPrisma = vi.hoisted(() => ({
     updateMany: vi.fn(),
   },
   mission: { findMany: vi.fn() },
-  plan:    { upsert:   vi.fn() },
+  plan:    { upsert:   vi.fn(), findMany: vi.fn(async () => []) },
+  tenantSettings: { findUnique: vi.fn(async () => null) },
+  $transaction: vi.fn(async (fn: (_tx: unknown) => Promise<unknown>): Promise<unknown> => fn(mockPrisma)),
 }))
 
 vi.mock('@/lib/db', () => ({ default: mockPrisma }))

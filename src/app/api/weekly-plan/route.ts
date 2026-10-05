@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/logger'
 import { getAllDrivers } from '@/lib/data/drivers'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { runVRP } from '@/lib/vrp/index'
+import { lockedSteps, mergeLockedAndOptimized, parsePlanMissions } from '@/lib/vrp/livePlan'
 import { hasPermission } from '@/lib/permissions'
 import type { Mission } from '@/lib/types'
 
@@ -72,8 +73,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       update: { status: 'optimizing', settings: settings ?? {} },
     })
 
-    const drivers = await getAllDrivers(tenantId)
+    const drivers = (await getAllDrivers(tenantId)).filter(d => !d.archived)
     const exutoires = await getAllExutoires(tenantId)
+    const tenantSettings = await db.tenantSettings.findUnique({ where: { tenantId } })
+    const startTime = tenantSettings?.defaultStartTime ?? '07:00'
+    const speedKmh  = tenantSettings?.defaultSpeedKmh ?? 50
     const timeBudgetPerDay = Math.floor((settings?.timeBudgetMs ?? 60000) / 5)
 
     const weekResult: Record<string, unknown> = {}
@@ -112,24 +116,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const result = await runVRP(missions, drivers, exutoires, date, {
         timeBudgetMs: timeBudgetPerDay,
         weights: settings?.weights,
+        defaultStartTime: startTime,
+        defaultSpeedKmh:  speedKmh,
+        valhallaFactor:   tenantSettings?.valhallaFactor ?? 1.60,
+        tenantId,
       })
 
-      for (const [driverId, planned] of Object.entries(result.assignments)) {
-        if (planned.length === 0) continue
-        await db.plan.upsert({
-          // The compound unique key structurally requires tenantId here — this is not a manual
-          // tenant-scope check to remove, it's part of the DB constraint's shape.
-          where: { tenantId_driverId_date: { tenantId, driverId, date } },
-          create: {
-            driverId, date,
-            missions: planned as unknown as Parameters<typeof db.plan.create>[0]['data']['missions'],
-            startTime: '07:00', speedKmh: 50,
-          } as Parameters<typeof db.plan.upsert>[0]['create'],
-          update: {
-            missions: planned as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
-          },
-        })
-      }
+      // The whole day is replanned: every active driver's plan is rewritten (a driver left
+      // empty would otherwise keep missions now given to someone else), steps already acted on
+      // are kept first, and the day is written atomically.
+      const existing = await db.plan.findMany({ where: { date }, select: { driverId: true, missions: true, statuses: true } })
+      const existingByDriver = new Map(existing.map(p => [p.driverId, p]))
+      await db.$transaction(async (tx) => {
+        for (const driver of drivers) {
+          const prev = existingByDriver.get(driver.id)
+          const locked = prev ? lockedSteps(parsePlanMissions(prev.missions), (prev.statuses ?? {}) as Record<string, unknown>) : []
+          const merged = mergeLockedAndOptimized(locked, result.assignments[driver.id] ?? [])
+          if (!prev && merged.length === 0) continue
+          const missionsJson = merged as unknown as Parameters<typeof tx.plan.update>[0]['data']['missions']
+          await tx.plan.upsert({
+            // The compound unique key structurally requires tenantId here.
+            where: { tenantId_driverId_date: { tenantId, driverId: driver.id, date } },
+            create: { driverId: driver.id, date, missions: missionsJson, startTime, speedKmh } as Parameters<typeof tx.plan.upsert>[0]['create'],
+            update: { missions: missionsJson },
+          })
+        }
+      }, { timeout: 30_000 })
 
       weekResult[date] = {
         day: dayNames[d],

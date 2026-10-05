@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRequestContext } from '@/lib/data/context'
+import { hasPermission } from '@/lib/permissions'
 import { createLogger } from '@/lib/logger'
 import { getTenantDb } from '@/lib/tenantDb'
 import { computeRouteCost, computePrefixStates, computeInsertionDelta } from '@/lib/vrp/routeCost'
@@ -14,9 +15,10 @@ const RedistributeSchema = z.object({
 })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'dispatcher') {
-    return NextResponse.json({ error: 'Admin ou dispatcher requis' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  // Moving a driver's missions to other drivers rewrites published tours: same as optimising.
+  if (!(await hasPermission(userId, role, 'optimize'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   let body: unknown

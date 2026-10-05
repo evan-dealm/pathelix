@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+// Role defaults from the real permission table (no custom per-user grants in these tests).
+vi.mock('@/lib/permissions', async (orig) => {
+  const real = await orig<typeof import('@/lib/permissions')>()
+  return {
+    ...real,
+    hasPermission: vi.fn(async (_userId: string, role: string, perm: string) =>
+      role === 'admin' || role === 'superadmin' || (real.DEFAULT_PERMISSIONS[role] ?? []).includes(perm as never)),
+  }
+})
+
+
 vi.hoisted(() => { process.env.USE_MOCK_DATA = 'false' })
 
 const mockPrisma = vi.hoisted(() => ({

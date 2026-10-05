@@ -1,0 +1,62 @@
+import type { PlannedMission } from '@/lib/types'
+
+/**
+ * Helpers for re-optimising a day that has already started (POST /api/optimize/live,
+ * POST /api/optimize/resequence).
+ *
+ * A step is LOCKED as soon as the driver has acted on it (en route, on site, started, done…):
+ * it must never be moved to another driver or re-ordered, and it must stay in the driver's plan
+ * — the driver app reads its progress from the plan, and the history/ML metrics rely on it.
+ */
+
+export type StatusEntry = { status?: string }
+
+export function isLocked(entry: unknown): boolean {
+  const st = entry && typeof entry === 'object' ? (entry as StatusEntry).status : undefined
+  return typeof st === 'string' && st !== 'todo'
+}
+
+export function parsePlanMissions(missions: unknown): PlannedMission[] {
+  if (Array.isArray(missions)) return missions as PlannedMission[]
+  if (typeof missions === 'string') {
+    try { const v = JSON.parse(missions); return Array.isArray(v) ? v : [] } catch { return [] }
+  }
+  return []
+}
+
+/** The steps of an existing plan the driver already acted on, in their original order. */
+export function lockedSteps(planMissions: PlannedMission[], statuses: Record<string, unknown>): PlannedMission[] {
+  return [...planMissions]
+    .sort((a, b) => a.sequenceOrder - b.sequenceOrder)
+    .filter(m => isLocked(statuses[m.id]))
+}
+
+/**
+ * Final plan = locked steps first (what is done/in progress stays where it is), then the newly
+ * optimised remainder; sequenceOrder renumbered from 0. A step id present in both is kept once.
+ */
+export function mergeLockedAndOptimized(locked: PlannedMission[], optimized: PlannedMission[]): PlannedMission[] {
+  const lockedIds = new Set(locked.map(m => m.id))
+  const rest = [...optimized]
+    .sort((a, b) => a.sequenceOrder - b.sequenceOrder)
+    .filter(m => !lockedIds.has(m.id))
+  return [...locked, ...rest].map((m, i) => ({ ...m, sequenceOrder: i }))
+}
+
+/** Minutes since midnight now, in the tenant's time zone (the server clock is UTC in production). */
+export function nowMinutesInTimeZone(timeZone: string, now: Date = new Date()): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(now)
+    const h = Number(parts.find(p => p.type === 'hour')?.value ?? 0)
+    const m = Number(parts.find(p => p.type === 'minute')?.value ?? 0)
+    return h * 60 + m
+  } catch {
+    return now.getUTCHours() * 60 + now.getUTCMinutes()
+  }
+}
+
+export function minutesToHHMM(min: number): string {
+  const m = Math.max(0, Math.min(1439, Math.round(min)))
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
