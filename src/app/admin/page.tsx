@@ -64,6 +64,7 @@ import { useToast } from '@/components/ui/Toast'
 import { useTrade } from '@/providers/TradeProvider'
 import { OnboardingGuide } from '@/components/ui/OnboardingGuide'
 import { usePermissions, hasPerm } from '@/hooks/usePermissions'
+import type { MissionStatus } from '@/lib/missionStatus'
 
 export default function AdminPage() {
   const { vocab } = useTrade()
@@ -350,26 +351,36 @@ export default function AdminPage() {
     return { poolTotal, poolToday, p1Count, driversWithPlan, totalDrivers, totalKm, totalFuelEur, avgWorkMin, assignedForDate, p1AssignedForDate, driversWithPlanForDate }
   }, [missions, drivers, plans, calcResults, planDate])
 
-  type MissionStatus = 'todo' | 'doing' | 'done'
   const [driverStatuses, setDriverStatuses] = useState<Record<string, Record<string, MissionStatus>>>({})
   const [showAlerts, setShowAlerts] = useState(false)
 
+  // Live field progress: server-sent events (pushed as soon as a driver taps a status), with a
+  // 30 s polling fallback if the stream can't be opened or drops.
   useEffect(() => {
+    let source: EventSource | null = null
+    let poll: ReturnType<typeof setInterval> | null = null
     const ctrl = new AbortController()
-    async function pollStatuses() {
+
+    async function fetchOnce() {
       try {
-        const res = await fetch(`/api/driver-status?date=${planDate}`, { signal: ctrl.signal })
-        if (res.ok) {
-          const data = await res.json()
-          setDriverStatuses(data)
-        }
-      } catch (e) {
-        if (e instanceof Error && e.name !== 'AbortError') {  }
-      }
+        const res = await fetch(`/api/driver-status?date=${planDate}`, { signal: ctrl.signal, cache: 'no-store' })
+        if (res.ok) setDriverStatuses(await res.json())
+      } catch { /* aborted or offline — next tick retries */ }
     }
-    pollStatuses()
-    const interval = setInterval(pollStatuses, 30_000)
-    return () => { ctrl.abort(); clearInterval(interval) }
+    function startPolling() {
+      if (poll) return
+      void fetchOnce()
+      poll = setInterval(fetchOnce, 30_000)
+    }
+
+    if (typeof EventSource !== 'undefined') {
+      source = new EventSource(`/api/sse/driver-status?date=${planDate}`)
+      source.onmessage = e => { try { setDriverStatuses(JSON.parse(e.data)) } catch { /* malformed frame */ } }
+      source.onerror = () => { source?.close(); source = null; startPolling() }
+    } else {
+      startPolling()
+    }
+    return () => { ctrl.abort(); source?.close(); if (poll) clearInterval(poll) }
   }, [planDate])
 
   const alerts = useMemo(() => {
@@ -719,7 +730,7 @@ export default function AdminPage() {
               const plan = plans[`${d.id}|${planDate}`] || []
               const real = plan.filter(m => !m.isSynthetic)
               const done = real.filter(m => statuses[m.id] === 'done').length
-              const doing = real.filter(m => statuses[m.id] === 'doing').length
+              const doing = real.filter(m => statuses[m.id] && statuses[m.id] !== 'todo' && statuses[m.id] !== 'done').length
               const total = real.length
               if (total === 0) return null
               return (
@@ -729,7 +740,7 @@ export default function AdminPage() {
                     {real.map(m => (
                       <div key={m.id} className={`w-2 h-2 rounded-sm ${
                         statuses[m.id] === 'done' ? 'bg-emerald-500' :
-                        statuses[m.id] === 'doing' ? 'bg-blue-500 animate-pulse' :
+                        statuses[m.id] && statuses[m.id] !== 'todo' ? 'bg-blue-500 animate-pulse' :
                         'bg-surface-200'
                       }`} />
                     ))}

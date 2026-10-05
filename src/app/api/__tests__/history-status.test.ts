@@ -3,7 +3,6 @@
  *   GET/POST /api/history    (uses globalThis.__historyMock in mock mode)
  *   DELETE   /api/history/[id]
  *   GET      /api/status
- *   GET/POST /api/driver-status
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
@@ -34,32 +33,6 @@ vi.mock('@/lib/session', () => ({
   SESSION_COOKIE: 'session',
 }))
 
-vi.mock('@/lib/statusStore', () => {
-  const store = new Map<string, Record<string, string>>()
-  return {
-    _statusStore:          store,
-    pruneOldStatusEntries: vi.fn(),
-    getStatusFromStore: vi.fn(async (tenantId: string, driverId: string, date: string) => {
-      const key = `${encodeURIComponent(tenantId)}|${encodeURIComponent(driverId)}|${date}`
-      return store.get(key) ?? {}
-    }),
-    getAllStatusesForDate: vi.fn(async (tenantId: string, date: string) => {
-      const result: Record<string, Record<string, string>> = {}
-      const encodedTenant = encodeURIComponent(tenantId)
-      for (const [key, statuses] of store.entries()) {
-        const [kTenant, kDriver, kDate] = key.split('|')
-        if (kDate === date && kTenant === encodedTenant && kDriver) {
-          result[decodeURIComponent(kDriver)] = statuses
-        }
-      }
-      return result
-    }),
-    setStatusInStore: vi.fn(async (tenantId: string, driverId: string, date: string, statuses: Record<string, string>) => {
-      const key = `${encodeURIComponent(tenantId)}|${encodeURIComponent(driverId)}|${date}`
-      store.set(key, statuses)
-    }),
-  }
-})
 
 // History uses mock mode (process.env.USE_MOCK_DATA !== 'false')
 // At module load time this is evaluated, so we keep mock mode ON (default)
@@ -68,8 +41,6 @@ vi.mock('@/lib/statusStore', () => {
 import { GET as historyGET, POST as historyPOST } from '@/app/api/history/route'
 import { DELETE as historyDEL }                    from '@/app/api/history/[id]/route'
 import { GET as statusGET }                        from '@/app/api/status/route'
-import { GET as driverStatusGET }                  from '@/app/api/driver-status/route'
-import { _statusStore }                            from '@/lib/statusStore'
 import { getTenantId }                             from '@/lib/data/context'
 import { verifySession }                           from '@/lib/session'
 
@@ -282,41 +253,3 @@ describe('GET /api/status', () => {
 
 const MOCK_SESSION = { sub: 'user-1', role: 'admin' as const, tenantId: 'tenant-1', iat: 0, exp: 9999999999 }
 
-describe('GET /api/driver-status', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    ;(_statusStore as Map<string, unknown>).clear()
-    vi.mocked(verifySession).mockResolvedValue(MOCK_SESSION)
-  })
-
-  it('returns 400 when date param missing', async () => {
-    const res = await driverStatusGET(makeGet('http://localhost/api/driver-status', { 'x-tenant-id': 'tenant-1' }))
-    expect(res.status).toBe(400)
-  })
-
-  it('returns empty status map when no statuses set (200)', async () => {
-    const res  = await driverStatusGET(makeGetAuth('http://localhost/api/driver-status?date=2026-05-15'))
-    const json = await res.json()
-    expect(res.status).toBe(200)
-    expect(typeof json).toBe('object')
-  })
-
-  it('returns driver-specific status from store when driverId param given', async () => {
-    const tenantKey = encodeURIComponent('tenant-1')
-    const driverKey = encodeURIComponent('driver-1')
-    _statusStore.set(`${tenantKey}|${driverKey}|2026-05-15`, { 'mission-1': 'done' })
-
-    const res  = await driverStatusGET(makeGetAuth('http://localhost/api/driver-status?date=2026-05-15&driverId=driver-1'))
-    const json = await res.json()
-    expect(res.status).toBe(200)
-    expect(json['driver-1']).toBeDefined()
-    expect(json['driver-1']['mission-1']).toBe('done')
-  })
-
-  it('returns full status map (200) when no driverId param', async () => {
-    const res  = await driverStatusGET(makeGetAuth('http://localhost/api/driver-status?date=2026-05-15'))
-    const json = await res.json()
-    expect(res.status).toBe(200)
-    expect(typeof json).toBe('object')
-  })
-})

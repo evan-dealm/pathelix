@@ -1,179 +1,128 @@
-import { NextRequest }               from 'next/server'
-import { _statusStore, getAllStatusesForDate } from '@/lib/statusStore'
-import { createLogger }              from '@/lib/logger'
-import { getTenantId }               from '@/lib/data/context'
-import { metrics, METRIC }           from '@/lib/metrics'
-import { REDIS_AVAILABLE } from '@/lib/redisClient'
+import { NextRequest }          from 'next/server'
+import { createLogger }         from '@/lib/logger'
+import { getTenantId }          from '@/lib/data/context'
+import { metrics, METRIC }      from '@/lib/metrics'
+import { REDIS_AVAILABLE }      from '@/lib/redisClient'
+import { redisBaseOptions, withTimeout } from '@/lib/queue/connection'
+import { channelName }          from '@/lib/driverStatusPubSub'
+import { loadStatusSnapshot, type StatusSnapshot } from '@/lib/driverStatusSnapshot'
 
 const log = createLogger('/api/sse/driver-status')
 
-const MAX_CONNECTIONS_PER_TENANT = parseInt(
-  process.env.SSE_MAX_CONNECTIONS_PER_TENANT ?? '200', 10,
-) || 200
+const MAX_CONNECTIONS_PER_TENANT = parseInt(process.env.SSE_MAX_CONNECTIONS_PER_TENANT ?? '200', 10) || 200
+const POLL_MS       = 5_000
+const KEEPALIVE_MS  = 25_000
+const SUBSCRIBE_TIMEOUT_MS = 3_000
 
 const _connectionsByTenant = new Map<string, number>()
 
-function incrementConnections(tenantId: string): boolean {
+function acquire(tenantId: string): boolean {
   const current = _connectionsByTenant.get(tenantId) ?? 0
   if (current >= MAX_CONNECTIONS_PER_TENANT) return false
   _connectionsByTenant.set(tenantId, current + 1)
   return true
 }
 
-function decrementConnections(tenantId: string): void {
-  const current = _connectionsByTenant.get(tenantId) ?? 0
-  const next    = Math.max(0, current - 1)
-  if (next === 0) _connectionsByTenant.delete(tenantId)
-  else            _connectionsByTenant.set(tenantId, next)
+function release(tenantId: string): void {
+  const next = (_connectionsByTenant.get(tenantId) ?? 1) - 1
+  if (next <= 0) _connectionsByTenant.delete(tenantId)
+  else _connectionsByTenant.set(tenantId, next)
 }
 
-async function getSnapshot(tenantId: string, date: string): Promise<Record<string, Record<string, string>>> {
-  try {
-    return await getAllStatusesForDate(tenantId, date)
-  } catch {
-    const result: Record<string, Record<string, string>> = {}
-    const encodedTenant = encodeURIComponent(tenantId)
-    for (const [key, statuses] of _statusStore.entries()) {
-      const [kTenant, kDriver, kDate] = key.split('|')
-      if (kDate === date && kTenant === encodedTenant && kDriver) {
-        result[decodeURIComponent(kDriver)] = statuses
-      }
-    }
-    return result
-  }
-}
-
-function snapshotEqual(
-  a: Record<string, Record<string, string>>,
-  b: Record<string, Record<string, string>>,
-): boolean {
-  const keysA = Object.keys(a).sort()
-  const keysB = Object.keys(b).sort()
-  if (keysA.join(',') !== keysB.join(',')) return false
-  for (const k of keysA) {
-    if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) return false
-  }
-  return true
-}
-
+/**
+ * Live field progress for the dispatch view. The payload is always the full snapshot read from
+ * the database (Plan.statuses); Redis pub/sub is only used as a "something changed" signal so
+ * every instance pushes updates immediately. Without Redis — or if it fails mid-stream — the
+ * stream keeps working by polling the database every POLL_MS.
+ */
 export async function GET(req: NextRequest): Promise<Response> {
-  const { searchParams } = req.nextUrl
-  const date     = searchParams.get('date')
   const tenantId = getTenantId(req)
-
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return new Response('Paramètre date requis (YYYY-MM-DD)', { status: 400 })
+  const date = req.nextUrl.searchParams.get('date') ?? ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return new Response('Paramètre date requis (AAAA-MM-JJ)', { status: 400 })
   }
 
-  const safeDate: string = date
-
-  if (!incrementConnections(tenantId)) {
+  if (!acquire(tenantId)) {
     log.warn('SSE connection limit reached', { tenantId, limit: MAX_CONNECTIONS_PER_TENANT })
-    return new Response(
-      JSON.stringify({ error: 'Trop de connexions SSE actives pour ce tenant' }),
-      { status: 429, headers: { 'Content-Type': 'application/json' } },
-    )
+    return new Response(JSON.stringify({ error: 'Trop de connexions temps réel pour ce compte' }), {
+      status: 429, headers: { 'Content-Type': 'application/json' },
+    })
   }
-
   metrics.increment(METRIC.SSE_CONNECTIONS, { type: REDIS_AVAILABLE ? 'redis' : 'polling' })
 
   const encoder = new TextEncoder()
+  let closed = false
+  let lastJson = ''
+  const timers: Array<ReturnType<typeof setInterval>> = []
+  let subscriber: import('ioredis').Redis | null = null
 
-  function sseMessage(data: unknown): Uint8Array {
-    return encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
-  }
-
-  let redisSubscriber: import('ioredis').Redis | null = null
-
-  if (REDIS_AVAILABLE) {
-    try {
-      const { default: Redis } = await import('ioredis')
-      const redisOpts = { lazyConnect: true, enableReadyCheck: false, maxRetriesPerRequest: null }
-      redisSubscriber = process.env.REDIS_URL
-        ? new Redis(process.env.REDIS_URL, redisOpts)
-        : new Redis({
-            host: process.env.REDIS_HOST ?? 'localhost',
-            port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-            ...redisOpts,
-          })
-    } catch {
-      log.warn('Redis subscriber init failed — fallback polling')
-      redisSubscriber = null
+  function cleanup(): void {
+    if (closed) return
+    closed = true
+    timers.forEach(clearInterval)
+    if (subscriber) {
+      subscriber.removeAllListeners()
+      subscriber.disconnect()
+      subscriber = null
     }
+    release(tenantId)
   }
 
-  let intervalId:   ReturnType<typeof setInterval> | null = null
-  let redisCleanup: (() => void) | null                   = null
-  let lastSnapshot: Record<string, Record<string, string>> = {}
+  // Abort from the client side (tab closed, navigation) — the stream's cancel() is not always
+  // called by every runtime, the request signal is.
+  req.signal.addEventListener('abort', cleanup)
 
-  const stream = new ReadableStream({
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-
-      try {
-        const snapshot = await getSnapshot(tenantId, safeDate)
-        lastSnapshot   = snapshot
-        controller.enqueue(sseMessage(snapshot))
-      } catch { return }
-
-      if (redisSubscriber) {
-
-        const channel = `driver-status:${tenantId}:${safeDate}`
-        try {
-          await redisSubscriber.subscribe(channel)
-          redisSubscriber.on('message', (ch: string, message: string) => {
-            if (ch !== channel) return
-            try {
-              const data = JSON.parse(message) as Record<string, Record<string, string>>
-              lastSnapshot = data
-              controller.enqueue(sseMessage(data))
-            } catch {  }
-          })
-          redisSubscriber.on('error', () => {
-            redisSubscriber?.quit().catch(() => {})
-            redisSubscriber = null
-            startPolling(controller)
-          })
-          redisCleanup = () => {
-            redisSubscriber?.unsubscribe(channel).catch(() => {})
-            redisSubscriber?.quit().catch(() => {})
-          }
-        } catch {
-          log.warn('Redis subscribe failed — fallback polling')
-          startPolling(controller)
-        }
-      } else {
-        startPolling(controller)
+      const send = (chunk: string) => {
+        if (closed) return
+        try { controller.enqueue(encoder.encode(chunk)) } catch { cleanup() }
       }
 
-      intervalId = setInterval(() => {
-        try { controller.enqueue(encoder.encode(': keep-alive\n\n')) }
-        catch { clearInterval(intervalId!) }
-      }, 30_000)
-    },
-
-    cancel() {
-      if (intervalId) clearInterval(intervalId)
-      redisCleanup?.()
-      decrementConnections(tenantId)
-      log.debug('SSE client disconnected', { tenantId, date: safeDate })
-    },
-  })
-
-  function startPolling(controller: ReadableStreamDefaultController): void {
-    const poll = setInterval(() => {
-      getSnapshot(tenantId, safeDate).then(snapshot => {
-        if (!snapshotEqual(snapshot, lastSnapshot)) {
-          lastSnapshot = snapshot
-          controller.enqueue(sseMessage(snapshot))
+      const pushSnapshot = async (force = false) => {
+        let snapshot: StatusSnapshot
+        try {
+          snapshot = await loadStatusSnapshot(tenantId, date)
+        } catch (err) {
+          log.warn('Snapshot read failed', { err: err instanceof Error ? err.message : String(err) })
+          return
         }
-      }).catch(() => {
-        clearInterval(poll)
-      })
-    }, 2_000)
+        const json = JSON.stringify(snapshot)
+        if (force || json !== lastJson) {
+          lastJson = json
+          send(`data: ${json}\n\n`)
+        }
+      }
 
-    const prev = redisCleanup
-    redisCleanup = () => { prev?.(); clearInterval(poll) }
-  }
+      let polling = false
+      const startPolling = () => {
+        if (polling || closed) return
+        polling = true
+        timers.push(setInterval(() => void pushSnapshot(), POLL_MS))
+      }
+
+      timers.push(setInterval(() => send(': keep-alive\n\n'), KEEPALIVE_MS))
+      await pushSnapshot(true)
+
+      if (!REDIS_AVAILABLE) { startPolling(); return }
+
+      try {
+        const { default: Redis } = await import('ioredis')
+        subscriber = new Redis({ ...redisBaseOptions(), lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: SUBSCRIBE_TIMEOUT_MS })
+        // Handlers before connecting: an early error must fall back, not crash the process.
+        subscriber.on('error', () => startPolling())
+        subscriber.on('end', () => startPolling())
+        subscriber.on('message', () => void pushSnapshot())
+        await withTimeout(subscriber.subscribe(channelName(tenantId, date)), SUBSCRIBE_TIMEOUT_MS, 'SSE subscribe')
+        if (closed) cleanup()
+      } catch {
+        log.warn('Redis subscribe unavailable — polling the database instead')
+        if (subscriber) { subscriber.removeAllListeners(); subscriber.disconnect(); subscriber = null }
+        startPolling()
+      }
+    },
+    cancel() { cleanup() },
+  })
 
   return new Response(stream, {
     headers: {

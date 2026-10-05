@@ -1,7 +1,6 @@
 /**
  * Tests couvrant les fixes de sécurité appliqués :
  * - Bcrypt DoS prevention (password max 1000 chars)
- * - statusStore Redis-primary reads/writes
  * - /api/ready readiness probe
  * - delivery-proof UUID filenames
  */
@@ -70,70 +69,6 @@ describe('Security: bcrypt DoS prevention — password validation', () => {
   })
 })
 
-// ── 2. statusStore — Redis-primary architecture ──────────────────────────────
-
-describe('Security: statusStore — Redis-primary reads/writes', () => {
-  let mockRedis: { get: ReturnType<typeof vi.fn>; setex: ReturnType<typeof vi.fn> }
-
-  beforeEach(() => {
-    vi.resetModules()
-    mockRedis = { get: vi.fn(), setex: vi.fn() }
-  })
-
-  it('getStatusFromStore reads from Redis when available', async () => {
-    mockRedis.get.mockResolvedValue(JSON.stringify({ 'mission-1': 'done' }))
-    vi.doMock('@/lib/redisClient', () => ({
-      getRedisClient: vi.fn(async () => mockRedis),
-    }))
-
-    const { getStatusFromStore } = await import('@/lib/statusStore')
-    const result = await getStatusFromStore('tenant-A', 'driver-1', '2026-05-16')
-
-    expect(mockRedis.get).toHaveBeenCalledWith('status:tenant-A:driver-1:2026-05-16')
-    expect(result).toEqual({ 'mission-1': 'done' })
-  })
-
-  it('getStatusFromStore falls back to in-memory when Redis unavailable', async () => {
-    vi.doMock('@/lib/redisClient', () => ({
-      getRedisClient: vi.fn(async () => null),
-    }))
-
-    const { getStatusFromStore, _statusStore } = await import('@/lib/statusStore')
-    const inMemKey = `${encodeURIComponent('tenant-B')}|${encodeURIComponent('driver-2')}|2026-05-16`
-    _statusStore.set(inMemKey, { 'mission-2': 'todo' })
-
-    const result = await getStatusFromStore('tenant-B', 'driver-2', '2026-05-16')
-    expect(result).toEqual({ 'mission-2': 'todo' })
-  })
-
-  it('setStatusInStore writes to Redis with 48h TTL when available', async () => {
-    mockRedis.setex.mockResolvedValue('OK')
-    vi.doMock('@/lib/redisClient', () => ({
-      getRedisClient: vi.fn(async () => mockRedis),
-    }))
-
-    const { setStatusInStore } = await import('@/lib/statusStore')
-    await setStatusInStore('tenant-C', 'driver-3', '2026-05-16', { 'mission-3': 'done' })
-
-    expect(mockRedis.setex).toHaveBeenCalledWith(
-      'status:tenant-C:driver-3:2026-05-16',
-      172_800,
-      JSON.stringify({ 'mission-3': 'done' }),
-    )
-  })
-
-  it('setStatusInStore still writes to in-memory when Redis fails', async () => {
-    vi.doMock('@/lib/redisClient', () => ({
-      getRedisClient: vi.fn(async () => { throw new Error('Redis down') }),
-    }))
-
-    const { setStatusInStore, _statusStore } = await import('@/lib/statusStore')
-    await setStatusInStore('tenant-D', 'driver-4', '2026-05-16', { 'mission-4': 'en_route' })
-
-    const key = `${encodeURIComponent('tenant-D')}|${encodeURIComponent('driver-4')}|2026-05-16`
-    expect(_statusStore.get(key)).toEqual({ 'mission-4': 'en_route' })
-  })
-})
 
 // ── 3. /api/ready — readiness probe ──────────────────────────────────────────
 
@@ -207,39 +142,6 @@ describe('Security: delivery-proof — UUID filenames', () => {
   })
 })
 
-// ── 5. pruneOldStatusEntries — housekeeping ───────────────────────────────────
-
-describe('statusStore: pruneOldStatusEntries removes stale entries', () => {
-  it('removes entries older than daysToKeep', async () => {
-    vi.resetModules()
-    const { _statusStore, pruneOldStatusEntries } = await import('@/lib/statusStore')
-
-    const oldDate = new Date()
-    oldDate.setDate(oldDate.getDate() - 10)
-    const oldDateStr = oldDate.toISOString().slice(0, 10)
-
-    const staleKey = `tenant-X|driver-X|${oldDateStr}`
-    _statusStore.set(staleKey, { 'm-stale': 'done' })
-
-    pruneOldStatusEntries(7)
-
-    expect(_statusStore.has(staleKey)).toBe(false)
-  })
-
-  it('keeps entries within daysToKeep', async () => {
-    vi.resetModules()
-    const { _statusStore, pruneOldStatusEntries } = await import('@/lib/statusStore')
-
-    const recentDate = new Date()
-    const recentDateStr = recentDate.toISOString().slice(0, 10)
-    const recentKey = `tenant-Y|driver-Y|${recentDateStr}`
-    _statusStore.set(recentKey, { 'm-recent': 'todo' })
-
-    pruneOldStatusEntries(7)
-
-    expect(_statusStore.has(recentKey)).toBe(true)
-  })
-})
 
 // ── 5. UserCreateSchema / UserUpdateSchema — password max(1000) ──────────────
 
