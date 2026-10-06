@@ -19,6 +19,7 @@ import { Sheet } from '@/components/driver/Sheet'
 import { SignaturePad } from '@/components/driver/SignaturePad'
 import { IncidentForm, NoteForm, WeightForm } from '@/components/driver/ReportForms'
 import { ScanTicketButton } from '@/components/driver/ScanTicketButton'
+import type { TicketReading } from '@/lib/ocr/ticket'
 import { ContainerScanner } from '@/components/driver/ContainerScanner'
 import type { DriverMissionContainers } from '@/lib/containers/driverInfo'
 import type { ScanRole } from '@/lib/containers/scan'
@@ -108,6 +109,8 @@ export default function DriverPage() {
   const [statuses, setStatuses] = useState<Record<string, MissionStatus>>({})
   const [photos, setPhotos] = useState<Record<string, string>>({})
   const [weights, setWeights] = useState<Record<string, number>>({})
+  // Ticket readings awaiting the driver's confirmation, per step.
+  const [readings, setReadings] = useState<Record<string, { jobId: string; reading: TicketReading }>>({})
   const [scans, setScans] = useState<Record<string, string[]>>({})
   const [sheet, setSheet] = useState<SheetKind>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
@@ -321,10 +324,12 @@ export default function DriverPage() {
   const onWeight = useCallback(async (m: PlannedMission, weightKg: number) => {
     setSheet(null)
     setWeights(w => ({ ...w, [m.id]: weightKg }))
-    if (await record('/api/driver-status/update', { driverId, missionId: m.id, date: tourDate, weightKg }, 'Poids du ticket de pesée')) {
+    const ocrJobId = readings[m.id]?.jobId
+    setReadings(r => { const u = { ...r }; delete u[m.id]; return u })
+    if (await record('/api/driver-status/update', { driverId, missionId: m.id, date: tourDate, weightKg, ...(ocrJobId ? { ocrJobId } : {}) }, 'Poids du ticket de pesée')) {
       flash(`Poids enregistré : ${(weightKg / 1000).toLocaleString('fr-FR')} t`)
     }
-  }, [record, driverId, tourDate, flash])
+  }, [record, driverId, tourDate, flash, readings])
 
   const onContainerScan = useCallback(async (m: PlannedMission, code: string, role: ScanRole, label: string) => {
     setSheet(null)
@@ -601,8 +606,8 @@ export default function DriverPage() {
           <Sheet open={sheet === 'weight'} title="Ticket de pesée" onClose={() => setSheet(null)}>
             {sheet === 'weight' && (
               <>
-                <ScanTicketButton missionId={focused.id} onWeight={kg => void onWeight(focused, kg)} />
-                <WeightForm initialKg={weights[focused.id]} onSubmit={kg => void onWeight(focused, kg)} />
+                <ScanTicketButton missionId={focused.id} onReading={(reading, jobId) => setReadings(r => ({ ...r, [focused.id]: { jobId, reading } }))} />
+                <WeightForm key={readings[focused.id]?.jobId ?? 'manual'} initialKg={weights[focused.id]} suggestion={readings[focused.id]?.reading} onSubmit={kg => void onWeight(focused, kg)} />
               </>
             )}
           </Sheet>

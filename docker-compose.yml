@@ -163,6 +163,40 @@ services:
       start_period: 30s
       retries: 3
 
+  # Business jobs: outbound webhook deliveries (retries, dead letters), overdue invoices,
+  # expiring quotes, daily notifications.
+  worker-business:
+    <<: *worker-base
+    command: ['tsx', 'src/workers/businessWorker.ts']
+    environment:
+      <<: *worker-env
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    healthcheck:
+      test: ['CMD-SHELL', 'pgrep -f businessWorker > /dev/null || exit 1']
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  # Weighing-ticket OCR (Tesseract, CPU). Optional: `docker compose --profile ocr up`. Without it
+  # the driver app simply hides the "read the ticket" button and drivers type the weight.
+  ai-engine:
+    build: ./ai-engine
+    profiles: ['ocr']
+    environment:
+      REDIS_URL: redis://redis:6379
+      CALLBACK_BASE_URL: http://app:3000
+      AI_CALLBACK_SECRET: ${AI_CALLBACK_SECRET:?AI_CALLBACK_SECRET is required for the OCR engine}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
   # Daily purge: audit log, GPS positions, idempotency keys (retention windows in env).
   worker-retention:
     <<: *worker-base
@@ -196,6 +230,9 @@ services:
       NESSY_API_URL: ${NESSY_API_URL:-}
       NESSY_API_KEY: ${NESSY_API_KEY:-}
       AI_CALLBACK_SECRET: ${AI_CALLBACK_SECRET:-}
+      AI_ENGINE_URL: ${AI_ENGINE_URL:-}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
       FORCE_HTTPS: ${FORCE_HTTPS:-false}

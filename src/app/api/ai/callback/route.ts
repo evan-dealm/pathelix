@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logger'
 import { unscopedPrisma } from '@/lib/tenantDb'
+import { parseWeighingTicket, type OcrLine } from '@/lib/ocr/ticket'
+import type { Prisma } from '@/generated/prisma'
 
 const log = createLogger('/api/ai/callback')
 
@@ -34,6 +36,25 @@ async function verifyHmacSignature(body: string, signature: string): Promise<boo
     Buffer.from(expectedBuf),
     Buffer.from(receivedBuf),
   )
+}
+
+/**
+ * What is stored for a finished job. For a ticket, the engine only reports the text it saw (with
+ * per-line confidences); the figures are read here, with their checks (lib/ocr/ticket).
+ */
+function outputFor(type: string, status: string, result: Record<string, unknown>): Prisma.InputJsonValue {
+  if (type !== 'ocr' || status !== 'done') return result as Prisma.InputJsonValue
+  const text = typeof result.text === 'string' ? result.text.slice(0, 20_000) : ''
+  const lines: OcrLine[] = Array.isArray(result.lines)
+    ? result.lines.slice(0, 500).flatMap(l => {
+      if (!l || typeof l !== 'object') return []
+      const o = l as Record<string, unknown>
+      return typeof o.text === 'string' && typeof o.conf === 'number' ? [{ text: o.text.slice(0, 500), conf: Math.max(0, Math.min(1, o.conf)) }] : []
+    })
+    : []
+  const mean = typeof result.meanConfidence === 'number' ? result.meanConfidence : undefined
+  const reading = parseWeighingTicket({ text, lines, meanConfidence: mean })
+  return { text, meanConfidence: mean ?? null, reading } as unknown as Prisma.InputJsonValue
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -89,7 +110,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       where: { id: jobId },
       data: {
         status,
-        outputData: result ? (result as import('@/generated/prisma').Prisma.InputJsonValue) : undefined,
+        outputData: result ? outputFor(job.type, status, result) : undefined,
         errorMsg:   errMsg ?? undefined,
       },
     })

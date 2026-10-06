@@ -9,7 +9,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const { tenantId } = getRequestContext(req)
+  const { tenantId, role, userId } = getRequestContext(req)
   const { id } = await params
 
   if (!id) {
@@ -20,7 +20,9 @@ export async function GET(
     const job = await getTenantDb(tenantId).aiJob.findFirst({
       where: { id },
     })
-    if (!job) {
+    // A driver only follows the readings of the tickets they sent.
+    const submittedBy = (job?.inputData as { submittedBy?: unknown } | null)?.submittedBy
+    if (!job || (role === 'driver' && submittedBy !== userId)) {
       return NextResponse.json({ error: 'Job introuvable' }, { status: 404 })
     }
     return NextResponse.json(job)

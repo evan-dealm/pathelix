@@ -27,6 +27,8 @@ const StatusUpdateSchema = z.object({
   longitude:  z.number().min(-180).max(180).optional(),
   /** Net weight from the weighing ticket (dump/VIDER steps), in kg. */
   weightKg:   z.number().positive().max(100_000).optional(),
+  /** The ticket reading the weight was suggested by (the driver confirmed or corrected it). */
+  ocrJobId:   z.string().min(1).max(100).optional(),
 }).refine(d => d.status !== undefined || d.weightKg !== undefined, { message: 'status ou weightKg requis' })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { driverId, missionId, date, status, timestamp, latitude, longitude, weightKg } = parsed.data
+  const { driverId, missionId, date, status, timestamp, latitude, longitude, weightKg, ocrJobId } = parsed.data
 
   try {
 
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (suspended) return suspended
 
     return await withIdempotency(req, tenantId, 'POST /api/driver-status/update', parsed.data, () => handleStatusUpdate({
-      tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, weightKg, driverFullName,
+      tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, weightKg, ocrJobId, driverFullName,
     }))
   } catch (err) {
     log.error('Status update failed', { err: err instanceof Error ? err.message : String(err) })
@@ -79,6 +81,7 @@ interface StatusUpdateParams {
   date: string
   status?: MissionStatus
   weightKg?: number
+  ocrJobId?: string
   timestamp?: string
   latitude?: number
   longitude?: number
@@ -101,7 +104,7 @@ function planHasMission(missions: unknown, missionId: string): boolean {
 }
 
 async function handleStatusUpdate({
-  tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, weightKg, driverFullName,
+  tenantId, driverId, missionId, date, status, timestamp, latitude, longitude, weightKg, ocrJobId, driverFullName,
 }: StatusUpdateParams): Promise<NextResponse> {
   try {
     const ts = timestamp || new Date().toISOString()
@@ -171,7 +174,7 @@ async function handleStatusUpdate({
     // The ticket's weight becomes a Weighing (billing per tonne, BSD, weight calibration).
     if (weightKg !== undefined) {
       try {
-        const weighingId = await recordDriverWeighing(db, { driverId, stepId: missionId, netKg: weightKg, at: new Date(ts) })
+        const weighingId = await recordDriverWeighing(db, { driverId, stepId: missionId, netKg: weightKg, at: new Date(ts), ocrJobId })
         if (weighingId) void emitBusinessEvent(tenantId, 'weighing.created', { weighingId, stepId: missionId, netKg: weightKg })
       } catch (err) {
         log.error('Weighing record failed', { missionId, err: err instanceof Error ? err.message : String(err) })

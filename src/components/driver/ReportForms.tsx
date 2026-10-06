@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { INCIDENT_TYPES, type IncidentType } from './driverUi'
+import type { TicketReading } from '@/lib/ocr/ticket'
 
 export function IncidentForm({ onSubmit }: { onSubmit: (_type: IncidentType, _notes: string) => void }) {
   const [type, setType] = useState<IncidentType | null>(null)
@@ -68,12 +69,23 @@ export function NoteForm({ onSubmit }: { onSubmit: (_content: string) => void })
 }
 
 /** Weighing ticket of a dump (VIDER) step, in tonnes as printed on the ticket. */
-export function WeightForm({ initialKg, onSubmit }: { initialKg?: number; onSubmit: (_kg: number) => void }) {
-  const [value, setValue] = useState(initialKg ? String(initialKg / 1000).replace('.', ',') : '')
+/**
+ * Net weight of the ticket. A reading of the ticket photo only prefills the field: the driver
+ * checks it against the paper and confirms (or corrects) it.
+ */
+export function WeightForm({ initialKg, suggestion, onSubmit }: { initialKg?: number; suggestion?: TicketReading | null; onSubmit: (_kg: number) => void }) {
+  const start = suggestion?.netKg ?? initialKg
+  const [value, setValue] = useState(start ? String(start / 1000).replace('.', ',') : '')
   const tonnes = Number(value.replace(',', '.').replace(/[^\d.]/g, ''))
   const valid = Number.isFinite(tonnes) && tonnes > 0 && tonnes <= 100
   return (
     <form onSubmit={e => { e.preventDefault(); if (valid) onSubmit(Math.round(tonnes * 1000)) }} className="space-y-4">
+      {suggestion?.netKg && (
+        <div role="status" className={`rounded-xl px-3 py-2 text-sm ${suggestion.needsReview ? 'bg-[#FFC21A]/15 text-[#FFE08A]' : 'bg-white/10 text-white/80'}`}>
+          <p>Lu sur la photo : <strong>{(suggestion.netKg / 1000).toLocaleString('fr-FR')} t</strong>{suggestion.ticketNumber ? ` (ticket ${suggestion.ticketNumber})` : ''}. Vérifiez avec le ticket avant d&apos;enregistrer.</p>
+          {suggestion.issues.length > 0 && <ul className="mt-1 list-disc pl-5 text-xs">{suggestion.issues.map(i => <li key={i}>{i}</li>)}</ul>}
+        </div>
+      )}
       <div>
         <label htmlFor="ticket-weight" className="mb-2 block text-sm text-white/60">Poids net du ticket de pesée</label>
         <div className="flex items-center gap-2">
@@ -89,7 +101,7 @@ export function WeightForm({ initialKg, onSubmit }: { initialKg?: number; onSubm
         </div>
       </div>
       <button type="submit" disabled={!valid} className="min-h-12 w-full rounded-xl bg-[#FFC21A] font-semibold text-black disabled:opacity-40">
-        Enregistrer le poids
+        {suggestion?.netKg ? 'Confirmer le poids' : 'Enregistrer le poids'}
       </button>
     </form>
   )

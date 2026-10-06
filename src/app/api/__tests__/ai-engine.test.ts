@@ -45,8 +45,9 @@ vi.mock('@/lib/rateLimit', () => ({
 
 const mockRedisLpush = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/redisClient', () => ({
-  getRedisClient: vi.fn(() => Promise.resolve({ lpush: mockRedisLpush, llen: vi.fn(() => Promise.resolve(0)) })),
+  getRedisClient: vi.fn(() => Promise.resolve({ lpush: mockRedisLpush, llen: vi.fn(() => Promise.resolve(0)), exists: vi.fn(() => Promise.resolve(1)) })),
 }))
+vi.mock('@/lib/documents/archive', async (orig) => ({ ...(await orig<typeof import('@/lib/documents/archive')>()), storeDocument: vi.fn(async () => ({ id: 'doc-1' })) }))
 
 import { POST as ocrPOST } from '@/app/api/ai/ocr/route'
 import { POST as callbackPOST } from '@/app/api/ai/callback/route'
@@ -153,7 +154,7 @@ describe('POST /api/ai/ocr', () => {
 
   it('pushes job to Redis queue', async () => {
     await ocrPOST(makeOcrRequest(jpegBytes()))
-    expect(mockRedisLpush).toHaveBeenCalledWith('ai:ocr:queue', expect.any(String))
+    expect(mockRedisLpush).toHaveBeenCalledWith('ai-jobs:pending', expect.any(String))
   })
 })
 
@@ -179,6 +180,16 @@ describe('POST /api/ai/callback', () => {
       where: { id: 'job-1' },
       data: expect.objectContaining({ status: 'done' }),
     }))
+  })
+
+  it('reads the ticket figures from the engine text, with their checks', async () => {
+    mockAiJob.findUnique.mockResolvedValue({ id: 'job-1', type: 'ocr', status: 'pending' })
+    await callbackPOST(makeCallbackRequest({ jobId: 'job-1', status: 'done', result: {
+      text: 'Brut 20 120 kg\nTare 12 280 kg\nNet 7 840 kg', meanConfidence: 0.9,
+      lines: [{ text: 'Brut 20 120 kg', conf: 0.93 }, { text: 'Tare 12 280 kg', conf: 0.91 }, { text: 'Net 7 840 kg', conf: 0.88 }, { text: 42 }],
+    } }))
+    const out = mockAiJob.update.mock.calls[0][0].data.outputData
+    expect(out.reading).toMatchObject({ netKg: 7840, grossKg: 20120, tareKg: 12280, confidence: 0.88, needsReview: false })
   })
 
   it('returns 404 for unknown jobId', async () => {
@@ -249,6 +260,13 @@ describe('GET /api/ai/jobs/[id]', () => {
     mockAiJob.findFirst.mockResolvedValue({ id: 'job-1', status: 'pending' })
     await jobIdGET(makeJobIdRequest('job-1'), { params: Promise.resolve({ id: 'job-1' }) })
     expect(mockAiJob.findFirst).toHaveBeenCalled()
+  })
+
+  it('a driver only sees the readings of tickets they sent', async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-1', userId: 'driver-user', role: 'driver' } as never)
+    mockAiJob.findFirst.mockResolvedValue({ id: 'job-1', status: 'done', inputData: { submittedBy: 'other-driver' } })
+    const res = await jobIdGET(makeJobIdRequest('job-1'), { params: Promise.resolve({ id: 'job-1' }) })
+    expect(res.status).toBe(404)
   })
 
   it('different tenant cannot see job (IDOR)', async () => {

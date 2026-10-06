@@ -28,6 +28,8 @@ vi.mock('@/lib/tenantDb', () => ({
 
 const mockGetRedis = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/redisClient', () => ({ getRedisClient: mockGetRedis }))
+const mockStoreDocument = vi.hoisted(() => vi.fn(async () => ({ id: 'doc-1' })))
+vi.mock('@/lib/documents/archive', async (orig) => ({ ...(await orig<typeof import('@/lib/documents/archive')>()), storeDocument: mockStoreDocument }))
 
 import { POST } from '@/app/api/ai/ocr/route'
 
@@ -54,7 +56,7 @@ beforeEach(() => {
   mockOcrCheck.mockResolvedValue(true)
   mockMissionFindFirst.mockResolvedValue({ id: 'm1' })
   mockAiJobCreate.mockResolvedValue({ id: 'job-1', tenantId: 't1' })
-  mockGetRedis.mockResolvedValue({ llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockResolvedValue(1) })
+  mockGetRedis.mockResolvedValue({ exists: vi.fn().mockResolvedValue(1), llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockResolvedValue(1) })
 })
 
 describe('POST /api/ai/ocr', () => {
@@ -115,13 +117,14 @@ describe('POST /api/ai/ocr', () => {
   })
 
   it('503 when the queue is full (AI engine down)', async () => {
-    mockGetRedis.mockResolvedValueOnce({ llen: vi.fn().mockResolvedValue(200), lpush: vi.fn() })
+    mockGetRedis.mockResolvedValueOnce({ exists: vi.fn().mockResolvedValue(1), llen: vi.fn().mockResolvedValue(200), lpush: vi.fn() })
     expect((await POST(makeOCRReq())).status).toBe(503)
     expect(mockAiJobCreate).not.toHaveBeenCalled()
   })
 
   it('marks the job failed and answers 503 when the push fails', async () => {
-    mockGetRedis.mockResolvedValueOnce({ llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockRejectedValue(new Error('READONLY')) })
+    const r = { exists: vi.fn().mockResolvedValue(1), llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockRejectedValue(new Error('READONLY')) }
+    mockGetRedis.mockResolvedValue(r)
     expect((await POST(makeOCRReq())).status).toBe(503)
     expect(mockAiJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'failed', errorMsg: 'queue_unavailable' } })
   })
@@ -139,14 +142,29 @@ describe('POST /api/ai/ocr', () => {
   })
 
   it('returns 202 with PNG file and missionId, pushes to Redis', async () => {
-    const mockRedis = { llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockResolvedValue(1) }
+    const mockRedis = { exists: vi.fn().mockResolvedValue(1), llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockResolvedValue(1) }
     mockGetRedis.mockResolvedValueOnce(mockRedis)
     const res = await POST(makeOCRReq(new Blob([PNG_BYTES], { type: 'image/png' }), 'm1'))
     expect(res.status).toBe(202)
-    expect(mockRedis.lpush).toHaveBeenCalledWith('ai:ocr:queue', expect.any(String))
+    expect(mockRedis.lpush).toHaveBeenCalledWith('ai-jobs:pending', expect.any(String))
+    // The contract the engine (ai-engine/app/workers/ocr_worker.py) reads.
     const pushed = JSON.parse(mockRedis.lpush.mock.calls[0][1])
-    expect(pushed.missionId).toBe('m1')
-    expect(pushed.tenantId).toBe('t1')
+    expect(pushed).toMatchObject({ id: 'job-1', type: 'ocr', tenantId: 't1', missionId: 'm1', filename: 'photo.jpg' })
+    expect(Buffer.from(pushed.image, 'base64')).toEqual(Buffer.from(PNG_BYTES))
+  })
+
+  it('503 without a live engine (no heartbeat): the driver types the weight at once', async () => {
+    mockGetRedis.mockResolvedValue({ exists: vi.fn().mockResolvedValue(0), llen: vi.fn(), lpush: vi.fn() })
+    const res = await POST(makeOCRReq())
+    expect(res.status).toBe(503)
+    expect((await res.json()).code).toBe('OCR_ENGINE_DOWN')
+    expect(mockAiJobCreate).not.toHaveBeenCalled()
+  })
+
+  it('keeps the ticket photo as evidence for the reviewer', async () => {
+    await POST(makeOCRReq(new Blob([JPEG_BYTES], { type: 'image/jpeg' }), 'm1'))
+    expect(mockStoreDocument).toHaveBeenCalledWith(expect.anything(), 't1', expect.objectContaining({ kind: 'WEIGHING_TICKET', missionId: 'm1', mimeType: 'image/jpeg' }))
+    expect(mockAiJobUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { inputData: expect.objectContaining({ documentId: 'doc-1' }) } }))
   })
 
   it('returns 500 on DB error', async () => {

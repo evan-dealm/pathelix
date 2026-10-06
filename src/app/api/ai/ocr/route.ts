@@ -4,6 +4,8 @@ import { createLogger } from '@/lib/logger'
 import { createTenantRateLimiter } from '@/lib/rateLimit'
 import { getTenantDb } from '@/lib/tenantDb'
 import { getRedisClient } from '@/lib/redisClient'
+import { AI_JOB_QUEUE, AI_JOB_QUEUE_MAX, ocrEngineState, type OcrQueueItem } from '@/lib/ocr/engine'
+import { detectDocumentType, storeDocument } from '@/lib/documents/archive'
 
 const log = createLogger('/api/ai/ocr')
 
@@ -11,10 +13,6 @@ const log = createLogger('/api/ai/ocr')
 const _ocrRl = createTenantRateLimiter(10, 3_600_000, 'ai-ocr')
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
-
-const OCR_QUEUE = 'ai:ocr:queue'
-// Each entry holds a base64 image (up to ~7 MB): cap the backlog when the AI engine is down.
-const OCR_QUEUE_MAX = 200
 
 // Magic bytes for JPEG, PNG, WebP
 const ALLOWED_MAGIC: Array<{ bytes: number[]; mask?: number[] }> = [
@@ -30,6 +28,15 @@ function checkMagicBytes(buf: Uint8Array): boolean {
   return false
 }
 
+/** Whether ticket reading is available right now (the driver app hides the button otherwise). */
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json({ available: (await ocrEngineState()) === 'up' })
+}
+
+/**
+ * Queues a weighing-ticket photo for reading. The result is only ever a suggestion: the driver
+ * confirms or corrects it, and uncertain readings also wait for the office (see lib/ocr/ticket).
+ */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tenantId, userId } = getRequestContext(req)
 
@@ -88,14 +95,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // The job is only accepted once it is actually queued: without Redis (or with the queue full —
-  // each entry carries the image) it used to be answered 202 and then stay "pending" forever.
+  // The job is only accepted once it is actually queued by a live engine: without Redis, without
+  // an engine heartbeat or with the queue full it used to be answered 202 and stay "pending".
   const redis = await getRedisClient()
   if (!redis) {
     return NextResponse.json({ error: 'Service OCR indisponible, réessayez plus tard' }, { status: 503 })
   }
+  if ((await ocrEngineState()) !== 'up') {
+    return NextResponse.json({ error: 'Lecture automatique indisponible : saisissez le poids', code: 'OCR_ENGINE_DOWN' }, { status: 503 })
+  }
   try {
-    if (await redis.llen(OCR_QUEUE) >= OCR_QUEUE_MAX) {
+    if (await redis.llen(AI_JOB_QUEUE) >= AI_JOB_QUEUE_MAX) {
       log.warn('OCR queue full', { tenantId })
       return NextResponse.json({ error: 'Service OCR saturé, réessayez dans quelques minutes' }, { status: 503 })
     }
@@ -121,17 +131,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
 
     try {
-      await redis.lpush(OCR_QUEUE, JSON.stringify({
-        jobId:    job.id,
-        tenantId,
-        missionId: missionId ?? null,
-        file:     Buffer.from(buf).toString('base64'),
-        filename: file.name,
-      }))
+      const item: OcrQueueItem = {
+        id: job.id, type: 'ocr', tenantId,
+        missionId: typeof missionId === 'string' ? missionId : null,
+        image: Buffer.from(buf).toString('base64'), filename: file.name,
+      }
+      await redis.lpush(AI_JOB_QUEUE, JSON.stringify(item))
     } catch (err) {
       log.warn('Failed to push OCR job to Redis queue', { jobId: job.id, err: String(err) })
       await db.aiJob.update({ where: { id: job.id }, data: { status: 'failed', errorMsg: 'queue_unavailable' } }).catch(() => {})
       return NextResponse.json({ error: 'Service OCR indisponible, réessayez plus tard' }, { status: 503 })
+    }
+
+    // The ticket photo is kept as evidence for whoever checks the reading (best effort).
+    const type = detectDocumentType(buf)
+    if (type) {
+      try {
+        const doc = await storeDocument(db, tenantId, {
+          kind: 'WEIGHING_TICKET', data: Buffer.from(buf), filename: `ticket-${job.id}.${type.ext}`, mimeType: type.mime, ext: type.ext,
+          createdBy: userId, missionId: typeof missionId === 'string' ? missionId : undefined,
+        })
+        await db.aiJob.update({ where: { id: job.id }, data: { inputData: { filename: file.name, size: file.size, contentType: file.type, submittedBy: userId, documentId: doc.id } } })
+      } catch (err) {
+        log.warn('Ticket photo not archived', { jobId: job.id, err: String(err) })
+      }
     }
 
     log.info('OCR job created', { tenantId, jobId: job.id, missionId, size: file.size })

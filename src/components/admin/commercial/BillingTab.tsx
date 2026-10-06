@@ -100,7 +100,7 @@ function PaymentsView() {
   )
 }
 
-interface WeighingRow { id: string; netKg: number; grossKg: number | null; tareKg: number | null; ticketNumber: string; source: string; status: string; weighedAt: string; missionId: string | null; notes: string }
+interface WeighingRow { id: string; netKg: number; grossKg: number | null; tareKg: number | null; ticketNumber: string; source: string; status: string; weighedAt: string; missionId: string | null; notes: string; documentId: string | null }
 
 /** OCR readings (and other tickets awaiting a check): a person confirms or corrects before use. */
 function WeighingsReview() {
@@ -123,7 +123,7 @@ function WeighingsReview() {
     <ul className="divide-y divide-surface-100 rounded-xl ring-1 ring-surface-200">
       {rows.map(w => (
         <li key={w.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-          <span className="min-w-[10rem]">{new Date(w.weighedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}<span className="block text-xs text-surface-500">{w.source === 'OCR' ? 'Lecture automatique du ticket' : w.source}{w.ticketNumber ? ` · ticket ${w.ticketNumber}` : ''}</span></span>
+          <span className="min-w-[10rem]">{new Date(w.weighedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}<span className="block text-xs text-surface-500">{w.source === 'OCR' ? 'Lecture automatique du ticket' : w.source}{w.ticketNumber ? ` · ticket ${w.ticketNumber}` : ''}</span>{w.notes && <span className="block text-xs text-amber-700">{w.notes}</span>}{w.documentId && <a className="text-xs text-brand-600 hover:underline" href={`/api/documents/${w.documentId}`} target="_blank" rel="noopener noreferrer">Voir la photo du ticket</a>}</span>
           <label className="text-xs text-surface-600">Poids net (kg)<input className={`${inputCls} w-28`} inputMode="decimal" value={edits[w.id] ?? String(w.netKg)} onChange={e => setEdits(x => ({ ...x, [w.id]: e.target.value }))} /></label>
           <span className="ml-auto flex gap-2"><Btn onClick={() => void decide(w, 'REJECTED')} variant="ghost" size="sm">Rejeter</Btn><Btn onClick={() => void decide(w, 'VALIDATED')} size="sm">Valider</Btn></span>
         </li>

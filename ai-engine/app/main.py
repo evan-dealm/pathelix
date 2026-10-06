@@ -1,9 +1,9 @@
 """
-Pathélix AI Engine — point d'entrée FastAPI.
+Pathélix AI engine — FastAPI process that consumes the OCR queue.
 
-Démarre un consommateur Redis en arrière-plan qui traite les jobs
-de la queue "ai-jobs:pending" (BRPOP).  Next.js pousse les jobs
-avec LPUSH ai-jobs:pending <json>.
+The app LPUSHes jobs on `ai-jobs:pending` (src/lib/ocr/engine.ts); this process BRPOPs them and
+refreshes `ai-engine:heartbeat` (TTL 60 s) while it runs. The app only queues images while that
+heartbeat exists: when the engine is down, drivers get the manual weight form straight away.
 """
 import asyncio
 import json
@@ -13,59 +13,56 @@ from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
 from fastapi import FastAPI
 
-from app.config import QUEUE_NAME, REDIS_URL
+from app.config import HEARTBEAT_KEY, QUEUE_KEY, REDIS_URL
 from app.routes.health import router as health_router
 from app.workers.ocr_worker import process_ocr_job
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
 
 
-async def _queue_consumer() -> None:
-    """Boucle infinie : dépile les jobs Redis et les route vers le bon worker."""
-    r = aioredis.from_url(REDIS_URL, decode_responses=True)
-    queue_key = f"{QUEUE_NAME}:pending"
-    logger.info(f"Queue consumer démarré — écoute sur {queue_key}")
-
+async def _heartbeat(r: aioredis.Redis) -> None:
     while True:
         try:
-            item = await r.brpop(queue_key, timeout=5)
+            await r.set(HEARTBEAT_KEY, "1", ex=60)
+        except Exception as exc:  # Redis briefly unavailable: retry next tick
+            logger.warning(f"heartbeat failed: {exc}")
+        await asyncio.sleep(20)
+
+
+async def _queue_consumer(r: aioredis.Redis) -> None:
+    logger.info(f"Queue consumer listening on {QUEUE_KEY}")
+    while True:
+        try:
+            item = await r.brpop(QUEUE_KEY, timeout=5)
             if item is None:
                 continue
-
-            _, raw = item
-            job: dict = json.loads(raw)
-            job_type = job.get("type")
-            job_id = job.get("id", "?")
-            logger.info(f"Job reçu : id={job_id} type={job_type}")
-
-            if job_type == "ocr":
+            job = json.loads(item[1])
+            if job.get("type") == "ocr":
                 await process_ocr_job(job)
             else:
-                logger.warning(f"Type de job non supporté : {job_type!r}")
-
+                logger.warning(f"Unsupported job type: {job.get('type')!r}")
         except asyncio.CancelledError:
             break
         except Exception as exc:
-            logger.error(f"Erreur consommateur : {exc}", exc_info=True)
+            logger.error(f"Consumer error: {exc}", exc_info=True)
             await asyncio.sleep(2)
-
-    await r.aclose()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_queue_consumer())
+    r = aioredis.from_url(REDIS_URL, decode_responses=True)
+    tasks = [asyncio.create_task(_heartbeat(r)), asyncio.create_task(_queue_consumer(r))]
     yield
-    task.cancel()
+    for t in tasks:
+        t.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    # Stop advertising the engine at once rather than in up to 60 s.
     try:
-        await task
-    except asyncio.CancelledError:
-        pass
+        await r.delete(HEARTBEAT_KEY)
+    finally:
+        await r.aclose()
 
 
-app = FastAPI(title="Pathélix AI Engine", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Pathélix AI Engine", version="2.0.0", lifespan=lifespan)
 app.include_router(health_router)
