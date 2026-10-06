@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { timingSafeEqual }            from 'crypto'
 import { signSession, SESSION_COOKIE, COOKIE_OPTIONS } from '@/lib/session'
 import { LoginSchema }                from '@/lib/schemas'
-import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
+import { getClientIp } from '@/lib/rateLimit'
 import { createLogger }               from '@/lib/logger'
 import { metrics, METRIC }            from '@/lib/metrics'
 
@@ -15,42 +15,59 @@ const USE_MOCK       = process.env.USE_MOCK_DATA !== 'false'
 // and a throw here broke `next build`, which loads this module without runtime secrets. A mock
 // deployment without ADMIN_PASSWORD answers 503 in the handler instead.
 
-const _loginRl = createRateLimiter(5, 60_000)
-// Per-account lockout on top of the per-IP limiter: a distributed guessing attack (many IPs, one
-// account) is throttled too. Only FAILED attempts count, and a successful login clears them — the
-// previous limiter counted every attempt, so a shared tablet or a user signing in on several
-// devices was locked out after 10 legitimate logins in 15 minutes.
-const ACCOUNT_MAX_FAILURES = 10
-const ACCOUNT_WINDOW_MS    = 15 * 60_000
-const _accountFailures = new Map<string, { count: number; resetAt: number }>()
-
-function accountLocked(email: string): boolean {
-  const e = _accountFailures.get(email)
-  if (!e) return false
-  if (Date.now() > e.resetAt) { _accountFailures.delete(email); return false }
-  return e.count >= ACCOUNT_MAX_FAILURES
-}
-
 /**
- * Counts an attempt BEFORE the password check (so parallel guesses cannot all slip past the
- * lock); a successful login then clears the entry. At capacity, only expired or still-unlocked
- * entries are evicted — a flood of junk e-mails can never flush an active lockout.
+ * Counts failed logins per key within a window. An attempt is reserved BEFORE the password check
+ * (parallel guesses cannot all slip past the limit) and handed back on success, so only failures
+ * accumulate: legitimate sign-ins — a shared tablet, a whole office behind one public IP at 8 am —
+ * never lock anyone out. At capacity only expired or below-limit entries are evicted, so a flood
+ * of junk keys cannot flush an active lockout.
  */
-function reserveAccountAttempt(email: string): void {
-  const now = Date.now()
-  const e = _accountFailures.get(email)
-  if (e && now <= e.resetAt) { e.count++; return }
-  if (_accountFailures.size >= 10_000) {
-    for (const [k, v] of _accountFailures) if (now > v.resetAt) _accountFailures.delete(k)
-    if (_accountFailures.size >= 10_000) {
-      let toDrop = 1_000
-      for (const [k, v] of _accountFailures) {
-        if (v.count < ACCOUNT_MAX_FAILURES) { _accountFailures.delete(k); if (--toDrop <= 0) break }
+class FailureLimiter {
+  private entries = new Map<string, { count: number; resetAt: number }>()
+  readonly max: number
+  readonly windowMs: number
+  private readonly cap: number
+  constructor(max: number, windowMs: number, cap = 10_000) {
+    this.max = max
+    this.windowMs = windowMs
+    this.cap = cap
+  }
+
+  locked(key: string): boolean {
+    const e = this.entries.get(key)
+    if (!e) return false
+    if (Date.now() > e.resetAt) { this.entries.delete(key); return false }
+    return e.count >= this.max
+  }
+
+  reserve(key: string): void {
+    const now = Date.now()
+    const e = this.entries.get(key)
+    if (e && now <= e.resetAt) { e.count++; return }
+    if (this.entries.size >= this.cap) {
+      for (const [k, v] of this.entries) if (now > v.resetAt) this.entries.delete(k)
+      if (this.entries.size >= this.cap) {
+        let toDrop = Math.ceil(this.cap / 10)
+        for (const [k, v] of this.entries) {
+          if (v.count < this.max) { this.entries.delete(k); if (--toDrop <= 0) break }
+        }
       }
     }
+    this.entries.set(key, { count: 1, resetAt: now + this.windowMs })
   }
-  _accountFailures.set(email, { count: 1, resetAt: now + ACCOUNT_WINDOW_MS })
+
+  /** The reserved attempt succeeded: give it back. */
+  release(key: string, clear = false): void {
+    const e = this.entries.get(key)
+    if (!e) return
+    if (clear || e.count <= 1) this.entries.delete(key)
+    else e.count--
+  }
 }
+
+// Per IP: brute force from one address. Per account: distributed guessing on one account.
+const _ipFailures      = new FailureLimiter(20, 60_000)
+const _accountFailures = new FailureLimiter(10, 15 * 60_000)
 
 // bcrypt hash of a random string — compared against when the email is unknown, so a miss costs
 // the same time as a wrong password and response timing doesn't reveal which emails exist.
@@ -68,10 +85,10 @@ function safePasswordCompare(input: string, expected: string): boolean {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const ip = getClientIp(req.headers)
 
-  if (!(await _loginRl.check(ip))) {
+  if (_ipFailures.locked(ip)) {
     return NextResponse.json(
       { error: 'Trop de tentatives. Réessayez dans une minute.' },
-      { status: 429, headers: _loginRl.headers(ip) },
+      { status: 429, headers: { 'Retry-After': '60' } },
     )
   }
 
@@ -85,6 +102,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const { password, email } = parsed.data
+  _ipFailures.reserve(ip)
 
   const deny = async (msg: string, status = 401): Promise<NextResponse> => {
     await new Promise(r => setTimeout(r, 200))
@@ -99,13 +117,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const normalizedEmail = email.trim().toLowerCase()
-    if (accountLocked(normalizedEmail)) {
+    if (_accountFailures.locked(normalizedEmail)) {
+      _ipFailures.release(ip)
       return NextResponse.json(
         { error: 'Trop de tentatives pour ce compte. Réessayez dans quelques minutes.' },
-        { status: 429, headers: { 'Retry-After': String(ACCOUNT_WINDOW_MS / 1000) } },
+        { status: 429, headers: { 'Retry-After': String(_accountFailures.windowMs / 1000) } },
       )
     }
-    reserveAccountAttempt(normalizedEmail)
+    _accountFailures.reserve(normalizedEmail)
 
     try {
       const { prisma } = await import('@/lib/db')
@@ -117,7 +136,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const { compare } = await import('bcryptjs')
       const ok = await compare(password, user?.passwordHash ?? DUMMY_HASH)
       if (!user || !ok) return deny('Identifiants incorrects')
-      _accountFailures.delete(normalizedEmail)
+      _accountFailures.release(normalizedEmail, true)
+      _ipFailures.release(ip)
 
       if (user.tenant?.suspendedAt && user.role !== 'SUPERADMIN') {
         return deny('Compte suspendu. Contactez votre administrateur.', 403)
@@ -166,6 +186,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!safePasswordCompare(password, ADMIN_PASSWORD)) {
     return deny('Mot de passe incorrect')
   }
+  _ipFailures.release(ip)
 
   let mockTrade: string | undefined
   try {

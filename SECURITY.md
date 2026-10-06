@@ -30,7 +30,9 @@ Modèle de sécurité, contrôles en place et risques résiduels. Vérifié cont
 - **Révocation** : chaque jeton porte la `sessionVersion` de l'utilisateur ; changement de mot de
   passe, de rôle ou suppression l'incrémente. Le middleware vérifie la version (cache 30 s,
   invalidé immédiatement sur l'instance qui révoque — cache partagé entre middleware et routes).
-- **Connexion** : bcrypt ; limitation par IP (5/min) et par compte (10/15 min) ; temps de réponse
+- **Connexion** : bcrypt ; seuls les **échecs** sont comptés — 20/min par IP, 10/15 min par compte
+  (tentative réservée avant la vérification, rendue en cas de succès : une agence derrière une même
+  IP ou une tablette partagée ne se bloque jamais) ; temps de réponse
   constant que le compte existe ou non (comparaison bcrypt toujours effectuée) ; l'e-mail est
   unique sur toute la plateforme.
 - **IP client** : lue depuis `X-Forwarded-For` en comptant `TRUSTED_PROXY_COUNT` proxies depuis

@@ -167,26 +167,17 @@ describe('POST /api/auth/login — additional branches', () => {
     vi.resetModules()
   })
 
-  it('returns 429 when rate limit is exceeded', async () => {
-    vi.doMock('@/lib/rateLimit', () => ({
-      createRateLimiter: () => ({
-        check:   vi.fn(async () => false),
-        headers: vi.fn(() => ({ 'X-RateLimit-Remaining': '0' })),
-      }),
-      createTenantRateLimiter: () => ({
-        check:   vi.fn(async () => true),
-        headers: vi.fn(() => ({})),
-      }),
-      getClientIp: vi.fn(() => '127.0.0.1'),
-    }))
+  it('returns 429 after 20 failed logins from one IP — successful ones never count', async () => {
     vi.resetModules()
     const { POST } = await import('@/app/api/auth/login/route')
-    const res = await POST(new NextRequest('http://localhost/api/auth/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'any' }),
+    const login = (password: string) => POST(new NextRequest('http://localhost/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
     }))
-    expect(res.status).toBe(429)
-    vi.doUnmock('@/lib/rateLimit')
-  })
+    for (let i = 0; i < 25; i++) expect((await login(process.env.ADMIN_PASSWORD ?? '')).status).toBe(200)
+    for (let i = 0; i < 20; i++) expect((await login('wrong-password')).status).toBe(401)
+    expect((await login('wrong-password')).status).toBe(429)
+    expect((await login(process.env.ADMIN_PASSWORD ?? '')).status).toBe(429)
+  }, 20_000)
 
   it('returns 503 when ADMIN_PASSWORD is not configured in mock mode', async () => {
     const origPwd = process.env.ADMIN_PASSWORD

@@ -10,7 +10,9 @@ vi.mock('@/lib/rateLimit', () => ({
     check: mockRlCheck,
     headers: vi.fn(() => ({ 'Retry-After': '60' })),
   })),
-  getClientIp: vi.fn(() => '10.0.0.1'),
+  // Each test call gets its own address unless it sets X-Forwarded-For: the login route keeps
+  // per-IP failure counts in module state, which must not leak from one test into the next.
+  getClientIp: vi.fn((h: Headers) => h.get('x-forwarded-for') ?? `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`),
 }))
 
 vi.mock('@/lib/logger', () => ({
@@ -73,7 +75,9 @@ describe('POST /api/auth/login — real DB mode', () => {
         check: mockRlCheck,
         headers: vi.fn(() => ({ 'Retry-After': '60' })),
       })),
-      getClientIp: vi.fn(() => '10.0.0.1'),
+      // Each test call gets its own address unless it sets X-Forwarded-For: the login route keeps
+  // per-IP failure counts in module state, which must not leak from one test into the next.
+  getClientIp: vi.fn((h: Headers) => h.get('x-forwarded-for') ?? `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`),
     }))
     vi.mock('@/lib/logger', () => ({
       createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -113,11 +117,17 @@ describe('POST /api/auth/login — real DB mode', () => {
 
   // ── rate limit ─────────────────────────────────────────────────────────────
 
-  it('429 on brute-force (rate limiter tripped)', async () => {
-    mockRlCheck.mockResolvedValueOnce(false)
-    const res = await POST(makeLogin({ email: 'x@x.com', password: 'pass' }))
-    expect(res.status).toBe(429)
-  })
+  it('429 on brute-force from one IP spread over many accounts', async () => {
+    mockBcryptCompare.mockResolvedValue(false)
+    const req = (i: number) => new NextRequest('http://localhost/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.50' },
+      body: JSON.stringify({ email: `victim${i}@x.com`, password: 'bad' }),
+    })
+    for (let i = 0; i < 20; i++) expect((await POST(req(i))).status).toBe(401)
+    expect((await POST(req(99))).status).toBe(429)
+    mockBcryptCompare.mockResolvedValue(true)
+  }, 20_000)
 
   it('locks an account after 10 failed attempts — but successful logins never count', async () => {
     mockRlCheck.mockResolvedValue(true)
