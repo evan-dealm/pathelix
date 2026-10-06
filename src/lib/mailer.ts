@@ -25,7 +25,13 @@ const _g = globalThis as typeof globalThis & { __pathelixMailer?: Promise<Transp
 
 async function transport(): Promise<Transport> {
   if (!_g.__pathelixMailer) {
-    _g.__pathelixMailer = import('nodemailer').then(nm => nm.default.createTransport(process.env.SMTP_URL!, {
+    // SMTP_URL = smtp(s)://user:password@host:port — parsed here so the timeouts apply to the
+    // connection (a second createTransport argument only sets message defaults).
+    const u = new URL(process.env.SMTP_URL!)
+    const secure = u.protocol === 'smtps:'
+    _g.__pathelixMailer = import('nodemailer').then(nm => nm.default.createTransport({
+      host: u.hostname, port: u.port ? Number(u.port) : secure ? 465 : 587, secure,
+      ...(u.username ? { auth: { user: decodeURIComponent(u.username), pass: decodeURIComponent(u.password) } } : {}),
       connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
     }) as unknown as Transport)
   }
