@@ -716,7 +716,8 @@ export default function AdminPage() {
             <ThemeToggle />
           </div>
         </header>
-        <GlobalSearch onNavigate={(tab) => setActiveTab(tab as Parameters<typeof setActiveTab>[0])} />
+        <GlobalSearch onNavigate={(tab) => setActiveTab(tab as Parameters<typeof setActiveTab>[0])}
+          commands={NAV_ITEMS.filter(item => !item.adminOnly || isAdmin || (item.permission && hasPerm(permissions, item.permission))).map(item => ({ id: item.id, label: item.label, tab: item.id }))} />
 
         {}
         {Object.keys(driverStatuses).length > 0 && (

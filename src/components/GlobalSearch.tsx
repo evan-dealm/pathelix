@@ -1,33 +1,38 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { usePlanningStore } from '@/stores/planningStore'
-import type { Mission, Driver } from '@/lib/types'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { apiRequest } from '@/lib/apiClient'
 
-interface SearchResult {
-  type: 'mission' | 'driver' | 'vehicle'
-  id: string
-  label: string
-  sub: string
-  tab: string
-}
+interface Hit { kind: string; id: string; label: string; sub: string; tab: string }
+interface Command { id: string; label: string; tab: string }
 
 interface Props {
   onNavigate: (_tab: string) => void
+  /** Screens the user may open (label + tab) — offered as "Aller à …" commands. */
+  commands?: Command[]
 }
 
-export function GlobalSearch({ onNavigate }: Props) {
-  const [open, setOpen]     = useState(false)
-  const [query, setQuery]   = useState('')
+const KIND_LABEL: Record<string, string> = {
+  mission: 'Mission', client: 'Client', site: 'Site', container: 'Benne', driver: 'Chauffeur', vehicle: 'Camion',
+  quote: 'Devis', order: 'Commande', invoice: 'Facture', command: 'Aller à',
+}
+
+/**
+ * Ctrl/Cmd+K: search across the whole account (server side, each family only if the user may see
+ * it) and jump to any screen. Keyboard: ↑↓ to move, Enter to open, Esc to close.
+ */
+export function GlobalSearch({ onNavigate, commands = [] }: Props) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<Hit[]>([])
+  const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
-
-  const missions = usePlanningStore(s => s.missions)
-  const drivers  = usePlanningStore(s => s.drivers)
+  const seq = useRef(0)
 
   useEffect(() => {
     function onKeydown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setOpen(v => !v)
         setQuery('')
@@ -39,53 +44,34 @@ export function GlobalSearch({ onNavigate }: Props) {
   }, [])
 
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 50)
-      setSelected(0)
-    }
+    if (open) { setTimeout(() => inputRef.current?.focus(), 30); setSelected(0) }
   }, [open])
 
-  const results = useCallback((): SearchResult[] => {
-    const q = query.toLowerCase().trim()
-    if (!q) return []
-    const out: SearchResult[] = []
+  // Debounced server search; a late answer for an older query is ignored.
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) { setHits([]); setLoading(false); return }
+    const id = ++seq.current
+    setLoading(true)
+    const t = setTimeout(async () => {
+      const r = await apiRequest<{ hits: Hit[] }>(`/api/search?q=${encodeURIComponent(q)}`)
+      if (id !== seq.current) return
+      setHits(r.ok ? r.data.hits : [])
+      setLoading(false)
+    }, 200)
+    return () => clearTimeout(t)
+  }, [query])
 
-    const ms = Array.isArray(missions) ? missions : []
-    for (const m of ms as Mission[]) {
-      if (m.archived) continue
-      const text = `${m.address} ${m.clientName ?? ''} ${m.type}`.toLowerCase()
-      if (text.includes(q)) {
-        out.push({
-          type: 'mission', id: m.id,
-          label: m.address,
-          sub: [m.type, m.clientName, m.date].filter(Boolean).join(' · '),
-          tab: 'missions',
-        })
-        if (out.length >= 8) break
-      }
-    }
+  const items = useMemo<Hit[]>(() => {
+    const q = query.trim().toLowerCase()
+    const cmd = commands
+      .filter(c => !q || c.label.toLowerCase().includes(q))
+      .slice(0, q ? 4 : 8)
+      .map(c => ({ kind: 'command', id: `cmd-${c.id}`, label: c.label, sub: '', tab: c.tab }))
+    return [...hits, ...cmd]
+  }, [hits, commands, query])
 
-    const ds = Array.isArray(drivers) ? drivers : []
-    for (const d of ds as Driver[]) {
-      if (d.archived) continue
-      const text = `${d.firstName} ${d.lastName} ${d.sector} ${d.depotName ?? ''}`.toLowerCase()
-      if (text.includes(q)) {
-        out.push({
-          type: 'driver', id: d.id,
-          label: `${d.firstName} ${d.lastName}`,
-          sub: [d.sector, d.depotName].filter(Boolean).join(' · ') || '—',
-          tab: 'drivers',
-        })
-        if (out.length >= 12) break
-      }
-    }
-
-    return out.slice(0, 10)
-  }, [query, missions, drivers])
-
-  const items = results()
-
-  function handleSelect(r: SearchResult) {
+  function handleSelect(r: Hit) {
     onNavigate(r.tab)
     setOpen(false)
     setQuery('')
@@ -93,82 +79,61 @@ export function GlobalSearch({ onNavigate }: Props) {
 
   function onKey(e: React.KeyboardEvent) {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(s => Math.min(s + 1, items.length - 1)) }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)) }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)) }
     if (e.key === 'Enter' && items[selected]) handleSelect(items[selected])
   }
 
-  const TYPE_ICON: Record<string, string> = { mission: '📋', driver: '👤', vehicle: '🚛' }
-  const TYPE_LABEL: Record<string, string> = { mission: 'Mission', driver: 'Chauffeur', vehicle: 'Véhicule' }
-
   if (!open) return null
+  const activeId = items[selected] ? `gs-${items[selected].id}` : undefined
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]"
-      onClick={() => setOpen(false)}
-    >
+    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]" onClick={() => setOpen(false)}>
       <div className="absolute inset-0 bg-surface-900/20 backdrop-blur-sm" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Recherche globale"
-        className="relative w-full max-w-lg mx-4 bg-white rounded-2xl shadow-modal border border-surface-200 overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        {}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-surface-200">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-surface-400 shrink-0">
-            <path d="M8 14A6 6 0 108 2a6 6 0 000 12zM16 16l-3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <div role="dialog" aria-modal="true" aria-label="Recherche globale" className="relative mx-4 w-full max-w-xl overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-modal" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-surface-200 px-4 py-3">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="shrink-0 text-surface-400" aria-hidden>
+            <path d="M8 14A6 6 0 108 2a6 6 0 000 12zM16 16l-3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
           <input
             ref={inputRef}
+            role="combobox"
+            aria-expanded={items.length > 0}
+            aria-controls="gs-list"
+            aria-activedescendant={activeId}
+            aria-label="Rechercher"
             value={query}
             onChange={e => { setQuery(e.target.value); setSelected(0) }}
             onKeyDown={onKey}
-            placeholder="Rechercher mission, chauffeur…"
-            className="flex-1 text-surface-900 text-sm placeholder-surface-400 outline-none bg-transparent"
+            placeholder="Client, site, benne, mission, devis, facture, camion… ou un écran"
+            className="flex-1 bg-transparent text-sm text-surface-900 placeholder-surface-400 outline-none"
           />
-          <kbd className="text-[10px] text-surface-400 border border-surface-200 rounded px-1.5 py-0.5">Esc</kbd>
+          {loading && <span role="status" className="text-xs text-surface-400">Recherche…</span>}
+          <kbd className="rounded border border-surface-200 px-1.5 py-0.5 text-[10px] text-surface-400">Esc</kbd>
         </div>
 
-        {}
         {items.length > 0 ? (
-          <ul className="py-1 max-h-[340px] overflow-y-auto">
+          <ul id="gs-list" role="listbox" aria-label="Résultats" className="max-h-[360px] overflow-y-auto py-1">
             {items.map((r, i) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => handleSelect(r)}
-                  onMouseEnter={() => setSelected(i)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                    i === selected ? 'bg-brand-50' : 'hover:bg-surface-50'
-                  }`}
-                >
-                  <span className="text-base shrink-0">{TYPE_ICON[r.type]}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-surface-900 text-sm font-medium truncate">{r.label}</div>
-                    <div className="text-surface-400 text-[11px] truncate">{r.sub}</div>
-                  </div>
-                  <span className="text-[10px] text-surface-400 shrink-0 bg-surface-100 px-1.5 py-0.5 rounded">
-                    {TYPE_LABEL[r.type]}
-                  </span>
-                </button>
+              <li key={r.id} id={`gs-${r.id}`} role="option" aria-selected={i === selected}
+                onClick={() => handleSelect(r)} onMouseEnter={() => setSelected(i)}
+                className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 ${i === selected ? 'bg-brand-50' : 'hover:bg-surface-50'}`}>
+                <span className="w-20 shrink-0 text-[11px] text-surface-500">{KIND_LABEL[r.kind] ?? r.kind}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-surface-900">{r.label}</div>
+                  {r.sub && <div className="truncate text-[11px] text-surface-500">{r.sub}</div>}
+                </div>
               </li>
             ))}
           </ul>
-        ) : query ? (
-          <div className="px-4 py-8 text-center text-surface-400 text-sm">
-            Aucun résultat pour « {query} »
-          </div>
         ) : (
-          <div className="px-4 py-6 text-center text-surface-400 text-sm">
-            Tapez pour rechercher une mission, un chauffeur…
+          <div className="px-4 py-8 text-center text-sm text-surface-500">
+            {query.trim().length >= 2 && !loading ? `Aucun résultat pour « ${query.trim()} »` : 'Tapez au moins 2 caractères'}
           </div>
         )}
 
-        <div className="px-4 py-2 border-t border-surface-100 flex items-center gap-3 text-[10px] text-surface-400">
-          <span><kbd className="border border-surface-200 rounded px-1">↑↓</kbd> Naviguer</span>
-          <span><kbd className="border border-surface-200 rounded px-1">↵</kbd> Ouvrir</span>
+        <div className="flex items-center gap-3 border-t border-surface-100 px-4 py-2 text-[10px] text-surface-500">
+          <span><kbd className="rounded border border-surface-200 px-1">↑↓</kbd> Naviguer</span>
+          <span><kbd className="rounded border border-surface-200 px-1">↵</kbd> Ouvrir</span>
           <span className="ml-auto">Ctrl+K pour fermer</span>
         </div>
       </div>
