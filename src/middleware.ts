@@ -5,6 +5,7 @@ import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { checkTenantSuspension } from '@/lib/data/context'
 import { isSessionCurrent } from '@/lib/sessionRevocation'
 import { getClientIp } from '@/lib/rateLimit'
+import { authenticateApiKey, scopeAllows, API_KEY_ROLE } from '@/lib/apiKeyAuth'
 
 const _globalRl = new Map<string, { count: number; resetAt: number }>()
 const GLOBAL_RL_MAX    = 300
@@ -157,6 +158,24 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const verified = token ? await verifySession(token) : null
   // Revoked by a password/role change or user deletion since it was issued (see sessionRevocation.ts).
   const session  = verified && await isSessionCurrent(verified) ? verified : null
+
+  // Programmatic access: X-API-Key instead of a session cookie (API routes only, scope-limited).
+  const apiKeyHeader = request.headers.get('x-api-key')
+  if (!session && apiKeyHeader && pathname.startsWith('/api/')) {
+    const key = await authenticateApiKey(apiKeyHeader)
+    if (!key) {
+      return withContext(NextResponse.json({ error: 'Clé API invalide, expirée ou révoquée' }, { status: 401 }))
+    }
+    if (!scopeAllows(key.scopes, request.method, pathname)) {
+      return withContext(NextResponse.json({ error: 'Clé API sans le droit requis pour cette opération' }, { status: 403 }))
+    }
+    const suspended = await checkTenantSuspension(key.tenantId, API_KEY_ROLE)
+    if (suspended) return withContext(suspended)
+    requestHeaders.set('x-tenant-id', key.tenantId)
+    requestHeaders.set('x-user-id',   `apikey:${key.id}`)
+    requestHeaders.set('x-user-role', API_KEY_ROLE)
+    return withContext(NextResponse.next({ request: { headers: requestHeaders } }))
+  }
 
   if (!session) {
     if (pathname.startsWith('/api/')) {

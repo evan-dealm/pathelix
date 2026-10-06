@@ -5,6 +5,7 @@ const mockPrisma = vi.hoisted(() => ({
   apiKey: {
     findMany: vi.fn(),
     create:   vi.fn(),
+    updateMany: vi.fn(),
   },
   userPermission: {
     findMany: vi.fn(() => Promise.resolve([])),
@@ -23,7 +24,7 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-import { GET, POST } from '@/app/api/api-keys/route'
+import { GET, POST, DELETE } from '@/app/api/api-keys/route'
 import { getRequestContext } from '@/lib/data/context'
 
 function makeGet(url: string): NextRequest {
@@ -134,5 +135,31 @@ describe('POST /api/api-keys', () => {
     })
     const res = await POST(req)
     expect(res.status).toBe(400)
+  })
+})
+
+describe('DELETE /api/api-keys (revocation)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'user-1', role: 'admin', requestId: 'req-1', trade: null })
+  })
+  const del = (q: string) => DELETE(new NextRequest('http://localhost/api/api-keys' + q, { method: 'DELETE' }))
+
+  it('revokes a key of the tenant', async () => {
+    mockPrisma.apiKey.updateMany.mockResolvedValue({ count: 1 })
+    const res = await del('?id=k-1')
+    expect(res.status).toBe(200)
+    expect(mockPrisma.apiKey.updateMany).toHaveBeenCalledWith({ where: { id: 'k-1', revoked: false }, data: { revoked: true } })
+  })
+
+  it('404 for an unknown (or other tenant) key, 400 without id', async () => {
+    mockPrisma.apiKey.updateMany.mockResolvedValue({ count: 0 })
+    expect((await del('?id=nope')).status).toBe(404)
+    expect((await del('')).status).toBe(400)
+  })
+
+  it('403 for a dispatcher without api_access', async () => {
+    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-1', userId: 'u-2', role: 'dispatcher', requestId: 'req-1', trade: null })
+    expect((await del('?id=k-1')).status).toBe(403)
   })
 })

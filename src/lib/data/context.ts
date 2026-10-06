@@ -51,7 +51,11 @@ export function getTenantId(req: NextRequest): string {
 // instances, this cache needs a shared invalidation mechanism (e.g. Redis pub/sub) or a
 // suspended tenant could keep working for up to SUSPENSION_CACHE_TTL on instances that haven't
 // seen the suspension yet.
-const _suspensionCache = new Map<string, { suspended: boolean; checkedAt: number }>()
+// On globalThis: the middleware and the route handlers are separate bundles (separate module
+// instances, same process) — a module-level Map let a route invalidate its own copy while the
+// middleware kept serving the stale entry from the other until the TTL expired.
+const _gs = globalThis as typeof globalThis & { __pathelixSuspensionCache?: Map<string, { suspended: boolean; checkedAt: number }> }
+const _suspensionCache = (_gs.__pathelixSuspensionCache ??= new Map<string, { suspended: boolean; checkedAt: number }>())
 const SUSPENSION_CACHE_TTL = 60_000
 const SUSPENSION_CACHE_MAX = 500
 

@@ -28,7 +28,11 @@ export const DEFAULT_PERMISSIONS: Record<string, Permission[]> = {
   driver:     [],
 }
 
-const _permCache = new Map<string, { perms: Set<string>; ts: number }>()
+// On globalThis: the middleware and the route handlers are separate bundles (separate module
+// instances, same process) — a module-level Map let a route invalidate its own copy while the
+// middleware kept serving the stale entry from the other until the TTL expired.
+const _gp = globalThis as typeof globalThis & { __pathelixPermCache?: Map<string, { perms: Set<string>; ts: number }> }
+const _permCache = (_gp.__pathelixPermCache ??= new Map<string, { perms: Set<string>; ts: number }>())
 const PERM_CACHE_TTL = 60_000
 
 export async function hasPermission(

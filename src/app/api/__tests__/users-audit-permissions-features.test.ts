@@ -561,6 +561,7 @@ describe('GET /api/api-keys', () => {
 
   it('returns 403 for dispatcher', async () => {
     vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'u', role: 'dispatcher', requestId: 'r' } as never)
+    vi.mocked(hasPermission).mockResolvedValueOnce(false)
 
     const res = await keysGET(makeGet('http://localhost:3000/api/api-keys'))
     expect(res.status).toBe(403)

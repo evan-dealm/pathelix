@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createHash, randomBytes } from 'crypto'
+import { randomBytes } from 'crypto'
 import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { hasPermission } from '@/lib/permissions'
+import { API_SCOPES, hashApiKey, invalidateApiKeyCache } from '@/lib/apiKeyAuth'
 
 const log = createLogger('/api/api-keys')
 
-const VALID_API_SCOPES = [
-  'missions:read', 'missions:write',
-  'drivers:read',  'drivers:write',
-  'vehicles:read', 'vehicles:write',
-  'clients:read',  'clients:write',
-  'sites:read',    'sites:write',
-  'plans:read',    'plans:write',
-  'optimize',
-  'reports:read',
-  'webhooks',
-] as const
-
-const ScopeEnum = z.enum(VALID_API_SCOPES)
+const ScopeEnum = z.enum(API_SCOPES)
 
 const CreateKeySchema = z.object({
   name:   z.string().min(1).max(100),
@@ -29,9 +18,9 @@ const CreateKeySchema = z.object({
 })
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'superadmin') {
-    return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  if (role === 'driver' || !(await hasPermission(userId, role, 'api_access'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   const keys = await getTenantDb(tenantId).apiKey.findMany({
@@ -45,7 +34,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tenantId, role, userId } = getRequestContext(req)
-  if (!(await hasPermission(userId, role, 'api_access'))) {
+  if (role === 'driver' || !(await hasPermission(userId, role, 'api_access'))) {
     return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
@@ -57,7 +46,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const rawToken = `ef_live_${randomBytes(32).toString('hex')}`
   const prefix = rawToken.slice(0, 16)
-  const keyHash = createHash('sha256').update(rawToken).digest('hex')
+  const keyHash = hashApiKey(rawToken)
 
   const expiresAt = parsed.data.expiresInDays
     ? new Date(Date.now() + parsed.data.expiresInDays * 86400000)
@@ -82,4 +71,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     token: rawToken,
     message: 'Copiez ce token maintenant. Il ne sera plus jamais affiché.',
   }, { status: 201 })
+}
+
+/** Revokes a key (?id=…). Effective immediately on this instance, within 30 s on the others. */
+export async function DELETE(req: NextRequest): Promise<NextResponse> {
+  const { tenantId, role, userId } = getRequestContext(req)
+  if (role === 'driver' || !(await hasPermission(userId, role, 'api_access'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id requis' }, { status: 400 })
+
+  const { count } = await getTenantDb(tenantId).apiKey.updateMany({
+    where: { id, revoked: false },
+    data:  { revoked: true },
+  })
+  if (count === 0) return NextResponse.json({ error: 'Clé introuvable' }, { status: 404 })
+
+  invalidateApiKeyCache()
+  log.info('API key revoked', { tenantId, keyId: id, by: userId })
+  return NextResponse.json({ ok: true })
 }

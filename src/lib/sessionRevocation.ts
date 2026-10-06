@@ -15,7 +15,11 @@ import type { SessionPayload } from '@/lib/session'
 const CACHE_TTL_MS = 30_000
 const CACHE_MAX    = 5_000
 
-const _cache = new Map<string, { version: number | null; checkedAt: number }>()
+// On globalThis: the middleware and the route handlers are separate bundles (separate module
+// instances, same process) — a module-level Map let a route invalidate its own copy while the
+// middleware kept serving the stale entry from the other until the TTL expired.
+const _g = globalThis as typeof globalThis & { __pathelixSessionVersionCache?: Map<string, { version: number | null; checkedAt: number }> }
+const _cache = (_g.__pathelixSessionVersionCache ??= new Map<string, { version: number | null; checkedAt: number }>())
 
 /** The User row a session belongs to — impersonation sessions (`sa:<id>`) belong to the superadmin. */
 export function sessionUserId(session: Pick<SessionPayload, 'sub'>): string {

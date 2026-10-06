@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { apiRequest } from '@/lib/apiClient'
 import { usePlanningStore } from '@/stores/planningStore'
 import { IntegrationsPanel } from '../IntegrationsPanel'
+import { ApiKeysPanel } from '../ApiKeysPanel'
 import { TRADES, TRADE_IDS, type TradeId } from '@/lib/trades'
 import { useTrade } from '@/providers/TradeProvider'
 import { useToast } from '@/components/ui/Toast'
@@ -448,7 +449,7 @@ export function SettingsTab() {
     </label>
   )
 
-  const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'integrations'>('general')
+  const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'integrations' | 'api'>('general')
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
@@ -467,11 +468,21 @@ export function SettingsTab() {
           }`}>
           Integrations
         </button>
+        <button type="button" onClick={() => setSettingsSubTab('api')}
+          className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+            settingsSubTab === 'api' ? 'bg-brand-50 text-brand-500' : 'text-surface-500 hover:bg-surface-50 hover:text-surface-700'
+          }`}>
+          Accès API
+        </button>
       </div>
 
       {settingsSubTab === 'integrations' ? (
         <div className="flex-1 overflow-y-auto p-4">
           <IntegrationsPanel />
+        </div>
+      ) : settingsSubTab === 'api' ? (
+        <div className="flex-1 overflow-y-auto p-4">
+          <ApiKeysPanel />
         </div>
       ) : (
       <div className="flex-1 overflow-y-auto flex flex-col p-3 md:p-4 gap-3">

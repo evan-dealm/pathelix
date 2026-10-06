@@ -23,6 +23,12 @@ vi.mock('@/lib/data/context', async (importOriginal) => {
   }
 })
 
+const mockAuthenticateApiKey = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/apiKeyAuth', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/apiKeyAuth')>()
+  return { ...original, authenticateApiKey: mockAuthenticateApiKey }
+})
+
 import { middleware } from '@/middleware'
 
 function makeReq(
@@ -391,5 +397,44 @@ describe('middleware', () => {
     expect(res.status).toBe(403)
     const json = await res.json()
     expect(json.error).toMatch(/suspendu/i)
+  })
+})
+
+describe('middleware — X-API-Key', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('authenticates a scoped key and injects its tenant as a dispatcher', async () => {
+    mockAuthenticateApiKey.mockResolvedValue({ id: 'k1', tenantId: 'tenant-9', scopes: ['missions:read'] })
+    const res = await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_x' } }))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-middleware-request-x-tenant-id')).toBe('tenant-9')
+    expect(res.headers.get('x-middleware-request-x-user-id')).toBe('apikey:k1')
+    expect(res.headers.get('x-middleware-request-x-user-role')).toBe('dispatcher')
+  })
+
+  it('403 when no scope covers the route (deny by default)', async () => {
+    mockAuthenticateApiKey.mockResolvedValue({ id: 'k1', tenantId: 'tenant-9', scopes: ['missions:read'] })
+    expect((await middleware(makeReq('/api/missions', { method: 'POST', headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
+    expect((await middleware(makeReq('/api/users', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
+    expect((await middleware(makeReq('/api/api-keys', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
+  })
+
+  it('401 for an unknown/revoked key', async () => {
+    mockAuthenticateApiKey.mockResolvedValue(null)
+    expect((await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_bad' } }))).status).toBe(401)
+  })
+
+  it('respects tenant suspension', async () => {
+    mockAuthenticateApiKey.mockResolvedValue({ id: 'k1', tenantId: 'tenant-9', scopes: ['missions:read'] })
+    const { NextResponse } = await import('next/server')
+    mockCheckTenantSuspension.mockResolvedValueOnce(NextResponse.json({ error: 'suspendu' }, { status: 403 }))
+    expect((await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
+  })
+
+  it('is ignored for pages (no API key login to the UI)', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    const res = await middleware(makeReq('/admin', { headers: { 'x-api-key': 'ef_live_x' } }))
+    expect(mockAuthenticateApiKey).not.toHaveBeenCalled()
+    expect(res.status).toBe(307)
   })
 })
