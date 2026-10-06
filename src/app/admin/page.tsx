@@ -66,6 +66,7 @@ const ContainersTab = dynamic(() => import('@/components/admin/containers/Contai
 const SalesTab      = dynamic(() => import('@/components/admin/commercial/SalesTab').then(m => ({ default: m.SalesTab })), { ssr: false, loading: DynamicLoading })
 const InsightsTab   = dynamic(() => import('@/components/admin/insights/InsightsTab').then(m => ({ default: m.InsightsTab })), { ssr: false, loading: DynamicLoading })
 const AssignmentWhy = dynamic(() => import('@/components/admin/explain/AssignmentWhy').then(m => ({ default: m.AssignmentWhy })), { ssr: false })
+const SetupChecklist = dynamic(() => import('@/components/admin/onboarding/SetupChecklist').then(m => ({ default: m.SetupChecklist })), { ssr: false })
 const BillingTab    = dynamic(() => import('@/components/admin/commercial/BillingTab').then(m => ({ default: m.BillingTab })), { ssr: false, loading: DynamicLoading })
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -758,6 +759,7 @@ export default function AdminPage() {
 
         {}
         {activeTab === 'dashboard' && <div role="tabpanel" id="tabpanel-dashboard" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60">
+        {(isAdmin || hasPerm(permissions, 'manage_settings')) && <SetupChecklist onNavigate={tab => setActiveTab(tab as AppTab)} />}
         <DashboardKPIBar
           poolTotal={dashboardStats.poolTotal}
           poolToday={dashboardStats.poolToday}
