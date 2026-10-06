@@ -33,6 +33,9 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       REDIS_DISABLED: 'true',
+      // The whole suite runs as one admin user from one IP: production limits would throttle it.
+      RATE_LIMIT_USER_PER_MIN: '100000',
+      RATE_LIMIT_IP_PER_MIN: '100000',
     },
   },
   projects: [

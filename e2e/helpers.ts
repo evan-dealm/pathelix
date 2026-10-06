@@ -117,6 +117,11 @@ export async function navigateToTab(page: Page, tabName: string) {
       break
     }
   }
+  // The sidebar expands on hover and overlays the content (src/app/globals.css, .sidebar:hover).
+  // After clicking a nav button the pointer is still on it, so the expanded sidebar covered the
+  // left of the panel and every later click there (table select-all checkboxes…) was
+  // intercepted by it. A real user's pointer leaves the sidebar; move ours away too.
+  await page.mouse.move(900, 400)
   await page.waitForTimeout(500)
 
   // Fail loudly and specifically here rather than silently returning — every caller's next

@@ -116,3 +116,7 @@ d'OPERATIONS.md §8 n'est pas validée).
 - OCR des tickets : nécessite le déploiement de l'AI Engine (non fourni dans le compose).
 - Le poids total transporté (PTAC) n'est pas contraint, seul le volume des bennes l'est.
 - Saisie en langage naturel : indisponible sans Ollama.
+- Temps de conduite : le calcul remet le compteur de conduite continue à zéro après un passage
+  à l'exutoire (déchargement), alors que le règlement CE 561/2006 n'assimile pas un arrêt de
+  15–20 min à une pause de 45 min. Les tournées très longues avec vidages peuvent donc sous-estimer
+  une pause ; le contrôle final reste celui du chronotachygraphe.
