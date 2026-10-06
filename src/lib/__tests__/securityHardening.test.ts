@@ -44,6 +44,9 @@ describe('isSessionCurrent', () => {
   beforeEach(() => {
     vi.stubEnv('USE_MOCK_DATA', 'false')
     vi.resetModules()
+    // The version cache lives on globalThis (shared by middleware and route bundles), so a module
+    // reset no longer clears it — drop it explicitly to keep tests independent.
+    delete (globalThis as { __pathelixSessionVersionCache?: unknown }).__pathelixSessionVersionCache
     mockUserFindUnique.mockReset()
   })
   afterEach(() => { vi.unstubAllEnvs() })
