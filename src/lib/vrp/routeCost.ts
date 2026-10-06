@@ -9,7 +9,7 @@ import {
   MAX_WORK_MIN,
   P1_DEADLINE_MIN,
 } from '@/lib/constraints'
-import type { Driver } from '@/lib/types'
+import type { Driver, Mission, Exutoire } from '@/lib/types'
 import type { Route, RouteCache, CostContext } from './types'
 import { findBestExutoire } from './exutoireSearch'
 import { cachedDist } from './distanceCache'
@@ -195,378 +195,58 @@ function getDriverMap(drivers: Driver[]): Map<string, Driver> {
   return cached
 }
 
-export function computeRouteCost(
-  route: Route,
-  ctx: CostContext,
-  drivers: Driver[],
-  costCfg?: VrpCostConfig,
-): number {
-  const c = cfg(costCfg, ctx)
-  const driver = getDriverMap(drivers).get(route.driverId)
-  if (!driver) return Infinity
-
-  const { speedKmh, exutoires, date } = ctx
-
-  const startOverride = ctx.driverStartOverrides?.get(route.driverId)
-  const depotLat      = startOverride?.lat  ?? driver.depotLat
-  const depotLng      = startOverride?.lng  ?? driver.depotLng
-  const startTimeMin  = startOverride?.timeMin ?? ctx.startTimeMin
-  const missions = route.missions
-
-  if (missions.length === 0) return 0
-
-  const effectiveP1Deadline = Math.min(1320, Math.max(P1_DEADLINE_MIN, startTimeMin + 240))
-
-  let currentMin      = startTimeMin
-  let currentLat      = depotLat
-  let currentLng      = depotLng
-  let currentId: string | undefined = `depot:${route.driverId}`
-  let continuousDriving = 0
-  let totalCost       = 0
-
-  let cumWorkMin      = 0
-  let cumDrivingMin   = 0
-
-  const capacity  = effectiveCapacity(driver)
-  let binsUsed    = 0
-  const lastBinIdx = lastBinIndex(missions)
-
-  let emptyBins        = capacity
-  let echangersPending = 0
-
-  const dow = cachedDow(date)
-
-  const w = ctx.weights ?? { distance: 0.5, punctuality: 0.5, balance: 0.3 }
-  const wPunct = Math.max(0.1, w.punctuality)
-  const _wBalance = Math.max(0, w.balance)
-
-  const skillWeight = Math.max(0.5, wPunct)
-  const driverSkills = new Set(driver.skills ?? [])
-  for (const m of missions) {
-    if (m.requiredSkills && m.requiredSkills.length > 0) {
-      for (const skill of m.requiredSkills) {
-        if (!driverSkills.has(skill)) totalCost += 10_000 * skillWeight
-      }
-    }
-  }
-
-  const missionIdx = new Map<string, number>()
-  for (let i = 0; i < missions.length; i++) missionIdx.set(missions[i].id, i)
-
-  let prevDirLat = 0, prevDirLng = 0
-
-  for (let _i = 0; _i < missions.length; _i++) {
-    const mission = missions[_i]
-
-    if (_i > 0) {
-      const dirLat = mission.latitude - currentLat
-      const dirLng = mission.longitude - currentLng
-
-      if (prevDirLat !== 0 || prevDirLng !== 0) {
-        const dot = dirLat * prevDirLat + dirLng * prevDirLng
-        const mag1 = Math.sqrt(dirLat * dirLat + dirLng * dirLng)
-        const mag2 = Math.sqrt(prevDirLat * prevDirLat + prevDirLng * prevDirLng)
-        if (mag1 > 0.001 && mag2 > 0.001) {
-          const cosAngle = dot / (mag1 * mag2)
-
-          if (cosAngle < -0.5) {
-            totalCost += 15
-          } else if (cosAngle < 0) {
-            totalCost += 5
-          }
-        }
-      }
-      prevDirLat = dirLat
-      prevDirLng = dirLng
-    }
-
-    if (mission.dependsOnId) {
-      const depIdx = missionIdx.get(mission.dependsOnId) ?? -1
-      if (depIdx >= 0 && depIdx > _i) {
-
-        totalCost += 5000
-      }
-    }
-
-    const travelMin = realDurationMin(
-      ctx, currentId, currentLat, currentLng,
-      mission.id, mission.latitude, mission.longitude,
-      currentMin,
-    )
-
-    let breakMin = 0
-    if (continuousDriving + travelMin > MAX_CONTINUOUS_MIN) {
-
-      breakMin = BREAK_DURATION_MIN
-      continuousDriving = 0
-    }
-
-    currentMin    += travelMin + breakMin
-    continuousDriving += travelMin
-    cumDrivingMin += travelMin
-    cumWorkMin    += travelMin + breakMin
-
-    const validTW = mission.timeWindow && mission.timeWindow.closeMin >= mission.timeWindow.openMin
-    if (validTW && mission.timeWindow && currentMin < mission.timeWindow.openMin) {
-
-      const waitMin = mission.timeWindow.openMin - currentMin
-      if (waitMin > 15) {
-        totalCost += (waitMin - 15) * 0.5
-      }
-      cumWorkMin  += waitMin
-      currentMin   = mission.timeWindow.openMin
-    }
-
-    const arrivalMin = currentMin
-
-    if (validTW && mission.timeWindow) {
-      const { openMin, closeMin } = mission.timeWindow
-      const windowDuration = closeMin - openMin
-
-      if (arrivalMin <= closeMin) {
-
-        const slack = closeMin - arrivalMin
-        const slackRatio = windowDuration > 0 ? slack / windowDuration : 0
-
-        totalCost -= Math.min(10, slackRatio * 20)
-      } else {
-
-        const lateMin = arrivalMin - closeMin
-        if (lateMin <= 15) {
-          totalCost += lateMin * 3 * wPunct
-        } else if (lateMin <= 60) {
-          totalCost += (15 * 3 + penaltyForLate(lateMin - 15)) * wPunct
-        } else {
-          totalCost += (15 * 3 + penaltyForLate(45) + (lateMin - 60) * 15) * wPunct
-        }
-      }
-    }
-
-    if (mission.priority === 1 && arrivalMin > effectiveP1Deadline) {
-      totalCost += penaltyForP1Late(arrivalMin - effectiveP1Deadline) * wPunct
-    }
-
-    const stabilityW = ctx.weights?.stability ?? 0
-    if (stabilityW > 0 && ctx.familiarity) {
-      totalCost += getFamiliarityBonus(ctx.familiarity, route.driverId, mission.siteId, stabilityW)
-    }
-
-    const onSiteMin    = Math.max(0, mission.estimatedDurationMin ?? 0) + Math.max(0, mission.maneuverTimeMin ?? 0)
-    const departureMin = arrivalMin + onSiteMin
-    cumWorkMin        += onSiteMin
-
-    currentMin = departureMin
-    currentLat = mission.latitude
-    currentLng = mission.longitude
-    currentId  = mission.id
-
-    if (mission.type === 'POSER') {
-      if (emptyBins <= 0) {
-        totalCost += 50_000
-      } else {
-        emptyBins--
-      }
-    }
-
-    if (isBinMission(mission.type)) {
-      binsUsed++
-
-      if (mission.type === 'ECHANGER') {
-        if (emptyBins <= 0) {
-          totalCost += 50_000
-        } else {
-          emptyBins--
-          echangersPending++
-        }
-      }
-
-      const nextM = missions[_i + 1]
-      const nextNeedsEmpty = nextM && (nextM.type === 'POSER' || nextM.type === 'ECHANGER')
-      const needsExutoire = binsUsed >= capacity || _i >= lastBinIdx ||
-        (emptyBins <= 0 && nextNeedsEmpty && echangersPending > 0)
-
-      if (needsExutoire) {
-
-        const ex = findBestExutoire(
-          mission.latitude, mission.longitude,
-          mission.linkedExutoireId,
-          mission.wasteTypeLabel,
-          exutoires,
-          dow,
-          undefined, undefined, false,
-        )
-
-        if (ex) {
-
-          const exTravelMin = realDurationMin(
-            ctx, currentId, currentLat, currentLng,
-            `exu:${ex.id}`, ex.lat, ex.lng,
-            currentMin,
-          )
-
-          let exBreak = 0
-          if (continuousDriving + exTravelMin > MAX_CONTINUOUS_MIN) {
-            exBreak = BREAK_DURATION_MIN
-            continuousDriving = 0
-          }
-
-          currentMin        += exTravelMin + exBreak
-          continuousDriving += exTravelMin
-          cumDrivingMin     += exTravelMin
-          cumWorkMin        += exTravelMin + exBreak
-
-          if (currentMin < ex.openingHoursOpen) {
-            cumWorkMin  += ex.openingHoursOpen - currentMin
-            currentMin   = ex.openingHoursOpen
-          }
-
-          if (ex.closedDays.includes(dow)) {
-            totalCost += c.closedExutoirePenalty
-          } else if (currentMin > ex.openingHoursClose) {
-            totalCost += penaltyForLate(currentMin - ex.openingHoursClose)
-          }
-
-          cumWorkMin += ex.serviceTimeMin
-          currentMin += ex.serviceTimeMin
-          currentLat  = ex.lat
-          currentLng  = ex.lng
-          currentId   = `exu:${ex.id}`
-
-          continuousDriving = 0
-          binsUsed = 0
-
-          emptyBins        += echangersPending
-          echangersPending  = 0
-        } else {
-
-          binsUsed = 0
-          emptyBins        += echangersPending
-          echangersPending  = 0
-          totalCost += 500
-        }
-      }
-    }
-
-    if (mission.type === 'ALLER_RETOUR') {
-      const ex = findBestExutoire(
-        mission.latitude, mission.longitude,
-        mission.linkedExutoireId,
-        mission.wasteTypeLabel,
-        exutoires,
-        dow,
-        undefined, undefined, false,
-      )
-
-      if (ex) {
-
-        const toExMin = realDurationMin(
-          ctx, currentId, currentLat, currentLng,
-          `exu:${ex.id}`, ex.lat, ex.lng,
-          currentMin,
-        )
-        let brk1 = 0
-        if (continuousDriving + toExMin > MAX_CONTINUOUS_MIN) {
-          brk1 = BREAK_DURATION_MIN
-          continuousDriving = 0
-        }
-        currentMin        += toExMin + brk1
-        continuousDriving += toExMin
-        cumDrivingMin     += toExMin
-        cumWorkMin        += toExMin + brk1
-
-        if (currentMin < ex.openingHoursOpen) {
-          cumWorkMin += ex.openingHoursOpen - currentMin
-          currentMin  = ex.openingHoursOpen
-        }
-        if (ex.closedDays.includes(dow)) {
-          totalCost += c.closedExutoirePenalty
-        } else if (currentMin > ex.openingHoursClose) {
-          totalCost += penaltyForLate(currentMin - ex.openingHoursClose)
-        }
-        cumWorkMin += ex.serviceTimeMin
-        currentMin += ex.serviceTimeMin
-        continuousDriving = 0
-
-        const fromExMin = realDurationMin(
-          ctx, `exu:${ex.id}`, ex.lat, ex.lng,
-          mission.id, mission.latitude, mission.longitude,
-          currentMin,
-        )
-        let brk2 = 0
-        if (continuousDriving + fromExMin > MAX_CONTINUOUS_MIN) {
-          brk2 = BREAK_DURATION_MIN
-          continuousDriving = 0
-        }
-        currentMin        += fromExMin + brk2
-        continuousDriving += fromExMin
-        cumDrivingMin     += fromExMin
-        cumWorkMin        += fromExMin + brk2
-
-        currentLat = mission.latitude
-        currentLng = mission.longitude
-        currentId  = mission.id
-      } else {
-        totalCost += 500
-      }
-    }
-  }
-
-  const returnTravel = realDurationMin(
-    ctx, currentId, currentLat, currentLng,
-    `depot:${route.driverId}`, depotLat, depotLng,
-    currentMin,
-  )
-
-  let returnBreak = 0
-  if (continuousDriving + returnTravel > MAX_CONTINUOUS_MIN) {
-    returnBreak = BREAK_DURATION_MIN
-  }
-
-  cumWorkMin    += returnTravel + returnBreak
-  cumDrivingMin += returnTravel
-
-  const distanceCost = cumDrivingMin * c.distanceCostFactor
-  totalCost += distanceCost * Math.max(0.1, w.distance)
-
-  if (cumWorkMin > c.nearmaxStartMin && cumWorkMin <= MAX_WORK_MIN) {
-    totalCost += (cumWorkMin - c.nearmaxStartMin) * c.nearmaxPerMin
-  }
-  if (cumWorkMin > MAX_WORK_MIN) {
-    totalCost += (MAX_WORK_MIN - c.nearmaxStartMin) * c.nearmaxPerMin
-    totalCost += c.overtimePenalty + (cumWorkMin - MAX_WORK_MIN) * c.overtimePerMin
-  }
-
-  if (cumWorkMin > 120 && currentMin > c.lunchBreakEndMin) {
-
-    let maxGapInLunch = 0
-    let prevExitMin = startTimeMin
-    for (const m of missions) {
-      const travelEst = cachedDist(
-        prevExitMin === startTimeMin ? depotLat : m.latitude,
-        prevExitMin === startTimeMin ? depotLng : m.longitude,
-        m.latitude, m.longitude,
-      ) / Math.max(10, speedKmh) * 60
-      const arrivalEst = prevExitMin + travelEst
-
-      if (arrivalEst > c.lunchBreakStartMin && prevExitMin < c.lunchBreakEndMin) {
-        const gapStart = Math.max(prevExitMin, c.lunchBreakStartMin)
-        const gapEnd = Math.min(arrivalEst, c.lunchBreakEndMin)
-        const gap = gapEnd - gapStart
-        if (gap > maxGapInLunch) maxGapInLunch = gap
-      }
-      const onSite = (m.estimatedDurationMin ?? 0) + (m.maneuverTimeMin ?? 0)
-      prevExitMin = arrivalEst + onSite
-    }
-    if (maxGapInLunch < c.lunchBreakDurationMin) {
-      totalCost += c.lunchBreakPenalty
-    }
-  }
-
-  totalCost = Math.max(0, totalCost)
-
-  return totalCost
+/** Everything a route simulation needs that does not change from one mission to the next. */
+interface SimEnv {
+  ctx:                 CostContext
+  c:                   VrpCostConfig
+  driver:              Driver
+  driverId:            string
+  dow:                 number
+  wPunct:              number
+  wDistance:           number
+  skillWeight:         number
+  driverSkills:        Set<string>
+  stabilityW:          number
+  effectiveP1Deadline: number
+  capacity:            number
+  startLat:            number
+  startLng:            number
+  startTimeMin:        number
+  hasStartOverride:    boolean
 }
 
+function makeEnv(driverId: string, ctx: CostContext, drivers: Driver[], costCfg?: VrpCostConfig): SimEnv | null {
+  const driver = getDriverMap(drivers).get(driverId)
+  if (!driver) return null
+  const startOverride = ctx.driverStartOverrides?.get(driverId)
+  const startTimeMin  = startOverride?.timeMin ?? ctx.startTimeMin
+  const w = ctx.weights ?? { distance: 0.5, punctuality: 0.5, balance: 0.3 }
+  const wPunct = Math.max(0.1, w.punctuality)
+  return {
+    ctx,
+    c:                   cfg(costCfg, ctx),
+    driver,
+    driverId,
+    dow:                 cachedDow(ctx.date),
+    wPunct,
+    wDistance:           Math.max(0.1, w.distance),
+    skillWeight:         Math.max(0.5, wPunct),
+    driverSkills:        new Set(driver.skills ?? []),
+    stabilityW:          ctx.weights?.stability ?? 0,
+    effectiveP1Deadline: Math.min(1320, Math.max(P1_DEADLINE_MIN, startTimeMin + 240)),
+    capacity:            effectiveCapacity(driver),
+    startLat:            startOverride?.lat ?? driver.depotLat,
+    startLng:            startOverride?.lng ?? driver.depotLng,
+    startTimeMin,
+    hasStartOverride:    !!startOverride,
+  }
+}
+
+/**
+ * Simulation state of a route before a given mission (index k = state once missions 0..k-1 are
+ * done). `partialCost` is everything accrued so far except the skill penalty and the end-of-route
+ * terms (return trip, driving cost, work-time, lunch) — see {@link finishRoute}.
+ */
 export interface RoutePrefixState {
   currentMin:        number
   currentLat:        number
@@ -577,99 +257,407 @@ export interface RoutePrefixState {
   cumDrivingMin:     number
   partialCost:       number
   binsUsed:          number
+  emptyBins:         number
+  echangersPending:  number
+  prevDirLat:        number
+  prevDirLng:        number
+  started:           boolean
 }
 
+function initialState(env: SimEnv): RoutePrefixState {
+  return {
+    currentMin:        env.startTimeMin,
+    currentLat:        env.startLat,
+    currentLng:        env.startLng,
+    // A mid-day start is the driver's live position, not the depot: no matrix id for it.
+    currentId:         env.hasStartOverride ? undefined : `depot:${env.driverId}`,
+    continuousDriving: 0,
+    cumWorkMin:        0,
+    cumDrivingMin:     0,
+    partialCost:       0,
+    binsUsed:          0,
+    emptyBins:         env.capacity,
+    echangersPending:  0,
+    prevDirLat:        0,
+    prevDirLng:        0,
+    started:           false,
+  }
+}
+
+function skillPenalty(env: SimEnv, m: Mission): number {
+  if (!m.requiredSkills || m.requiredSkills.length === 0) return 0
+  let p = 0
+  for (const skill of m.requiredSkills) if (!env.driverSkills.has(skill)) p += 10_000 * env.skillWeight
+  return p
+}
+
+function dependencyIndex(missions: Mission[]): Map<string, number> | null {
+  if (!missions.some(m => m.dependsOnId)) return null
+  const idx = new Map<string, number>()
+  for (let i = 0; i < missions.length; i++) idx.set(missions[i].id, i)
+  return idx
+}
+
+/** Drives to an exutoire, waits for opening, unloads. Returns the cost incurred. */
+function visitExutoire(s: RoutePrefixState, env: SimEnv, ex: Exutoire): void {
+  const exId = `exu:${ex.id}`
+  const travel = realDurationMin(env.ctx, s.currentId, s.currentLat, s.currentLng, exId, ex.lat, ex.lng, s.currentMin)
+  let brk = 0
+  if (s.continuousDriving + travel > MAX_CONTINUOUS_MIN) {
+    brk = BREAK_DURATION_MIN
+    s.continuousDriving = 0
+  }
+  s.currentMin        += travel + brk
+  s.continuousDriving += travel
+  s.cumDrivingMin     += travel
+  s.cumWorkMin        += travel + brk
+  if (s.currentMin < ex.openingHoursOpen) {
+    s.cumWorkMin += ex.openingHoursOpen - s.currentMin
+    s.currentMin  = ex.openingHoursOpen
+  }
+  if (ex.closedDays.includes(env.dow)) {
+    s.partialCost += env.c.closedExutoirePenalty
+  } else if (s.currentMin > ex.openingHoursClose) {
+    s.partialCost += penaltyForLate(s.currentMin - ex.openingHoursClose)
+  }
+  s.cumWorkMin += ex.serviceTimeMin
+  s.currentMin += ex.serviceTimeMin
+  s.continuousDriving = 0
+}
+
+/** Advances `s` over missions[i] (travel, waits, windows, service, bins, exutoire trips). */
+function stepMission(
+  s: RoutePrefixState,
+  env: SimEnv,
+  missions: Mission[],
+  i: number,
+  lastBinIdx: number,
+  depIdx: Map<string, number> | null,
+): void {
+  const mission = missions[i]
+  const { ctx } = env
+
+  if (s.started) {
+    const dirLat = mission.latitude - s.currentLat
+    const dirLng = mission.longitude - s.currentLng
+    if (s.prevDirLat !== 0 || s.prevDirLng !== 0) {
+      const dot = dirLat * s.prevDirLat + dirLng * s.prevDirLng
+      const mag1 = Math.sqrt(dirLat * dirLat + dirLng * dirLng)
+      const mag2 = Math.sqrt(s.prevDirLat * s.prevDirLat + s.prevDirLng * s.prevDirLng)
+      if (mag1 > 0.001 && mag2 > 0.001) {
+        const cosAngle = dot / (mag1 * mag2)
+        if (cosAngle < -0.5) s.partialCost += 15
+        else if (cosAngle < 0) s.partialCost += 5
+      }
+    }
+    s.prevDirLat = dirLat
+    s.prevDirLng = dirLng
+  }
+  s.started = true
+
+  if (mission.dependsOnId && depIdx) {
+    const d = depIdx.get(mission.dependsOnId) ?? -1
+    if (d >= 0 && d > i) s.partialCost += 5000
+  }
+
+  const travelMin = realDurationMin(ctx, s.currentId, s.currentLat, s.currentLng, mission.id, mission.latitude, mission.longitude, s.currentMin)
+  let breakMin = 0
+  if (s.continuousDriving + travelMin > MAX_CONTINUOUS_MIN) {
+    breakMin = BREAK_DURATION_MIN
+    s.continuousDriving = 0
+  }
+  s.currentMin        += travelMin + breakMin
+  s.continuousDriving += travelMin
+  s.cumDrivingMin     += travelMin
+  s.cumWorkMin        += travelMin + breakMin
+
+  const tw = mission.timeWindow && mission.timeWindow.closeMin >= mission.timeWindow.openMin ? mission.timeWindow : undefined
+  if (tw && s.currentMin < tw.openMin) {
+    const waitMin = tw.openMin - s.currentMin
+    if (waitMin > 15) s.partialCost += (waitMin - 15) * 0.5
+    s.cumWorkMin += waitMin
+    s.currentMin  = tw.openMin
+  }
+  const arrivalMin = s.currentMin
+
+  if (tw) {
+    const windowDuration = tw.closeMin - tw.openMin
+    if (arrivalMin <= tw.closeMin) {
+      const slackRatio = windowDuration > 0 ? (tw.closeMin - arrivalMin) / windowDuration : 0
+      s.partialCost -= Math.min(10, slackRatio * 20)
+    } else {
+      const lateMin = arrivalMin - tw.closeMin
+      if (lateMin <= 15) {
+        s.partialCost += lateMin * 3 * env.wPunct
+      } else if (lateMin <= 60) {
+        s.partialCost += (15 * 3 + penaltyForLate(lateMin - 15)) * env.wPunct
+      } else {
+        s.partialCost += (15 * 3 + penaltyForLate(45) + (lateMin - 60) * 15) * env.wPunct
+      }
+    }
+  }
+
+  if (mission.priority === 1 && arrivalMin > env.effectiveP1Deadline) {
+    s.partialCost += penaltyForP1Late(arrivalMin - env.effectiveP1Deadline) * env.wPunct
+  }
+
+  if (env.stabilityW > 0 && ctx.familiarity) {
+    s.partialCost += getFamiliarityBonus(ctx.familiarity, env.driverId, mission.siteId, env.stabilityW)
+  }
+
+  const onSiteMin = Math.max(0, mission.estimatedDurationMin ?? 0) + Math.max(0, mission.maneuverTimeMin ?? 0)
+  s.cumWorkMin += onSiteMin
+  s.currentMin += onSiteMin
+  s.currentLat  = mission.latitude
+  s.currentLng  = mission.longitude
+  s.currentId   = mission.id
+
+  if (mission.type === 'POSER') {
+    if (s.emptyBins <= 0) s.partialCost += 50_000
+    else s.emptyBins--
+  }
+
+  if (isBinMission(mission.type)) {
+    s.binsUsed++
+    if (mission.type === 'ECHANGER') {
+      if (s.emptyBins <= 0) s.partialCost += 50_000
+      else { s.emptyBins--; s.echangersPending++ }
+    }
+
+    const nextM = missions[i + 1]
+    const nextNeedsEmpty = nextM && (nextM.type === 'POSER' || nextM.type === 'ECHANGER')
+    const needsExutoire = s.binsUsed >= env.capacity || i >= lastBinIdx ||
+      (s.emptyBins <= 0 && nextNeedsEmpty && s.echangersPending > 0)
+
+    if (needsExutoire) {
+      const ex = findBestExutoire(
+        mission.latitude, mission.longitude,
+        mission.linkedExutoireId,
+        mission.wasteTypeLabel,
+        ctx.exutoires,
+        env.dow,
+        undefined, undefined, false,
+      )
+      if (ex) {
+        visitExutoire(s, env, ex)
+        s.currentLat = ex.lat
+        s.currentLng = ex.lng
+        s.currentId  = `exu:${ex.id}`
+      } else {
+        s.partialCost += 500
+      }
+      s.binsUsed          = 0
+      s.emptyBins        += s.echangersPending
+      s.echangersPending  = 0
+    }
+  }
+
+  if (mission.type === 'ALLER_RETOUR') {
+    const ex = findBestExutoire(
+      mission.latitude, mission.longitude,
+      mission.linkedExutoireId,
+      mission.wasteTypeLabel,
+      ctx.exutoires,
+      env.dow,
+      undefined, undefined, false,
+    )
+    if (ex) {
+      visitExutoire(s, env, ex)
+      const fromEx = realDurationMin(ctx, `exu:${ex.id}`, ex.lat, ex.lng, mission.id, mission.latitude, mission.longitude, s.currentMin)
+      let brk = 0
+      if (s.continuousDriving + fromEx > MAX_CONTINUOUS_MIN) {
+        brk = BREAK_DURATION_MIN
+        s.continuousDriving = 0
+      }
+      s.currentMin        += fromEx + brk
+      s.continuousDriving += fromEx
+      s.cumDrivingMin     += fromEx
+      s.cumWorkMin        += fromEx + brk
+      s.currentLat = mission.latitude
+      s.currentLng = mission.longitude
+      s.currentId  = mission.id
+    } else {
+      s.partialCost += 500
+    }
+  }
+}
+
+/**
+ * Closes the route: return to the depot, driving cost, near-max / overtime, lunch gap. Takes a
+ * copy-free view of the state (does not mutate it) and returns the route's total cost.
+ */
+function finishRoute(s: RoutePrefixState, env: SimEnv, missions: Mission[], skillCost: number): number {
+  const { c, driver } = env
+  const returnTravel = realDurationMin(env.ctx, s.currentId, s.currentLat, s.currentLng, `depot:${env.driverId}`, driver.depotLat, driver.depotLng, s.currentMin)
+  const returnBreak = s.continuousDriving + returnTravel > MAX_CONTINUOUS_MIN ? BREAK_DURATION_MIN : 0
+  const cumWorkMin    = s.cumWorkMin + returnTravel + returnBreak
+  const cumDrivingMin = s.cumDrivingMin + returnTravel
+
+  let total = s.partialCost + skillCost
+  total += cumDrivingMin * c.distanceCostFactor * env.wDistance
+
+  if (cumWorkMin > c.nearmaxStartMin && cumWorkMin <= MAX_WORK_MIN) {
+    total += (cumWorkMin - c.nearmaxStartMin) * c.nearmaxPerMin
+  }
+  if (cumWorkMin > MAX_WORK_MIN) {
+    total += (MAX_WORK_MIN - c.nearmaxStartMin) * c.nearmaxPerMin
+    total += c.overtimePenalty + (cumWorkMin - MAX_WORK_MIN) * c.overtimePerMin
+  }
+
+  if (cumWorkMin > 120 && s.currentMin > c.lunchBreakEndMin) {
+    // Estimated (straight-line) timeline: is there a gap of lunchBreakDurationMin inside the
+    // lunch window? Travel is measured from the previous stop (the start point for the first).
+    let maxGapInLunch = 0
+    let prevExitMin = env.startTimeMin
+    let prevLat = env.startLat, prevLng = env.startLng
+    const speed = Math.max(10, env.ctx.speedKmh)
+    for (const m of missions) {
+      const arrivalEst = prevExitMin + cachedDist(prevLat, prevLng, m.latitude, m.longitude) / speed * 60
+      if (arrivalEst > c.lunchBreakStartMin && prevExitMin < c.lunchBreakEndMin) {
+        const gap = Math.min(arrivalEst, c.lunchBreakEndMin) - Math.max(prevExitMin, c.lunchBreakStartMin)
+        if (gap > maxGapInLunch) maxGapInLunch = gap
+      }
+      prevExitMin = arrivalEst + (m.estimatedDurationMin ?? 0) + (m.maneuverTimeMin ?? 0)
+      prevLat = m.latitude
+      prevLng = m.longitude
+    }
+    if (maxGapInLunch < c.lunchBreakDurationMin) total += c.lunchBreakPenalty
+  }
+
+  return Math.max(0, total)
+}
+
+/** Full simulation of `missions` for `env`'s driver, optionally resumed from a prefix state. */
+function simulate(env: SimEnv, missions: Mission[], from?: { index: number; state: RoutePrefixState; skillCost: number; depCorrection: number }): number {
+  if (missions.length === 0) return 0
+  const s = from ? { ...from.state } : initialState(env)
+  const start = from?.index ?? 0
+  let skillCost = from?.skillCost ?? 0
+  if (from) s.partialCost += from.depCorrection
+  const lastBinIdx = lastBinIndex(missions)
+  const depIdx = dependencyIndex(missions)
+  for (let i = start; i < missions.length; i++) {
+    if (!from) skillCost += skillPenalty(env, missions[i])
+    stepMission(s, env, missions, i, lastBinIdx, depIdx)
+  }
+  return finishRoute(s, env, missions, skillCost)
+}
+
+/**
+ * Cost of one route: travel (routing matrix when available), CE 561 breaks, time windows and P1
+ * deadlines, bin capacity and exutoire trips, skills, work-time limits, lunch gap. This is the
+ * reference — prefix states and insertion/removal deltas reuse the very same simulation, so a
+ * delta always equals the difference of two full costs.
+ */
+export function computeRouteCost(
+  route: Route,
+  ctx: CostContext,
+  drivers: Driver[],
+  costCfg?: VrpCostConfig,
+): number {
+  const env = makeEnv(route.driverId, ctx, drivers, costCfg)
+  if (!env) return Infinity
+  return simulate(env, route.missions)
+}
+
+/** Simulation states before each mission (index 0 = start of day, index n = after the last). */
 export function computePrefixStates(
   route: Route,
   ctx: CostContext,
   drivers: Driver[],
 ): RoutePrefixState[] {
-  const driver = getDriverMap(drivers).get(route.driverId)
-  if (!driver) return []
-
-  const { startTimeMin } = ctx
-  const effectiveP1Deadline = Math.min(1320, Math.max(P1_DEADLINE_MIN, startTimeMin + 240))
-
-  const states: RoutePrefixState[] = []
-
-  let currentMin        = startTimeMin
-  let currentLat        = driver.depotLat
-  let currentLng        = driver.depotLng
-  let currentId: string | undefined = `depot:${route.driverId}`
-  let continuousDriving = 0
-  let cumWorkMin        = 0
-  let cumDrivingMin     = 0
-  let partialCost       = 0
-
-  const capacity = effectiveCapacity(driver)
-  let binsUsed   = 0
-
-  states.push({ currentMin, currentLat, currentLng, currentId, continuousDriving, cumWorkMin, cumDrivingMin, partialCost, binsUsed })
-
-  for (const mission of route.missions) {
-
-    const travelMin = realDurationMin(ctx, currentId, currentLat, currentLng, mission.id, mission.latitude, mission.longitude, currentMin)
-
-    let breakMin = 0
-    if (continuousDriving + travelMin > MAX_CONTINUOUS_MIN) {
-      breakMin = BREAK_DURATION_MIN
-      continuousDriving = 0
-    }
-
-    currentMin        += travelMin + breakMin
-    continuousDriving += travelMin
-    cumDrivingMin     += travelMin
-    cumWorkMin        += travelMin + breakMin
-
-    const validTW = mission.timeWindow && mission.timeWindow.closeMin >= mission.timeWindow.openMin
-    if (validTW && mission.timeWindow && currentMin < mission.timeWindow.openMin) {
-      cumWorkMin += mission.timeWindow.openMin - currentMin
-      currentMin  = mission.timeWindow.openMin
-    }
-
-    const arrivalMin = currentMin
-
-    if (validTW && mission.timeWindow) {
-      const { openMin, closeMin } = mission.timeWindow
-      const windowDuration = closeMin - openMin
-
-      if (arrivalMin <= closeMin) {
-
-        const slack = closeMin - arrivalMin
-        const slackRatio = windowDuration > 0 ? slack / windowDuration : 0
-        partialCost -= Math.min(10, slackRatio * 20)
-      } else {
-
-        const lateMin = arrivalMin - closeMin
-        if (lateMin <= 15) {
-          partialCost += lateMin * 3
-        } else if (lateMin <= 60) {
-          partialCost += 15 * 3 + penaltyForLate(lateMin - 15)
-        } else {
-          partialCost += 15 * 3 + penaltyForLate(45) + (lateMin - 60) * 15
-        }
-      }
-    }
-    if (mission.priority === 1 && arrivalMin > effectiveP1Deadline) {
-      partialCost += penaltyForP1Late(arrivalMin - effectiveP1Deadline)
-    }
-
-    const onSiteMin = Math.max(0, mission.estimatedDurationMin ?? 0) + Math.max(0, mission.maneuverTimeMin ?? 0)
-    cumWorkMin += onSiteMin
-    currentMin += onSiteMin
-    currentLat  = mission.latitude
-    currentLng  = mission.longitude
-    currentId   = mission.id
-
-    if (isBinMission(mission.type)) {
-      binsUsed++
-      if (binsUsed >= capacity) binsUsed = 0
-    }
-
-    states.push({ currentMin, currentLat, currentLng, currentId, continuousDriving, cumWorkMin, cumDrivingMin, partialCost, binsUsed })
+  const env = makeEnv(route.driverId, ctx, drivers)
+  if (!env) return []
+  const missions = route.missions
+  const lastBinIdx = lastBinIndex(missions)
+  const depIdx = dependencyIndex(missions)
+  const s = initialState(env)
+  const states: RoutePrefixState[] = [{ ...s }]
+  for (let i = 0; i < missions.length; i++) {
+    stepMission(s, env, missions, i, lastBinIdx, depIdx)
+    states.push({ ...s })
   }
-
   return states
+}
+
+/**
+ * Index from which the simulation must be replayed when the route changes at `pos`: the step
+ * before `pos` looks ahead at the next mission, and the "last bin mission" trip moves when the
+ * last bin index changes.
+ */
+function resumeIndex(pos: number, oldLastBin: number, newLastBin: number): number {
+  let r = Math.max(0, pos - 1)
+  if (oldLastBin !== newLastBin && oldLastBin >= 0 && newLastBin >= 0) r = Math.min(r, oldLastBin, newLastBin)
+  return r
+}
+
+function sumSkills(env: SimEnv, missions: Mission[], end: number): number {
+  let p = 0
+  for (let i = 0; i < end; i++) p += skillPenalty(env, missions[i])
+  return p
+}
+
+/** Missions before `end` that depend on `id` — their 5000 dependency penalty flips when `id` moves in/out after them. */
+function dependentsBefore(missions: Mission[], end: number, id: string): number {
+  let n = 0
+  for (let i = 0; i < end; i++) if (missions[i].dependsOnId === id) n++
+  return n
+}
+
+/**
+ * Exact cost change of inserting `mission` at `pos`: replays the simulation from the last prefix
+ * state the insertion cannot affect.
+ */
+export function computeInsertionDelta(
+  route: Route,
+  mission: Mission,
+  pos: number,
+  prefixStates: RoutePrefixState[],
+  costWithout: number,
+  ctx: CostContext,
+  drivers: Driver[],
+  costCfg?: VrpCostConfig,
+): number {
+  const newMissions = [...route.missions.slice(0, pos), mission, ...route.missions.slice(pos)]
+  const env = makeEnv(route.driverId, ctx, drivers, costCfg)
+  if (!env || pos > route.missions.length || prefixStates.length !== route.missions.length + 1) {
+    return computeRouteCost({ driverId: route.driverId, missions: newMissions }, ctx, drivers, costCfg) - costWithout
+  }
+  const r = resumeIndex(pos, lastBinIndex(route.missions), lastBinIndex(newMissions))
+  const total = simulate(env, newMissions, {
+    index:         r,
+    state:         prefixStates[r],
+    skillCost:     sumSkills(env, newMissions, newMissions.length),
+    depCorrection: 5000 * dependentsBefore(newMissions, r, mission.id),
+  })
+  return total - costWithout
+}
+
+/** Exact cost change of removing the mission at `pos` (same replay scheme as insertion). */
+export function computeRemovalDelta(
+  route:        Route,
+  pos:          number,
+  prefixStates: RoutePrefixState[],
+  costWith:     number,
+  ctx:          CostContext,
+  drivers:      Driver[],
+  costCfg?:     VrpCostConfig,
+): number {
+  if (pos >= route.missions.length) return 0
+  const removedId = route.missions[pos].id
+  const newMissions = route.missions.filter((_, i) => i !== pos)
+  const env = makeEnv(route.driverId, ctx, drivers, costCfg)
+  if (!env || prefixStates.length !== route.missions.length + 1) {
+    return computeRouteCost({ driverId: route.driverId, missions: newMissions }, ctx, drivers, costCfg) - costWith
+  }
+  const r = resumeIndex(pos, lastBinIndex(route.missions), lastBinIndex(newMissions))
+  const total = simulate(env, newMissions, {
+    index:         r,
+    state:         prefixStates[r],
+    skillCost:     sumSkills(env, newMissions, newMissions.length),
+    depCorrection: -5000 * dependentsBefore(route.missions, r, removedId),
+  })
+  return total - costWith
 }
 
 export function computeSuffixSlacks(
@@ -709,408 +697,6 @@ export function canInsertWithoutViolation(
   addedDelayMin: number,
 ): boolean {
   return addedDelayMin <= suffixSlacks[pos]
-}
-
-export function computeInsertionDelta(
-  route: Route,
-  mission: import('@/lib/types').Mission,
-  pos: number,
-  prefixStates: RoutePrefixState[],
-  costWithout: number,
-  ctx: CostContext,
-  drivers: Driver[],
-  costCfg?: VrpCostConfig,
-): number {
-  const c = cfg(costCfg)
-  const driver = drivers.find(d => d.id === route.driverId)
-  if (!driver || pos > route.missions.length) {
-
-    const newMissions = [
-      ...route.missions.slice(0, pos),
-      mission,
-      ...route.missions.slice(pos),
-    ]
-    return computeRouteCost({ driverId: route.driverId, missions: newMissions }, ctx, drivers, costCfg) - costWithout
-  }
-
-  const { startTimeMin, exutoires, date } = ctx
-  const effectiveP1Deadline = Math.min(1320, Math.max(P1_DEADLINE_MIN, startTimeMin + 240))
-
-  const dow = cachedDow(date)
-
-  const ps = prefixStates[Math.min(pos, prefixStates.length - 1)]
-  let currentMin        = ps.currentMin
-  let currentLat        = ps.currentLat
-  let currentLng        = ps.currentLng
-  let currentId: string | undefined = ps.currentId
-  let continuousDriving = ps.continuousDriving
-  let cumWorkMin        = ps.cumWorkMin
-  let cumDrivingMin     = ps.cumDrivingMin
-  let suffixCost        = 0
-
-  const capacity = effectiveCapacity(driver)
-  let binsUsed   = ps.binsUsed ?? 0
-
-  let emptyBins        = capacity
-  let echangersPending = 0
-  for (const pm of route.missions.slice(0, pos)) {
-    if (pm.type === 'POSER' && emptyBins > 0) emptyBins--
-    else if (pm.type === 'ECHANGER' && emptyBins > 0) { emptyBins--; echangersPending++ }
-    else if (isBinMission(pm.type)) {
-
-      echangersPending = 0
-    }
-  }
-
-  const suffixMissions = [mission, ...route.missions.slice(pos)]
-  const suffixLastBinIdx = lastBinIndex(suffixMissions)
-
-  let prevDirLat = 0, prevDirLng = 0
-
-  for (let si = 0; si < suffixMissions.length; si++) {
-    const m = suffixMissions[si]
-
-    const dirLat = m.latitude - currentLat
-    const dirLng = m.longitude - currentLng
-    if (prevDirLat !== 0 || prevDirLng !== 0) {
-      const dot = dirLat * prevDirLat + dirLng * prevDirLng
-      const magSq1 = dirLat * dirLat + dirLng * dirLng
-      const magSq2 = prevDirLat * prevDirLat + prevDirLng * prevDirLng
-      if (magSq1 > 1e-6 && magSq2 > 1e-6) {
-
-        const dotSq = dot * dot
-        const threshold = magSq1 * magSq2
-        if (dot < 0 && dotSq > 0.25 * threshold) suffixCost += 15
-        else if (dot < 0) suffixCost += 5
-      }
-    }
-    prevDirLat = dirLat
-    prevDirLng = dirLng
-
-    const travelMin = realDurationMin(ctx, currentId, currentLat, currentLng, m.id, m.latitude, m.longitude, currentMin)
-
-    let breakMin = 0
-    if (continuousDriving + travelMin > MAX_CONTINUOUS_MIN) {
-      breakMin = BREAK_DURATION_MIN
-      continuousDriving = 0
-    }
-    currentMin        += travelMin + breakMin
-    continuousDriving += travelMin
-    cumDrivingMin     += travelMin
-    cumWorkMin        += travelMin + breakMin
-
-    const validTW = m.timeWindow && m.timeWindow.closeMin >= m.timeWindow.openMin
-    if (validTW && m.timeWindow && currentMin < m.timeWindow.openMin) {
-      const waitMin = m.timeWindow.openMin - currentMin
-
-      if (waitMin > 15) {
-        suffixCost += (waitMin - 15) * 0.5
-      }
-      cumWorkMin += waitMin
-      currentMin  = m.timeWindow.openMin
-    }
-    const arrivalMin = currentMin
-
-    if (validTW && m.timeWindow && arrivalMin > m.timeWindow.closeMin) {
-
-      const lateMin = arrivalMin - m.timeWindow.closeMin
-      if (lateMin <= 15) {
-        suffixCost += lateMin * 3
-      } else if (lateMin <= 60) {
-        suffixCost += 15 * 3 + penaltyForLate(lateMin - 15)
-      } else {
-        suffixCost += 15 * 3 + penaltyForLate(45) + (lateMin - 60) * 15
-      }
-    } else if (validTW && m.timeWindow && arrivalMin <= m.timeWindow.closeMin) {
-
-      const { openMin, closeMin } = m.timeWindow
-      const windowDuration = closeMin - openMin
-      const slack = closeMin - arrivalMin
-      const slackRatio = windowDuration > 0 ? slack / windowDuration : 0
-      suffixCost -= Math.min(10, slackRatio * 20)
-    }
-    if (m.priority === 1 && arrivalMin > effectiveP1Deadline) {
-      suffixCost += penaltyForP1Late(arrivalMin - effectiveP1Deadline)
-    }
-
-    if (m.dependsOnId) {
-      const fullRoute = [...route.missions.slice(0, pos), mission, ...route.missions.slice(pos)]
-      const mIdxInFull = pos + 1 + si
-      const depIdxInFull = fullRoute.findIndex(dep => dep.id === m.dependsOnId)
-      if (depIdxInFull >= 0 && depIdxInFull > mIdxInFull) {
-        suffixCost += 5000
-      }
-    }
-
-    const onSiteMin = Math.max(0, m.estimatedDurationMin ?? 0) + Math.max(0, m.maneuverTimeMin ?? 0)
-    cumWorkMin += onSiteMin
-    currentMin += onSiteMin
-    currentLat  = m.latitude
-    currentLng  = m.longitude
-    currentId   = m.id
-
-    if (m.type === 'POSER') {
-      if (emptyBins <= 0) suffixCost += 50_000
-      else emptyBins--
-    }
-
-    if (isBinMission(m.type)) {
-      binsUsed++
-      if (m.type === 'ECHANGER') {
-        if (emptyBins <= 0) suffixCost += 50_000
-        else { emptyBins--; echangersPending++ }
-      }
-
-      const nextSuffixM = suffixMissions[si + 1]
-      const nextNeedsEmpty = nextSuffixM &&
-        (nextSuffixM.type === 'POSER' || nextSuffixM.type === 'ECHANGER')
-      const needsExutoire = binsUsed >= capacity || si >= suffixLastBinIdx ||
-        (emptyBins <= 0 && nextNeedsEmpty && echangersPending > 0)
-
-      if (needsExutoire) {
-        const ex = findBestExutoire(m.latitude, m.longitude, m.linkedExutoireId, m.wasteTypeLabel, exutoires, dow, currentMin, ctx.congestionMap, false)
-        if (ex) {
-          const exId = `exu:${ex.id}`
-          const exTravel = realDurationMin(ctx, currentId, currentLat, currentLng, exId, ex.lat, ex.lng, currentMin)
-          let exBreak = 0
-          if (continuousDriving + exTravel > MAX_CONTINUOUS_MIN) {
-            exBreak = BREAK_DURATION_MIN
-            continuousDriving = 0
-          }
-          currentMin        += exTravel + exBreak
-          continuousDriving += exTravel
-          cumDrivingMin     += exTravel
-          cumWorkMin        += exTravel + exBreak
-          if (currentMin < ex.openingHoursOpen) {
-            cumWorkMin += ex.openingHoursOpen - currentMin
-            currentMin  = ex.openingHoursOpen
-          }
-          if (ex.closedDays.includes(dow)) {
-            suffixCost += c.closedExutoirePenalty
-          } else if (currentMin > ex.openingHoursClose) {
-            suffixCost += penaltyForLate(currentMin - ex.openingHoursClose)
-          }
-          cumWorkMin += ex.serviceTimeMin
-          currentMin += ex.serviceTimeMin
-          currentLat  = ex.lat
-          currentLng  = ex.lng
-          currentId   = exId
-          continuousDriving = 0
-          binsUsed         = 0
-          emptyBins        += echangersPending
-          echangersPending  = 0
-        } else {
-          binsUsed         = 0
-          emptyBins        += echangersPending
-          echangersPending  = 0
-          suffixCost += 500
-        }
-      }
-    }
-  }
-
-  const depotId = `depot:${route.driverId}`
-  const returnTravel = realDurationMin(ctx, currentId, currentLat, currentLng, depotId, driver.depotLat, driver.depotLng, currentMin)
-  let rBreak = 0
-  if (continuousDriving + returnTravel > MAX_CONTINUOUS_MIN) rBreak = BREAK_DURATION_MIN
-  cumWorkMin    += returnTravel + rBreak
-  cumDrivingMin += returnTravel
-
-  const w = ctx.weights ?? { distance: 0.5, punctuality: 0.5, balance: 0.3 }
-
-  suffixCost += cumDrivingMin * c.distanceCostFactor * Math.max(0.1, w.distance)
-
-  if (cumWorkMin > c.nearmaxStartMin && cumWorkMin <= MAX_WORK_MIN) {
-    suffixCost += (cumWorkMin - c.nearmaxStartMin) * c.nearmaxPerMin
-  }
-  if (cumWorkMin > MAX_WORK_MIN) {
-    suffixCost += (MAX_WORK_MIN - c.nearmaxStartMin) * c.nearmaxPerMin
-    suffixCost += c.overtimePenalty + (cumWorkMin - MAX_WORK_MIN) * c.overtimePerMin
-  }
-
-  const totalWithInsertion = ps.partialCost + suffixCost
-  return totalWithInsertion - costWithout
-}
-
-export function computeRemovalDelta(
-  route:        Route,
-  pos:          number,
-  prefixStates: RoutePrefixState[],
-  costWith:     number,
-  ctx:          CostContext,
-  drivers:      Driver[],
-  costCfg?:     VrpCostConfig,
-): number {
-  const c = cfg(costCfg)
-  const driver = drivers.find(d => d.id === route.driverId)
-  if (!driver || pos >= route.missions.length) return 0
-
-  const { startTimeMin, exutoires, date } = ctx
-  const effectiveP1Deadline = Math.min(1320, Math.max(P1_DEADLINE_MIN, startTimeMin + 240))
-
-  const dow = cachedDow(date)
-
-  const ps = prefixStates[pos]
-  let currentMin        = ps.currentMin
-  let currentLat        = ps.currentLat
-  let currentLng        = ps.currentLng
-  let currentId: string | undefined = ps.currentId
-  let continuousDriving = ps.continuousDriving
-  let cumWorkMin        = ps.cumWorkMin
-  let cumDrivingMin     = ps.cumDrivingMin
-  let suffixCost        = 0
-
-  const capacity = effectiveCapacity(driver)
-  let binsUsed   = ps.binsUsed ?? 0
-
-  const suffixMissions = route.missions.slice(pos + 1)
-  const suffixLastBinIdx = lastBinIndex(suffixMissions)
-
-  let prevDirLat = 0, prevDirLng = 0
-
-  for (let si = 0; si < suffixMissions.length; si++) {
-    const m = suffixMissions[si]
-
-    const dirLat = m.latitude - currentLat
-    const dirLng = m.longitude - currentLng
-    if (prevDirLat !== 0 || prevDirLng !== 0) {
-      const dot = dirLat * prevDirLat + dirLng * prevDirLng
-      const magSq1 = dirLat * dirLat + dirLng * dirLng
-      const magSq2 = prevDirLat * prevDirLat + prevDirLng * prevDirLng
-      if (magSq1 > 1e-6 && magSq2 > 1e-6) {
-        const dotSq = dot * dot
-        const threshold = magSq1 * magSq2
-        if (dot < 0 && dotSq > 0.25 * threshold) suffixCost += 15
-        else if (dot < 0) suffixCost += 5
-      }
-    }
-    prevDirLat = dirLat
-    prevDirLng = dirLng
-
-    const travelMin = realDurationMin(ctx, currentId, currentLat, currentLng, m.id, m.latitude, m.longitude, currentMin)
-
-    let breakMin = 0
-    if (continuousDriving + travelMin > MAX_CONTINUOUS_MIN) {
-      breakMin = BREAK_DURATION_MIN
-      continuousDriving = 0
-    }
-    currentMin        += travelMin + breakMin
-    continuousDriving += travelMin
-    cumDrivingMin     += travelMin
-    cumWorkMin        += travelMin + breakMin
-
-    const validTW = m.timeWindow && m.timeWindow.closeMin >= m.timeWindow.openMin
-    if (validTW && m.timeWindow && currentMin < m.timeWindow.openMin) {
-      const waitMin = m.timeWindow.openMin - currentMin
-
-      if (waitMin > 15) {
-        suffixCost += (waitMin - 15) * 0.5
-      }
-      cumWorkMin += waitMin
-      currentMin  = m.timeWindow.openMin
-    }
-    const arrivalMin = currentMin
-
-    if (validTW && m.timeWindow && arrivalMin > m.timeWindow.closeMin) {
-
-      const lateMin = arrivalMin - m.timeWindow.closeMin
-      if (lateMin <= 15) {
-        suffixCost += lateMin * 3
-      } else if (lateMin <= 60) {
-        suffixCost += 15 * 3 + penaltyForLate(lateMin - 15)
-      } else {
-        suffixCost += 15 * 3 + penaltyForLate(45) + (lateMin - 60) * 15
-      }
-    } else if (validTW && m.timeWindow && arrivalMin <= m.timeWindow.closeMin) {
-
-      const { openMin, closeMin } = m.timeWindow
-      const windowDuration = closeMin - openMin
-      const slack = closeMin - arrivalMin
-      const slackRatio = windowDuration > 0 ? slack / windowDuration : 0
-      suffixCost -= Math.min(10, slackRatio * 20)
-    }
-    if (m.priority === 1 && arrivalMin > effectiveP1Deadline) {
-      suffixCost += penaltyForP1Late(arrivalMin - effectiveP1Deadline)
-    }
-
-    if (m.dependsOnId) {
-      const fullWithout = [...route.missions.slice(0, pos), ...route.missions.slice(pos + 1)]
-      const mIdxInFull = pos + si
-      const depIdxInFull = fullWithout.findIndex(dep => dep.id === m.dependsOnId)
-      if (depIdxInFull >= 0 && depIdxInFull > mIdxInFull) {
-        suffixCost += 5000
-      }
-    }
-
-    const onSiteMin = Math.max(0, m.estimatedDurationMin ?? 0) + Math.max(0, m.maneuverTimeMin ?? 0)
-    cumWorkMin += onSiteMin
-    currentMin += onSiteMin
-    currentLat  = m.latitude
-    currentLng  = m.longitude
-    currentId   = m.id
-
-    if (isBinMission(m.type)) {
-      binsUsed++
-      const needsExutoire = binsUsed >= capacity || si >= suffixLastBinIdx
-
-      if (needsExutoire) {
-        const ex = findBestExutoire(m.latitude, m.longitude, m.linkedExutoireId, m.wasteTypeLabel, exutoires, dow, currentMin, ctx.congestionMap, false)
-        if (ex) {
-          const exId = `exu:${ex.id}`
-          const exTravel = realDurationMin(ctx, currentId, currentLat, currentLng, exId, ex.lat, ex.lng, currentMin)
-          let exBreak = 0
-          if (continuousDriving + exTravel > MAX_CONTINUOUS_MIN) {
-            exBreak = BREAK_DURATION_MIN
-            continuousDriving = 0
-          }
-          currentMin        += exTravel + exBreak
-          continuousDriving += exTravel
-          cumDrivingMin     += exTravel
-          cumWorkMin        += exTravel + exBreak
-          if (currentMin < ex.openingHoursOpen) {
-            cumWorkMin += ex.openingHoursOpen - currentMin
-            currentMin  = ex.openingHoursOpen
-          }
-          if (ex.closedDays.includes(dow)) {
-            suffixCost += c.closedExutoirePenalty
-          } else if (currentMin > ex.openingHoursClose) {
-            suffixCost += penaltyForLate(currentMin - ex.openingHoursClose)
-          }
-          cumWorkMin += ex.serviceTimeMin
-          currentMin += ex.serviceTimeMin
-          currentLat  = ex.lat
-          currentLng  = ex.lng
-          currentId   = exId
-          continuousDriving = 0
-          binsUsed = 0
-        } else {
-          binsUsed = 0
-          suffixCost += 500
-        }
-      }
-    }
-  }
-
-  const depotId = `depot:${route.driverId}`
-  const returnTravel = realDurationMin(ctx, currentId, currentLat, currentLng, depotId, driver.depotLat, driver.depotLng, currentMin)
-  let rBreak = 0
-  if (continuousDriving + returnTravel > MAX_CONTINUOUS_MIN) rBreak = BREAK_DURATION_MIN
-  cumWorkMin    += returnTravel + rBreak
-  cumDrivingMin += returnTravel
-
-  const w = ctx.weights ?? { distance: 0.5, punctuality: 0.5, balance: 0.3 }
-  suffixCost += cumDrivingMin * c.distanceCostFactor * Math.max(0.1, w.distance)
-
-  if (cumWorkMin > c.nearmaxStartMin && cumWorkMin <= MAX_WORK_MIN) {
-    suffixCost += (cumWorkMin - c.nearmaxStartMin) * c.nearmaxPerMin
-  }
-  if (cumWorkMin > MAX_WORK_MIN) {
-    suffixCost += (MAX_WORK_MIN - c.nearmaxStartMin) * c.nearmaxPerMin
-    suffixCost += c.overtimePenalty + (cumWorkMin - MAX_WORK_MIN) * c.overtimePerMin
-  }
-
-  const totalWithout = ps.partialCost + suffixCost
-  return totalWithout - costWith
 }
 
 export function computeRouteCostDetailed(
