@@ -56,7 +56,7 @@ test.describe('Users Tab', () => {
     await page.waitForTimeout(500)
     const modal = page.locator('[role="dialog"]').first()
     await expect(modal).toBeVisible({ timeout: 10_000 })
-    const saveBtn = modal.locator('button:has-text("Creer"), button:has-text("Créer"), button[type="submit"]').first()
+    const saveBtn = modal.locator('button:has-text("Créer"), button:has-text("Créer"), button[type="submit"]').first()
     await expect(saveBtn).toBeVisible({ timeout: 5_000 })
     await saveBtn.click()
     await page.waitForTimeout(300)

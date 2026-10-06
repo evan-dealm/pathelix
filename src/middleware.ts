@@ -8,12 +8,16 @@ import { getClientIp } from '@/lib/rateLimit'
 import { authenticateApiKey, scopeAllows, API_KEY_ROLE } from '@/lib/apiKeyAuth'
 
 const _globalRl = new Map<string, { count: number; resetAt: number }>()
-const GLOBAL_RL_MAX    = 300
+// Requests per minute. Authenticated traffic is counted per user, anonymous traffic per IP: a
+// whole office behind one public (NAT) address used to share a single 300/min budget, and one
+// admin page load alone issues dozens of calls.
+const GLOBAL_RL_MAX_USER = parseInt(process.env.RATE_LIMIT_USER_PER_MIN ?? '600', 10) || 600
+const GLOBAL_RL_MAX_ANON = parseInt(process.env.RATE_LIMIT_IP_PER_MIN ?? '300', 10) || 300
 const GLOBAL_RL_WINDOW = 60_000
 const GLOBAL_RL_CAP    = 10_000
 let _lastSweep = 0
 
-function globalRlCheck(ip: string): boolean {
+function globalRlCheck(key: string, max: number): boolean {
   const now = Date.now()
 
   // At capacity (many distinct IPs — typically an attack), sweeping the whole map on every request
@@ -32,12 +36,12 @@ function globalRlCheck(ip: string): boolean {
     }
   }
 
-  const bucket = _globalRl.get(ip)
+  const bucket = _globalRl.get(key)
   if (!bucket || now > bucket.resetAt) {
-    _globalRl.set(ip, { count: 1, resetAt: now + GLOBAL_RL_WINDOW })
+    _globalRl.set(key, { count: 1, resetAt: now + GLOBAL_RL_WINDOW })
     return true
   }
-  if (bucket.count >= GLOBAL_RL_MAX) return false
+  if (bucket.count >= max) return false
   bucket.count++
   return true
 }
@@ -137,14 +141,6 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const clientIp = getClientIp(request.headers)
-  if (!isPublic(pathname) && !globalRlCheck(clientIp)) {
-    return NextResponse.json(
-      { error: 'Trop de requêtes. Réessayez dans une minute.' },
-      { status: 429, headers: { 'Retry-After': '60' } },
-    )
-  }
-
   const requestId      = crypto.randomUUID()
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-request-id', requestId)
@@ -168,6 +164,19 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
   const token    = request.cookies.get(SESSION_COOKIE)?.value ?? null
   const verified = token ? await verifySession(token) : null
+
+  // Signature check first (cheap, unforgeable without the secret), so the budget can be per user;
+  // anything unauthenticated is counted against its IP before any database lookup.
+  const rlAllowed = verified
+    ? globalRlCheck(`u:${verified.sub}`, GLOBAL_RL_MAX_USER)
+    : globalRlCheck(`ip:${getClientIp(request.headers)}`, GLOBAL_RL_MAX_ANON)
+  if (!rlAllowed) {
+    return withContext(NextResponse.json(
+      { error: 'Trop de requêtes. Réessayez dans une minute.' },
+      { status: 429, headers: { 'Retry-After': '60' } },
+    ))
+  }
+
   // Revoked by a password/role change or user deletion since it was issued (see sessionRevocation.ts).
   const session  = verified && await isSessionCurrent(verified) ? verified : null
 

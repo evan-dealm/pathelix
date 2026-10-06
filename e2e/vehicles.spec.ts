@@ -40,7 +40,7 @@ test.describe('Vehicles Tab', () => {
   })
 
   test('new vehicle button opens form', async ({ page }) => {
-    const btn = page.locator('[role="tabpanel"] button:has-text("Nouveau vehicule"), [role="tabpanel"] button:has-text("Nouveau véhicule")').first()
+    const btn = page.locator('[role="tabpanel"] button:has-text("Nouveau véhicule"), [role="tabpanel"] button:has-text("Nouveau véhicule")').first()
     await expect(btn).toBeVisible({ timeout: 5_000 })
     await btn.click()
     await page.waitForTimeout(500)
@@ -50,7 +50,7 @@ test.describe('Vehicles Tab', () => {
   })
 
   test('vehicle form has all fields', async ({ page }) => {
-    const btn = page.locator('[role="tabpanel"] button:has-text("Nouveau vehicule"), [role="tabpanel"] button:has-text("Nouveau véhicule")').first()
+    const btn = page.locator('[role="tabpanel"] button:has-text("Nouveau véhicule"), [role="tabpanel"] button:has-text("Nouveau véhicule")').first()
     await expect(btn).toBeVisible({ timeout: 5_000 })
     await btn.click()
     await page.waitForTimeout(500)
@@ -62,7 +62,7 @@ test.describe('Vehicles Tab', () => {
   })
 
   test('vehicle form has immatriculation field', async ({ page }) => {
-    const btn = page.locator('[role="tabpanel"] button:has-text("Nouveau vehicule"), [role="tabpanel"] button:has-text("Nouveau véhicule")').first()
+    const btn = page.locator('[role="tabpanel"] button:has-text("Nouveau véhicule"), [role="tabpanel"] button:has-text("Nouveau véhicule")').first()
     await expect(btn).toBeVisible({ timeout: 5_000 })
     await btn.click()
     await page.waitForTimeout(500)

@@ -236,14 +236,25 @@ describe('middleware', () => {
 
   // ─── Rate-limit client IP ─────────────────────────────────────────────────
 
-  it('does not let a spoofed left-most X-Forwarded-For entry dodge the global limiter', async () => {
-    mockVerifySession.mockResolvedValue(makeSession())
-    let last = 200
+  it('does not let a spoofed left-most X-Forwarded-For entry dodge the anonymous limiter', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    let last = 401
     for (let i = 0; i < 305; i++) {
-      const res = await middleware(makeReq('/api/drivers', { cookie: 'session=t', ip: `10.0.${i % 250}.${i}, 203.0.113.77` }))
+      const res = await middleware(makeReq('/api/drivers', { ip: `10.0.${i % 250}.${i}, 203.0.113.77` }))
       last = res.status
     }
     expect(last).toBe(429)
+  })
+
+  it('counts authenticated traffic per user: colleagues behind one IP do not share a budget', async () => {
+    const sameIp = '198.51.100.9'
+    mockVerifySession.mockResolvedValue(makeSession({ sub: 'rl-user-a' }))
+    let lastA = 200
+    for (let i = 0; i < 601; i++) lastA = (await middleware(makeReq('/api/drivers', { cookie: 'session=a', ip: sameIp }))).status
+    expect(lastA).toBe(429)
+
+    mockVerifySession.mockResolvedValue(makeSession({ sub: 'rl-user-b' }))
+    expect((await middleware(makeReq('/api/drivers', { cookie: 'session=b', ip: sameIp }))).status).toBe(200)
   })
 
   // ─── Auth enforcement ─────────────────────────────────────────────────────

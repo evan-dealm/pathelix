@@ -67,6 +67,7 @@ Référence complète et commentée : `.env.example`. Essentiel :
 | `REDIS_URL` | Optionnel ; absent = repli en mémoire (mono-instance uniquement) |
 | `VALHALLA_URL`, `VALHALLA_MATRIX_BUDGET_MS` | Routage ; au-delà du budget (20 s), repli haversine |
 | `ROUTING_API_TYPE/KEY/URL` | API de routage externe (Trimble, HERE, générique), prioritaire sur Valhalla |
+| `RATE_LIMIT_USER_PER_MIN` (600), `RATE_LIMIT_IP_PER_MIN` (300) | Limitation globale : par utilisateur connecté, par IP pour l'anonyme |
 | `TRUSTED_PROXY_COUNT` | Proxies de confiance devant l'app (défaut 1) — détermine l'IP client pour le rate limiting |
 | `INTEGRATION_ENCRYPTION_KEY`, `TRACKDECHETS_ENCRYPTION_KEY` | AES-256-GCM, 64 caractères hex (`openssl rand -hex 32`) |
 | `OUTBOUND_ALLOWED_HOSTS` | Hôtes privés autorisés pour webhooks/ERP sortants (vide = aucun, protection SSRF) |

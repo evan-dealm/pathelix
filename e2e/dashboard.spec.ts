@@ -49,7 +49,7 @@ test.describe('Dashboard', () => {
   })
 
   test('date navigator is interactive', async ({ page }) => {
-    const prevBtn = page.locator('button[title="Jour precedent"]').first()
+    const prevBtn = page.locator('button[title="Jour précédent"]').first()
     await expect(prevBtn).toBeVisible({ timeout: 10_000 })
     await prevBtn.click()
     await page.waitForTimeout(300)

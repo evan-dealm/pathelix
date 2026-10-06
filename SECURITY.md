@@ -82,7 +82,8 @@ désactive les actions correspondantes.
   exceptions explicites. Endpoints de notification push limités aux services push connus.
 - **Actions chauffeur hors ligne** : rejouables sans doublon (`Idempotency-Key`, réservation
   atomique en base) ; mises à jour de statut sérialisées par verrou de ligne.
-- Limitation globale par IP dans le middleware (300 req/min), corps limités à 5 Mo.
+- Limitation globale dans le middleware : 600 req/min par utilisateur connecté, 300 par IP pour le
+  trafic anonyme (signature du jeton vérifiée avant de choisir la clé) ; corps limités à 5 Mo.
 
 ## 6. Risques résiduels acceptés
 

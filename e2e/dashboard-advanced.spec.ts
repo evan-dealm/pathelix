@@ -205,7 +205,7 @@ test.describe('Dashboard Advanced', () => {
   test('date navigator changes displayed data', async ({ page }) => {
     await expect(page.locator('#tabpanel-dashboard')).toBeVisible({ timeout: 10_000 })
 
-    const prevBtn = page.locator('button[title="Jour precedent"]').first()
+    const prevBtn = page.locator('button[title="Jour précédent"]').first()
     if (await prevBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await prevBtn.click({ force: true })
       await page.waitForTimeout(500)
