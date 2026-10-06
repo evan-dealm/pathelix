@@ -1,5 +1,22 @@
 import { NextResponse } from 'next/server'
 
+const CHECK_TIMEOUT_MS = 3000
+
+/** Rejects after `ms` — a probe must answer even when a dependency hangs instead of failing. */
+function withTimeout<T>(p: Promise<T>, ms = CHECK_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms) }),
+  ]).finally(() => clearTimeout(timer))
+}
+
+/**
+ * Readiness probe (load balancer / orchestrator). Only the database is critical: without it no
+ * request can be served. Redis is reported but never fails readiness — rate limiting, queues and
+ * caches fall back without it, and marking every instance unready on a Redis outage would turn a
+ * degraded service into a full outage.
+ */
 export async function GET(): Promise<NextResponse> {
   const useMock = process.env.USE_MOCK_DATA !== 'false'
 
@@ -7,34 +24,29 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ status: 'ok', mode: 'mock' })
   }
 
-  const results: Record<string, 'ok' | 'unavailable'> = {}
+  const checks: Record<string, 'ok' | 'unavailable' | 'degraded'> = {}
 
   try {
     const { default: prisma } = await import('@/lib/db')
-    await prisma.$queryRaw`SELECT 1`
-    results.db = 'ok'
+    await withTimeout(prisma.$queryRaw`SELECT 1`)
+    checks.db = 'ok'
   } catch {
-    results.db = 'unavailable'
+    checks.db = 'unavailable'
   }
 
   const hasRedis = Boolean(process.env.REDIS_HOST || process.env.REDIS_URL)
   if (hasRedis) {
     try {
       const { getRedisClient } = await import('@/lib/redisClient')
-      const redis = await getRedisClient()
-      if (redis) {
-        await redis.ping()
-        results.redis = 'ok'
-      } else {
-        results.redis = 'unavailable'
-      }
+      const redis = await withTimeout(getRedisClient())
+      if (!redis) throw new Error('no client')
+      await withTimeout(redis.ping())
+      checks.redis = 'ok'
     } catch {
-      results.redis = 'unavailable'
+      checks.redis = 'degraded'
     }
   }
 
-  const allOk = Object.values(results).every(v => v === 'ok')
-  const status = allOk ? 200 : 503
-
-  return NextResponse.json({ status: allOk ? 'ready' : 'not_ready', checks: results }, { status })
+  const ready = checks.db === 'ok'
+  return NextResponse.json({ status: ready ? 'ready' : 'not_ready', checks }, { status: ready ? 200 : 503 })
 }
