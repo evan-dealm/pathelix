@@ -173,7 +173,7 @@ describe('GET /api/tours/pdf — real mode', () => {
 
   // Regression: found via manual QA — /api/tours/pdf 500'd on every single driver in
   // production (real root cause: dual React module instance between webpack-bundled route
-  // handler and @react-pdf/renderer — see docs/deploiement.md §4). Fixed by moving rendering
+  // handler and @react-pdf/renderer — see ARCHITECTURE.md §7). Fixed by moving rendering
   // into a dedicated worker process (src/workers/pdfWorker.ts) that Next's bundler never
   // touches — see generatePdfViaWorker in src/lib/queue/pdfQueue.ts. This test now covers the
   // route's other failure mode: the worker itself unreachable or timing out, which must 503

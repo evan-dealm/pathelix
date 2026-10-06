@@ -73,7 +73,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // Rendered in a dedicated worker process (src/workers/pdfWorker.ts), not in this route
     // handler — @react-pdf/renderer loads its own React instance, which collides with the one
     // Next's webpack build bundles for this route (dual package hazard, see
-    // docs/deploiement.md §4). No process has both problems at once.
+    // ARCHITECTURE.md §7). No process has both problems at once.
     let pdf: Buffer
     try {
       pdf = await generatePdfViaWorker({ kind: 'tour', tenantId, props })

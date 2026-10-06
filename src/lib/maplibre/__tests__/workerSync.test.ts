@@ -6,7 +6,7 @@ import path from 'node:path'
 // Guards against the committed public/maplibre/<version>/ worker files drifting from the
 // installed maplibre-gl package — e.g. someone bumps the maplibre-gl dependency but forgets to
 // rerun the postinstall sync script (or runs `npm ci --ignore-scripts`, which skips postinstall
-// entirely — see MIGRATION_MAPLIBRE_LOG.md, "Investigation 3", point 2.3 on why the committed
+// entirely — see ARCHITECTURE.md §9 on why the committed
 // files must be self-sufficient without that hook ever running).
 const ROOT = path.join(__dirname, '..', '..', '..', '..')
 const { version } = JSON.parse(

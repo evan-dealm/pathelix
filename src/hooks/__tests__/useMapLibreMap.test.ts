@@ -76,7 +76,7 @@ function containerRefWithDiv() {
 }
 
 describe('useMapLibreMap', () => {
-  // Regression test for the real bug found in MIGRATION_MAPLIBRE_LOG.md "Investigation 2":
+  // Regression test for the real bug found in ARCHITECTURE.md §9:
   // maplibre-gl's own worker-URL auto-resolution (`import.meta.url`-based) silently breaks
   // once re-bundled by Next.js's webpack — no error, no console warning, the map's 'load'
   // event just never fires because its tile-loading Worker never runs real code. The fix is

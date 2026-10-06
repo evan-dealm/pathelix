@@ -4,8 +4,8 @@ import { login, waitForAdminReady, navigateToTab } from './helpers'
 // Full-data validation of FleetMap against a real, non-trivial tenant (3 drivers, a real
 // planned tournée, an exutoire, a pool mission, and a live GPS position) — seeded via
 // scripts/seed-fleetmap-e2e.ts against the sandbox DB (never prod, always through
-// scripts/db-guard.sh). Runs after the fix documented in MIGRATION_MAPLIBRE_LOG.md
-// "Investigation 2"; the near-empty tenant in maplibre-migration.spec.ts proves the map loads
+// scripts/db-guard.sh). Runs after the fix documented in ARCHITECTURE.md §9
+//; the near-empty tenant in maplibre-migration.spec.ts proves the map loads
 // at all, this proves the actual data-driven behavior (markers, routes, interactions) works
 // end to end against real Prisma-backed data, on a production build.
 //
@@ -54,7 +54,7 @@ test.describe('FleetMap — full-data validation (real tenant, real tournée)', 
     })
     page.on('pageerror', err => consoleErrors.push(err.message))
     // Mission emoji are now rendered via registered icon-image (not a text-field glyph — see
-    // MIGRATION_MAPLIBRE_LOG.md "Investigation 3"), so no 404 is expected from OpenFreeMap's
+    // ARCHITECTURE.md §9), so no 404 is expected from OpenFreeMap's
     // font server at all. Track every 4xx/5xx response with zero tolerance below.
     page.on('response', res => {
       if (res.status() >= 400) failedResponses.push(`${res.status()} ${res.url()}`)
@@ -131,7 +131,7 @@ test.describe('FleetMap — full-data validation (real tenant, real tournée)', 
     expect(missionOneCoords![1]).toBeCloseTo(MISSION_ONE.lat, 2)
 
     // ── 2b. Mission emoji are genuinely rendered as icon-image, not blank text-field glyphs ──
-    // See MIGRATION_MAPLIBRE_LOG.md "Investigation 3": OpenFreeMap's font server has no emoji
+    // See ARCHITECTURE.md §9: OpenFreeMap's font server has no emoji
     // coverage, so a literal emoji text-field renders as an empty box. Proof requires both that
     // the image was actually registered (map.hasImage) AND that the rendered features reference
     // it via icon-image (queryRenderedFeatures) — either alone could pass on a stale/half-wired

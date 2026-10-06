@@ -16,7 +16,7 @@
  *   is always a bug (either a stale value or a genuine attempt to write into another tenant),
  *   never a legitimate use case.
  *
- * What this extension does NOT cover — audited manually instead (see QUALITE_PROD_LOG.md
+ * What this extension does NOT cover — audited manually instead (see SECURITY.md
  * "Phase 1", section "Ce que l'extension ne couvre pas"):
  * - Nested writes through relations (e.g. `driver.create({ data: { unavailability: { create:
  *   [...] } } })`) — `$allOperations` fires once for the top-level call, never for a nested

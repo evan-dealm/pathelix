@@ -300,7 +300,7 @@ function FleetMapInner({
     })
     // Mission emoji are rendered as `icon-image`, not `text-field`: OpenFreeMap's font glyph
     // server has zero pictographic coverage, so a literal emoji in text-field 404s per Unicode
-    // range and renders blank (see MIGRATION_MAPLIBRE_LOG.md, "Investigation 3"). Each emoji is
+    // range and renders blank (see ARCHITECTURE.md §9). Each emoji is
     // canvas-drawn and registered via `ensureEmojiImage` before it's ever referenced here (in
     // the mission-data effect below); `installEmojiImageFallback` is the safety net for any
     // gap between the two.
@@ -311,7 +311,7 @@ function FleetMapInner({
         'icon-image': ['get', 'emoji'],
         // `icon-size` is a layout property — layout properties cannot read feature-state
         // (only paint properties can; confirmed via a real MapLibre 'error' event during
-        // Investigation 2, see MIGRATION_MAPLIBRE_LOG.md). Kept constant; the circle
+        // see ARCHITECTURE.md §9). Kept constant; the circle
         // layer's radius/stroke-width (paint properties, feature-state-driven) already
         // carry the hover feedback.
         'icon-size': 1,

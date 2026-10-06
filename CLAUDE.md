@@ -1,175 +1,75 @@
 # CLAUDE.md — Pathélix
 
-> Context for Claude Code sessions. Read this before touching anything.
+> Context for Claude Code sessions. Product/tech docs: README.md, FEATURES.md, ARCHITECTURE.md,
+> OPERATIONS.md, SECURITY.md — keep them true when you change behaviour (≤ 5 docs, no new
+> audit/log .md files: history belongs in commit messages).
 
 ## Project identity
 
-**Pathélix** — multi-tenant B2B SaaS for fleet management and route optimization.
-Stack: Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prisma 7 · Zustand · TanStack Query 5 · Tailwind CSS 3 · MapLibre GL JS · Zod 4 · BullMQ + Redis · Valhalla/OSRM · Sentry · next-intl · Vitest
+Multi-tenant B2B SaaS for fleet management and route optimisation (skip-bin hauliers first).
+Next.js 15.5 App Router · TypeScript 5.9 strict · PostgreSQL 16 + Prisma 7 (`@prisma/adapter-pg`,
+client in `src/generated/prisma`) · Zustand · TanStack Query 5 · Tailwind 3 · MapLibre GL JS ·
+Zod 4 · BullMQ + Redis (optional) · Valhalla · Sentry · Vitest + Playwright.
 
 ## Critical invariants — never break these
 
-1. **Multi-tenant isolation**: use `getTenantDb(tenantId)` from `src/lib/tenantDb.ts` for every tenant-scoped model — it injects `tenantId` structurally (Prisma Client Extension), rather than relying on each call site to remember `where: { tenantId }` by hand. Migration complete (see `QUALITE_PROD_LOG.md` "Phase 1" for the full history) — `.eslintrc.json`'s `no-restricted-imports` bans importing `@/lib/db` directly outside a reviewed whitelist, and fails the lint gate if a migrated file regresses. Raw `prisma`/`unscopedPrisma` access is reserved for the documented cross-tenant whitelist (webhooks resolving tenant by secret, superadmin routes, batch workers, health checks, cross-tenant-by-design aggregates like `admin/geocoding-audit` and `benchmark`) — never for a normal tenant-scoped query.
-2. **Auth header chain**: middleware strips `x-user-id`, `x-user-role`, `x-tenant-id` from inbound requests then re-injects them from the verified JWT. Route handlers read context only via `getRequestContext(req)` in `src/lib/data/context.ts` — never `req.headers.get('x-user-role')` directly.
-3. **CSP canonical source**: `next.config.mjs` is the single source of truth for all security headers. Do not add security headers in `middleware.ts`.
-4. **Mock mode flag**: `process.env.USE_MOCK_DATA !== 'false'` (default ON). All API routes must use this pattern, not `=== 'true'`.
-5. **VRP engine integrity**: `src/lib/vrp/` implements MV-ALNS v6. The 7-step pipeline, 3 ML quality shields, and CE 561/2006 compliance logic must be preserved exactly.
-6. **Zod validation at boundaries**: all POST/PUT API routes validate with a typed Zod schema before any DB write. Use `src/lib/schemas.ts` for shared schemas, inline for route-specific ones.
+1. **Tenant isolation**: tenant-scoped data goes through `getTenantDb(tenantId)`
+   (`src/lib/tenantDb.ts`). Importing `@/lib/db` / `unscopedPrisma` is banned by ESLint outside
+   the reviewed cross-tenant whitelist (webhooks resolving tenant by secret, superadmin, workers,
+   health checks, cross-tenant aggregates). Client-supplied foreign ids (driverId, clientId,
+   siteId…) are verified in-tenant before writing (`src/lib/tenantRefs.ts`).
+2. **Identity**: middleware strips `x-user-id`/`x-user-role`/`x-tenant-id` and re-injects them
+   from the verified JWT or API key. Routes read identity only via `getRequestContext(req)`.
+3. **Security headers** live only in `next.config.mjs` (baked at build time).
+4. **Mock mode**: `process.env.USE_MOCK_DATA !== 'false'` (default ON) — never `=== 'true'`.
+5. **VRP engine** (`src/lib/vrp/`, MV-ALNS 7-step pipeline, ML shields, CE 561/2006): route cost
+   is ONE simulator in `routeCost.ts`; prefix states and insertion/removal deltas replay it —
+   never reintroduce a separate delta implementation (`deltaConsistency.test.ts` guards this).
+   `enforceMissionConservation` guarantees each input mission appears exactly once in output.
+6. **Zod at boundaries**: every POST/PUT validates before any DB write.
+7. **Permissions** are enforced server-side (`hasPermission`); UI gating is UX only.
+8. **Drivers are deny-by-default** in middleware (`DRIVER_API_ALLOWLIST`); routes still check
+   ownership.
 
-## Key files
-
-| File | Role |
-|------|------|
-| `src/middleware.ts` | Route guard: strips spoofed headers, verifies JWT, RBAC by role |
-| `src/lib/session.ts` | JWT HMAC-SHA256 sign/verify, `SessionPayload` interface |
-| `src/lib/data/context.ts` | `getRequestContext(req)` — canonical way to read tenantId + role |
-| `src/lib/db.ts` | Prisma singleton with PrismaPg adapter (pool from `DB_POOL_SIZE`) — raw client, see invariant #1 |
-| `src/lib/tenantDb.ts` | `getTenantDb(tenantId)` — the tenant-scoped Prisma Client Extension, see invariant #1 |
-| `src/lib/env.ts` | Zod env validation, called from `instrumentation.ts` + every BullMQ worker — hard-fails on prod+mock or a short `SESSION_SECRET` |
-| `src/lib/idempotency.ts` | `withIdempotency()` — replays a stored response for a repeated `Idempotency-Key`, used by the offline driver queue |
-| `src/lib/schemas.ts` | Shared Zod schemas (Mission, Driver, Vehicle, Exutoire, Plan…) |
-| `src/lib/rateLimit.ts` | Redis sliding-window rate limiter + in-memory fallback |
-| `src/lib/permissions.ts` | Granular permission check, 60s cache, `ALL_PERMISSIONS` list |
-| `src/lib/vrp/index.ts` | VRP engine entry point — 7-step pipeline |
-| `src/lib/vrp/routeCost.ts` | Route cost simulation (inline, no external call) |
-| `src/lib/vrp/formatSolution.ts` | Expand VRP solution → driver step list |
-| `src/workers/vrpWorker.ts` | BullMQ VRP worker + J-7 warm-start |
-| `src/workers/mlProfileWorker.ts` | Nightly CRON ML coefficient recalculation |
-| `src/lib/metricCollector.ts` | ML Phase 1 — terrain metric collection |
-| `src/stores/planningStore.ts` | Central Zustand store for planning state |
-| `src/app/admin/page.tsx` | Admin UI (13+ tabs) |
-| `src/app/driver/[id]/page.tsx` | Mobile driver interface |
-| `prisma/schema.prisma` | 35 models, 4 enums, full index set |
-| `next.config.mjs` | CSP, HSTS, security headers, Sentry config |
-
-## Auth model
-
-- JWT HMAC-SHA256 (Web Crypto API), stored in HttpOnly `session` cookie, `SameSite=strict`
-- Session payload: `sub` (userId), `role`, `tenantId`, `driverRef?`, `trade?`, `iat`, `exp`
-- Impersonation: superadmin gets `sub=sa:<original>`, `role=admin` for target tenant
-- Roles: `superadmin` > `admin` > `dispatcher` > `driver`
-- Granular permissions via `UserPermission` table, default by role in `src/lib/permissions.ts`
-
-## API pattern
+## Patterns
 
 ```typescript
-// Standard route handler pattern:
-import { getRequestContext } from '@/lib/data/context'
-
-export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  // tenantId guaranteed non-null (middleware verified JWT)
-  // filter ALL queries: where: { tenantId, ... }
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  const { tenantId, role, userId } = getRequestContext(req)
+  if (!(await hasPermission(userId, role, 'manage_missions'))) return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  const parsed = MySchema.safeParse(await req.json())
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
+  const db = getTenantDb(tenantId)
+  // …
 }
 ```
 
-POST/PUT routes always validate with Zod before writing:
-```typescript
-const body = await req.json()
-const parsed = MySchema.safeParse(body)
-if (!parsed.success) return NextResponse.json({ error: parsed.error.format() }, { status: 400 })
-```
-
-## Database
-
-- PostgreSQL 16, Prisma 7 with `@prisma/adapter-pg`
-- Migrations in `prisma/migrations/` — always run `prisma migrate dev` for schema changes
-- 10 MissionTypes: `POSER RETIRER ECHANGER VIDER PAUSE CHARGER_IMMEDIAT DEPLACER TASSER EXPEDIER ALLER_RETOUR`
-- `VIDER` and `PAUSE` are synthetic (generated by VRP, not created by users)
-- Exutoire linked to Mission via `linkedExutoireId` (not to Client)
-- `Plan.missions` is a JSON array of `PlannedMission[]`
-- `TenantSettings.valhallaFactor` default `1.60` — ML-calibrated travel time correction factor
-
-## VRP pipeline (7 steps)
-
-1. Load ML coefficients + familiarity scores
-2. Build routing matrix: External API (Trimble/HERE/generic, if configured) → Valhalla → haversine
-3. Multi-sector decomposition if > 20 drivers (`targetSectorSize()`)
-4. MV-ALNS with stochastic CVaR + Pareto front
-5. Cross-sector or-opt + 3-opt on worst routes
-6. Ejection chain search
-7. Format solution → `PlannedMission[]` with depot steps
-
-## ML system (3 phases)
-
-- **Phase 1** (`metricCollector.ts`): collect real terrain metrics after each mission
-- **Phase 2** (`mlProfileWorker.ts`): nightly CRON computes duration/maneuver/travel coefficients per tenant/driver/type/site
-- **Phase 3** (shields): 3 quality guards prevent coefficient drift — min sample count, max deviation, outlier rejection
-
-## Webhooks security
-
-| Webhook | Auth mechanism |
-|---------|----------------|
-| Nessy | HMAC-SHA256, secret per tenant via `/api/integrations` (type `nessy`) |
-| OBD | Bearer token, secret per tenant via `/api/integrations` (type `obd`) |
-| Geotab | API key per tenant via `/api/integrations` (type `geotab`) |
-| Samsara | API key per tenant via `/api/integrations` (type `samsara`) |
-
-All four resolve the tenant by finding which enabled integration's own secret/key matches the
-request — never from a client-supplied header. `NESSY_WEBHOOK_SECRET` / `OBD_WEBHOOK_TOKEN` env
-vars are deprecated (see `docs/configuration.md`) — a single shared secret + a client-asserted tenant is a real
-cross-tenant risk, not an acceptable tradeoff.
-
-## Dev commands
-
-```bash
-npm run dev                    # Dev server (localhost:3000)
-npm run test                   # Vitest (single run)
-npm run test:watch             # Vitest watch mode
-npm run worker                 # BullMQ VRP worker
-npm run worker:ml              # ML profile worker
-npx prisma migrate dev         # Apply schema migrations
-npx prisma generate            # Regenerate Prisma client
-npm run db:seed                # Realistic seed data
-npm run db:seed-superadmin     # Create superadmin account
-npx prisma studio              # DB GUI
-```
-
-## Environment variables (required)
-
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `SESSION_SECRET` | JWT signing secret (≥ 32 chars) |
-| `USE_MOCK_DATA` | `false` for real DB (default: mock ON) |
-| `REDIS_URL` | Redis (optional — in-memory fallback if absent) |
-| `VALHALLA_URL` | Self-hosted Valhalla routing engine |
-| `ROUTING_API_TYPE` | External routing API: `trimble`, `here`, or `generic` (optional) |
-| `ROUTING_API_KEY` | API key for external routing provider (optional) |
-| `ROUTING_API_URL` | Base URL for `generic` type or Trimble override (optional) |
-| `FORCE_HTTPS` | Set to `false` to disable HSTS header (default: enabled) |
-| `AI_CALLBACK_SECRET` | HMAC secret for AI engine webhook callback |
+- Client fetches check `res.ok` and surface the server error (`apiRequest` in `src/lib/apiClient.ts`);
+  list routes are paginated — use `fetchAllPages` for full lists.
+- Caches read by both middleware and routes must live on `globalThis` (separate bundles).
+- Workers: `validateEnv()` only when the file is the entry point; graceful shutdown via
+  `installWorkerLifecycle`; scheduled work = BullMQ repeatable job.
+- Outbound calls to admin-configured URLs go through `src/lib/outboundUrl.ts` (SSRF guard), with timeouts.
 
 ## Conventions
 
-- No `as any` casts — use typed interfaces or unknown + type guard
-- Route handlers read identity only via `getRequestContext(req)`, never raw headers
-- All public functions in `src/lib/` need JSDoc if non-obvious
-- Design system: Geist + Inter fonts, premium light-mode palette, `OrbitalBackground` component
-- Multi-sector vocabulary: UI labels change per `trade` field on Tenant (6 sectors supported)
-- No direct `console.log` in production code — use `createLogger()` from `src/lib/logger.ts`
+- No `as any`; typed interfaces or `unknown` + guards. JSDoc on non-obvious `src/lib` exports.
+- No `console.log` in production code — `createLogger()` from `src/lib/logger.ts`.
+- UI copy in French with proper accents; vocabulary adapts to the tenant `trade`.
+- Design: Geist + Inter, light palette, brand blue `#0055A4`, `OrbitalBackground`.
+- Never skip/disable a failing test; fix the bug or the wrong test, with a reason.
+- Commit messages explain the user-visible bug/why; end with the Co-Authored-By line.
 
-## What was audited and fixed (April 2026)
+## Commands
 
-- **S1** `/api/templates/route.ts` — full Zod `TemplateSchema`, MissionType validated via enum, lat/lng bounded
-- **S2** `/api/templates/[id]/route.ts` — switched to `getRequestContext(req)` pattern
-- **A1** `/api/driver-plan/[id]/route.ts` — `USE_MOCK_DATA !== 'false'` (was `=== 'true'`)
-- **T1** `src/lib/importExportColumns.ts` — 7 typed interfaces, type predicates replacing `filter(Boolean)`
-- **A2** CSP consolidated to `next.config.mjs`, `applySecurityHeaders()` removed from middleware
-- **Phase 4** `src/types/maplibre-gl.d.ts` removed (dead type stub, package not installed)
+```bash
+npm run dev | build | lint | typecheck
+npm test                          # Vitest
+npx playwright test               # E2E (prefer against next build && next start)
+npm run worker                    # VRP; also worker:pdf | worker:ml | worker:recurring | worker:retention
+npx prisma migrate dev | generate
+npm run db:seed | db:seed-superadmin
+```
 
-## What was audited and fixed (September 2026 — mise en qualité production)
-
-- **Q1** `src/app/api/vehicles/route.ts`/`[id]/route.ts` — `assignedDriverId` had no tenant-aware
-  FK, a driver id from another tenant could be linked to a vehicle unverified. Now checked via
-  `getTenantDb(tenantId).driver.findFirst` before connecting.
-- **Q2** `src/lib/env.ts` — production startup now hard-fails if `USE_MOCK_DATA !== 'false'`
-  (previously unchecked); all 4 BullMQ workers call `validateEnv()` at startup.
-- **Q3** `src/lib/trackdechets/client.ts` — Trackdéchets HALT moved from documentation
-  convention to an actual code gate (`TdHaltError`), see `docs/deploiement.md` §5.
-- **Q4** `src/lib/syncQueue.ts` / `public/sw.js` — N23 sync-queue race fixed with the Web Locks
-  API (shared lock between page and Service Worker); offline driver actions are now idempotent
-  (`src/lib/idempotency.ts`, new `IdempotencyKey` model) — a replayed action no longer
-  double-fires ERP sync / duplicates an audit log row.
-- Full detail, decisions, and what's still open (Phases 4-8 of that mission largely untouched):
-  `QUALITE_PROD_LOG.md`.
+Manual testing: sandbox DB `manualtest_sandbox_never_prod` via `.manualtest/env.sh` (gitignored),
+guard scripts with `scripts/db-guard.sh`. Never run exploratory writes against the `.env` database.

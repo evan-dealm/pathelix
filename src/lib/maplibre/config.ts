@@ -3,7 +3,7 @@
  * style to use, and the shared defaults every map on the site should start from.
  *
  * Style selection: `NEXT_PUBLIC_MAPTILER_KEY` present → MapTiler vector style; absent →
- * OpenFreeMap Liberty (free, no key, verified reachable — see MIGRATION_MAPLIBRE_LOG.md).
+ * OpenFreeMap Liberty (free, no key, verified reachable — see ARCHITECTURE.md §9).
  * Never demotiles.maplibre.org (too sparse for real use).
  */
 
@@ -32,8 +32,8 @@ export function hasMapTilerKey(): boolean {
  * ends up trying to run the page's own HTML as a worker script. No error is thrown anywhere:
  * the worker exists but never runs real code, so vector tiles are requested internally but
  * never actually fetched/parsed, and the map's `'load'` event never fires — confirmed via
- * direct instrumentation of the Worker constructor, see MIGRATION_MAPLIBRE_LOG.md
- * "Investigation 2". Serving the worker script ourselves as a plain static file sidesteps the
+ * direct instrumentation of the Worker constructor, see ARCHITECTURE.md §9
+ *. Serving the worker script ourselves as a plain static file sidesteps the
  * bundler-resolution problem entirely — `maplibregl.setWorkerUrl(WORKER_URL)` (called once,
  * before any Map is constructed) takes priority over `defaultWorkerUrl()`.
  *

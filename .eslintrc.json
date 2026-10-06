@@ -12,7 +12,7 @@
     "no-restricted-imports": ["error", {
       "paths": [{
         "name": "@/lib/db",
-        "message": "Direct access to the raw Prisma client bypasses tenant isolation. Import getTenantDb(tenantId) from '@/lib/tenantDb' for tenant-scoped models, or unscopedPrisma from the same file for the reviewed cross-tenant whitelist (see QUALITE_PROD_LOG.md 'Phase 1'). If this file is genuinely on that whitelist, add it to the matching override in .eslintrc.json instead of importing @/lib/db directly."
+        "message": "Direct access to the raw Prisma client bypasses tenant isolation. Import getTenantDb(tenantId) from '@/lib/tenantDb' for tenant-scoped models, or unscopedPrisma from the same file for the reviewed cross-tenant whitelist (see SECURITY.md §1). If this file is genuinely on that whitelist, add it to the matching override in .eslintrc.json instead of importing @/lib/db directly."
       }]
     }]
   },

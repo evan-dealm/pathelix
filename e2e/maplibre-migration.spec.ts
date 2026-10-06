@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test'
 import { login, waitForAdminReady, navigateToTab } from './helpers'
 
 // Real-browser verification for the Leaflet -> MapLibre GL JS migration (2026-09-22, see
-// MIGRATION_MAPLIBRE_LOG.md). jsdom (used by the unit/component tests) has no WebGL, so this
+// ARCHITECTURE.md §9). jsdom (used by the unit/component tests) has no WebGL, so this
 // is the only layer that can actually confirm the map renders a real canvas with real pixels
 // rather than just "the code that would build one didn't throw" — this is exactly how the
-// FleetMap defect documented in "Investigation 2" of the migration log was found and confirmed
+// FleetMap defect documented in of the migration log was found and confirmed
 // fixed: mocked tests could not have caught a bundler-worker-resolution bug at all.
 
 test.describe('MapLibre migration — real browser rendering', () => {
@@ -51,7 +51,7 @@ test.describe('MapLibre migration — real browser rendering', () => {
 
 test.describe('MapLibre migration — LiveTrackingMap with a real seeded position', () => {
   test('LiveTrackingMap (Telematique tab) renders a real vector map, marker and popup for a seeded position', async ({ page }) => {
-    // MIGRATION_MAPLIBRE_LOG.md "Investigation 3", Point 3: TelematicsTab only mounts
+    // ARCHITECTURE.md §9: TelematicsTab only mounts
     // LiveTrackingMap once `data.positions.length > 0` (see TelematicsTab.tsx) — this test used
     // to `if (count > 0)` around its assertions, which meant the whole check silently never ran
     // against this tenant (no live position was ever seeded for it), so it could never have

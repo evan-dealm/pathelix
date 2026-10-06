@@ -24,7 +24,7 @@ const log = createLogger('pdfWorker')
 // Rendering here — a standalone process, not bundled by Next's webpack build for the route
 // handler — is the whole point of this worker: @react-pdf/renderer's own React instance can
 // never collide with Next's here, since there is no Next instance in this process at all. That
-// dual-package hazard (see docs/deploiement.md §4) is what made in-process rendering crash
+// dual-package hazard (see ARCHITECTURE.md §7) is what made in-process rendering crash
 // under `/api/tours/pdf` and `/api/reports/pdf` in the first place.
 async function processJob(job: Job<PdfJobData, PdfJobResult>): Promise<PdfJobResult> {
   const data = job.data

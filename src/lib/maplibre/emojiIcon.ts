@@ -3,7 +3,7 @@ import type * as maplibregl from 'maplibre-gl'
 /**
  * OpenFreeMap's font glyph server has no pictographic/emoji coverage — a `text-field` with
  * a literal emoji silently 404s per Unicode range and renders as a blank glyph (see
- * MIGRATION_MAPLIBRE_LOG.md, "Investigation 3"). This draws the emoji to an offscreen canvas
+ * ARCHITECTURE.md §9). This draws the emoji to an offscreen canvas
  * using the browser's own emoji font and registers it as a raster `icon-image` instead, which
  * bypasses the glyph pipeline entirely.
  *
