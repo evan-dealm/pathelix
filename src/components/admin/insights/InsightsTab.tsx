@@ -7,27 +7,29 @@ import { SubTabs, eur } from '../commercial/shared'
 import type { Kpis } from '@/lib/insights/kpis'
 import type { Forecast } from '@/lib/insights/forecast'
 import type { ProfitGroup, MissionProfit, GroupKey } from '@/lib/insights/profitability'
+import { SimulationView } from './SimulationView'
 
-type View = 'kpis' | 'profit' | 'forecast'
+type View = 'kpis' | 'profit' | 'forecast' | 'simulate'
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86_400_000))
 const fr = (d: string) => d.split('-').reverse().join('/')
 const num = (n: number | null | undefined, unit = '') => (n === null || n === undefined ? '—' : `${n.toLocaleString('fr-FR')}${unit}`)
 
-/** Pilotage: operations cockpit, profitability (view_costs) and volume forecast. */
+/** Pilotage: operations cockpit, profitability (view_costs), volume forecast and what-if simulation (optimize). */
 export function InsightsTab() {
   const { permissions } = usePermissions()
   const canCosts = hasPerm(permissions, 'view_costs')
+  const canOptimize = hasPerm(permissions, 'optimize')
   const [view, setView] = useState<View>('kpis')
   const [from, setFrom] = useState(daysAgo(29))
   const [to, setTo] = useState(iso(new Date()))
-  const tabs: Array<[View, string]> = [['kpis', 'Indicateurs'], ...(canCosts ? [['profit', 'Rentabilité'] as [View, string]] : []), ['forecast', 'Prévisions']]
+  const tabs: Array<[View, string]> = [['kpis', 'Indicateurs'], ...(canCosts ? [['profit', 'Rentabilité'] as [View, string]] : []), ['forecast', 'Prévisions'], ...(canOptimize ? [['simulate', 'Simulation'] as [View, string]] : [])]
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center gap-4 border-b border-surface-200 px-4 py-3">
         <h1 className="font-display text-lg font-semibold text-surface-900">Pilotage</h1>
         <SubTabs label="Pilotage" value={view} onChange={setView} tabs={tabs} />
-        {view !== 'forecast' && (
+        {(view === 'kpis' || view === 'profit') && (
           <div className="ml-auto flex items-center gap-2 text-sm">
             <label className="flex items-center gap-1">Du<input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} className="rounded-lg border border-surface-200 px-2 py-1" /></label>
             <label className="flex items-center gap-1">au<input type="date" value={to} min={from} onChange={e => setTo(e.target.value)} className="rounded-lg border border-surface-200 px-2 py-1" /></label>
@@ -38,6 +40,7 @@ export function InsightsTab() {
         {view === 'kpis' && <KpiView from={from} to={to} />}
         {view === 'profit' && canCosts && <ProfitView from={from} to={to} />}
         {view === 'forecast' && <ForecastView />}
+        {view === 'simulate' && canOptimize && <SimulationView />}
       </div>
     </div>
   )
