@@ -2,6 +2,7 @@ import type { Mission } from '@/lib/types'
 import type { MissionInput, MissionUpdateInput } from '@/lib/schemas'
 import { prismaRowToMission } from '@/lib/prismaMappers'
 import { getMissionStore } from '@/app/api/missions/_store'
+import { releaseMissionReservation } from '@/lib/containers/service'
 import { getTenantDb } from '@/lib/tenantDb'
 import { assertTenantRefs, ForeignTenantRefError } from '@/lib/tenantRefs'
 
@@ -68,6 +69,7 @@ const MISSION_SELECT = {
   notes: true, tags: true, requiredSkills: true, externalRef: true,
   needsGeocode: true,
   weightKg: true, weightSource: true, weightUncertaintyKg: true, binTareKg: true, materialId: true,
+  containerTypeId: true, placedContainerId: true, collectedContainerId: true,
 
   actualDurationMin: true, actualDistanceKm: true,
   completedAt: true, cancelledAt: true, cancelReason: true,
@@ -88,6 +90,7 @@ const MISSION_LIST_SELECT = {
   notes: true, tags: true, requiredSkills: true, externalRef: true,
   needsGeocode: true,
   weightKg: true, weightSource: true, weightUncertaintyKg: true, binTareKg: true, materialId: true,
+  containerTypeId: true, placedContainerId: true, collectedContainerId: true,
   actualDistanceKm: true,
   completedAt: true, cancelledAt: true, cancelReason: true,
   driverComment: true,
@@ -175,10 +178,13 @@ export async function deleteMission(tenantId: string, id: string): Promise<boole
     return true
   }
   try {
-    const result = await getTenantDb(tenantId).mission.updateMany({
+    const db = getTenantDb(tenantId)
+    const result = await db.mission.updateMany({
       where: { id },
       data:  { archived: true },
     })
+    // The bin reserved for this pose goes back to the available pool.
+    if (result.count > 0) await releaseMissionReservation(db, id).catch(() => undefined)
     return result.count > 0
   } catch (err) {
     if (err instanceof Error && 'code' in err && (err as { code: string }).code === 'P2025') return false

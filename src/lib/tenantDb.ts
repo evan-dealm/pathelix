@@ -54,7 +54,7 @@ export const TENANT_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'AuditLog', 'Holiday', 'TenantSettings', 'DriverUnavailability', 'UserPermission', 'ApiKey',
   'WeeklyPlan', 'Integration', 'InterventionMetric', 'TenantMLProfile', 'MissionTemplate',
   'DeliveryProof', 'PushSubscription', 'AiJob', 'TrackdechetsAccount', 'Bsd', 'IdempotencyKey',
-  'PlanningNote', 'Material', 'VehicleUnavailability',
+  'PlanningNote', 'Material', 'VehicleUnavailability', 'ContainerType', 'Container', 'ContainerEvent',
 ])
 
 const READ_OR_DELETE_WHERE_OPS = new Set([

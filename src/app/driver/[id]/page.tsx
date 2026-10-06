@@ -19,6 +19,9 @@ import { Sheet } from '@/components/driver/Sheet'
 import { SignaturePad } from '@/components/driver/SignaturePad'
 import { IncidentForm, NoteForm, WeightForm } from '@/components/driver/ReportForms'
 import { ScanTicketButton } from '@/components/driver/ScanTicketButton'
+import { ContainerScanner } from '@/components/driver/ContainerScanner'
+import type { DriverMissionContainers } from '@/lib/containers/driverInfo'
+import type { ScanRole } from '@/lib/containers/scan'
 import { STATUS_LABEL, INCIDENT_TYPES, minToHHMM, navigationUrl } from '@/components/driver/driverUi'
 
 type DriverPlanResponse = {
@@ -30,9 +33,13 @@ type DriverPlanResponse = {
   date: string
   trade?: string | null
   exutoires?: Exutoire[]
+  /** Bins expected per mission (to check a scan offline). */
+  containers?: Record<string, DriverMissionContainers>
 }
 
-type SheetKind = 'signature' | 'incident' | 'note' | 'weight' | 'logout' | null
+type SheetKind = 'signature' | 'incident' | 'note' | 'weight' | 'scan' | 'logout' | null
+
+const BIN_MISSION_TYPES = new Set(['POSER', 'RETIRER', 'ECHANGER', 'ALLER_RETOUR', 'CHARGER_IMMEDIAT', 'DEPLACER'])
 
 // Each kind of stop has its own short field flow — a dump or a break is not a client job.
 function flowFor(type: string): readonly MissionStatus[] {
@@ -101,6 +108,7 @@ export default function DriverPage() {
   const [statuses, setStatuses] = useState<Record<string, MissionStatus>>({})
   const [photos, setPhotos] = useState<Record<string, string>>({})
   const [weights, setWeights] = useState<Record<string, number>>({})
+  const [scans, setScans] = useState<Record<string, string[]>>({})
   const [sheet, setSheet] = useState<SheetKind>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -318,6 +326,15 @@ export default function DriverPage() {
     }
   }, [record, driverId, tourDate, flash])
 
+  const onContainerScan = useCallback(async (m: PlannedMission, code: string, role: ScanRole, label: string) => {
+    setSheet(null)
+    setScans(s => ({ ...s, [m.id]: [...(s[m.id] ?? []), label] }))
+    const pos = await currentPosition()
+    if (await record('/api/driver-scan', {
+      driverId, date: tourDate, missionId: m.id, code, role, scannedAt: new Date().toISOString(), ...(pos ?? {}),
+    }, label)) flash(label)
+  }, [record, driverId, tourDate, flash])
+
   const logout = useCallback(async (force: boolean) => {
     if (pending > 0 && !force) { setSheet('logout'); return }
     await clearDriverDeviceData().catch(() => undefined)
@@ -423,6 +440,20 @@ export default function DriverPage() {
             {focused.accessNotes && (
               <p className="mt-3 rounded-2xl bg-black/20 px-3 py-2 text-sm"><span className="text-white/50">Accès : </span>{focused.accessNotes}</p>
             )}
+            {(() => {
+              const info = apiData?.containers?.[focused.id]
+              if (!info || (!info.placed && !info.collected && !info.expected)) return null
+              return (
+                <p className="mt-3 rounded-2xl bg-black/20 px-3 py-2 text-sm">
+                  {info.collected && <>À retirer : <strong>{info.collected.number}</strong>{info.placed || info.expected ? ' · ' : ''}</>}
+                  {info.placed ? <>À poser : <strong>{info.placed.number}</strong> ({info.placed.capacityM3} m³)</>
+                    : info.expected ? <>Benne à poser : {info.expected.typeName}</> : null}
+                </p>
+              )
+            })()}
+            {(scans[focused.id] ?? []).length > 0 && (
+              <ul className="mt-3 space-y-1 text-sm text-[#7EE2A8]">{scans[focused.id].map((s, i) => <li key={i}>✓ {s}</li>)}</ul>
+            )}
             {weights[focused.id] !== undefined && (
               <p className="mt-3 text-sm text-[#7EE2A8]">Pesée : {(weights[focused.id] / 1000).toLocaleString('fr-FR')} t</p>
             )}
@@ -450,6 +481,11 @@ export default function DriverPage() {
                   className="col-span-2 flex min-h-14 items-center justify-center rounded-2xl bg-white text-base font-semibold text-black sm:col-span-4">
                   Itinéraire
                 </a>
+              )}
+              {isClientStop && BIN_MISSION_TYPES.has(focused.type) && (
+                <button type="button" onClick={() => setSheet('scan')} className="col-span-2 min-h-12 rounded-2xl bg-[#FFC21A]/15 font-semibold text-[#FFD970] sm:col-span-4">
+                  Scanner la benne
+                </button>
               )}
               {isClientStop && (
                 <>
@@ -555,6 +591,12 @@ export default function DriverPage() {
           </Sheet>
           <Sheet open={sheet === 'note'} title="Note pour le dispatch" onClose={() => setSheet(null)}>
             {sheet === 'note' && <NoteForm onSubmit={c => void onNote(focused, c)} />}
+          </Sheet>
+          <Sheet open={sheet === 'scan'} title="Scanner la benne" onClose={() => setSheet(null)}>
+            {sheet === 'scan' && (
+              <ContainerScanner info={apiData?.containers?.[focused.id]} missionType={focused.type} driverId={driverId}
+                onScan={(code, role, label) => void onContainerScan(focused, code, role, label)} />
+            )}
           </Sheet>
           <Sheet open={sheet === 'weight'} title="Ticket de pesée" onClose={() => setSheet(null)}>
             {sheet === 'weight' && (

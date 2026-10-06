@@ -1,5 +1,6 @@
 'use client'
 
+import { MissionContainerPanel } from '@/components/admin/containers/MissionContainerPanel'
 import { useState, useEffect, useCallback } from 'react'
 import { Mission } from '@/lib/types'
 import { usePlanningStore } from '@/stores/planningStore'
@@ -191,6 +192,7 @@ export function MissionDetailModal({ mission, onEdit, onDelete, onDuplicate, onC
             </div>}
           </div>
         )}
+        {!mission.archived && <MissionContainerPanel mission={mission} />}
         {hasCoords && (
           <div>
             <div className="text-surface-400 text-[11px] uppercase tracking-wider mb-1">Coordonnées GPS</div>

@@ -60,6 +60,9 @@ model Tenant {
   userPermissions        UserPermission[]
   materials              Material[]
   vehicleUnavailabilities VehicleUnavailability[]
+  containerTypes         ContainerType[]
+  containers             Container[]
+  containerEvents        ContainerEvent[]
 }
 
 model User {
@@ -153,6 +156,7 @@ model Client {
   clientSites     ClientSite[]
   missions        Mission[]
   siteProducts    SiteProduct[]
+  containers      Container[]
 
   @@index([tenantId])
   @@index([tenantId, archived])
@@ -184,6 +188,7 @@ model Site {
   missions           Mission[]
   tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   siteProducts       SiteProduct[]
+  containers         Container[]
 
   @@index([tenantId])
   @@index([tenantId, archived])
@@ -293,6 +298,16 @@ model Mission {
   binTareKg            Float?          // empty bin weight, when known
   materialId           String?
   material             Material?       @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  // ─── Contenants ──────────────────────────────────────────────────────────
+  // Bin type expected (POSER/ECHANGER), the bin put down and the bin taken away. Set when the
+  // dispatcher reserves a bin or when the driver scans it; the container lifecycle follows the
+  // mission's field statuses (pose → at customer, retrait → on the truck…).
+  containerTypeId      String?
+  placedContainerId    String?
+  collectedContainerId String?
+  containerType        ContainerType?  @relation(fields: [containerTypeId], references: [id], onDelete: SetNull)
+  placedContainer      Container?      @relation("MissionPlacedContainer", fields: [placedContainerId], references: [id], onDelete: SetNull)
+  collectedContainer   Container?      @relation("MissionCollectedContainer", fields: [collectedContainerId], references: [id], onDelete: SetNull)
   dependsOn            Mission?        @relation("MissionDependency", fields: [dependsOnId], references: [id], onDelete: SetNull)
   dependents           Mission[]       @relation("MissionDependency")
   client               Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -317,6 +332,8 @@ model Mission {
   @@index([dependsOnId])
   @@index([generatedFromTemplateId])
   @@index([materialId])
+  @@index([placedContainerId])
+  @@index([collectedContainerId])
 }
 
 model MissionComment {
@@ -663,6 +680,121 @@ model Material {
 
   @@unique([tenantId, name])
   @@index([tenantId, archived])
+}
+
+enum ContainerStatus {
+  AVAILABLE    // au dépôt, vide, utilisable
+  RESERVED     // affectée à une pose planifiée
+  IN_TRANSIT   // sur un camion
+  AT_CUSTOMER  // posée chez un client
+  FULL         // chez le client, signalée pleine
+  TO_COLLECT   // chez le client, retrait demandé
+  AT_EXUTOIRE  // laissée à l'exutoire
+  MAINTENANCE  // en réparation
+  IMMOBILIZED  // hors service (sinistre, litige…)
+  LOST         // introuvable
+  ARCHIVED     // sortie du parc
+}
+
+/// A kind of bin of the fleet (benne 15 m³, ampliroll 30 m³, multibenne 8 m³…).
+model ContainerType {
+  id               String      @id @default(cuid())
+  tenantId         String
+  name             String
+  capacityM3       Float
+  lengthM          Float?
+  widthM           Float?
+  heightM          Float?
+  /// Empty weight (kg) — counted in the truck's load when the bin is full.
+  tareKg           Float?
+  /// Material names this type may carry (empty = any).
+  allowedMaterials Json        @default("[]")
+  /// Rental price per day (€ HT), default for quotes/invoices.
+  dailyRentalPrice Float?
+  purchaseCost     Float?
+  archived         Boolean     @default(false)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  containers       Container[]
+  missions         Mission[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, archived])
+}
+
+/// One physical bin. Its status and location follow the missions that move it; manual changes
+/// (maintenance, lost, …) are logged as events like everything else.
+model Container {
+  id              String          @id @default(cuid())
+  tenantId        String
+  /// Fleet number painted on the bin (e.g. B-00482), unique per tenant.
+  number          String
+  /// Random opaque token printed in the QR code — never the database id.
+  qrToken         String          @unique
+  typeId          String
+  status          ContainerStatus @default(AVAILABLE)
+  condition       String          @default("good")   // good | worn | damaged
+  clientId        String?
+  siteId          String?
+  latitude        Float?
+  longitude       Float?
+  /// Free label of where it is when not at a customer ("Dépôt Nord", "Exutoire X").
+  locationLabel   String          @default("")
+  /// Driver holding it while IN_TRANSIT.
+  driverId        String?
+  /// Mission it is reserved for / being moved by.
+  missionId       String?
+  materialId      String?
+  placedAt        DateTime?
+  lastRotationAt  DateTime?
+  lastMovementAt  DateTime?
+  purchaseDate    String?
+  purchaseCost    Float?
+  notes           String          @default("")
+  archived        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type            ContainerType   @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  client          Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  site            Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  events          ContainerEvent[]
+  placedBy        Mission[]       @relation("MissionPlacedContainer")
+  collectedBy     Mission[]       @relation("MissionCollectedContainer")
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, typeId, status])
+  @@index([tenantId, clientId])
+  @@index([tenantId, siteId])
+}
+
+/// History of a bin: every movement, status change, scan or note, with who/where/which mission.
+model ContainerEvent {
+  id          String           @id @default(cuid())
+  tenantId    String
+  containerId String
+  /// CREATED | RESERVED | PLACED | PICKED_UP | EMPTIED | RETURNED | STATUS | SCANNED | NOTE
+  type        String
+  fromStatus  ContainerStatus?
+  toStatus    ContainerStatus?
+  missionId   String?
+  clientId    String?
+  siteId      String?
+  driverId    String?
+  userId      String?
+  latitude    Float?
+  longitude   Float?
+  notes       String           @default("")
+  at          DateTime         @default(now())
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  container   Container        @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, containerId, at(sort: Desc)])
+  @@index([tenantId, missionId])
+  @@index([tenantId, clientId, at])
+  @@index([tenantId, at])
 }
 
 model UserPermission {

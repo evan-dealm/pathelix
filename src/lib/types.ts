@@ -59,10 +59,12 @@ export interface Mission {
   weightUncertaintyKg?: number
   /** Empty weight of the bin (kg), when the bin or its type is known. */
   binTareKg?:           number
-  /** Physical bin (container) assigned to this mission, if any. */
-  containerId?:         string
   /** Bin type expected (container type id) — used to validate a scanned bin. */
   containerTypeId?:     string
+  /** Bin put down by this mission (POSER, ECHANGER). */
+  placedContainerId?:   string
+  /** Bin taken away by this mission (RETIRER, ECHANGER, ALLER_RETOUR…). */
+  collectedContainerId?: string
   /** Material (matière) collected, when catalogued — density for weight estimates. */
   materialId?:          string
 }

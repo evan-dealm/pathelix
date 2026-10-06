@@ -59,6 +59,10 @@ const MissionObjectSchema = z.object({
   weightUncertaintyKg: z.number().min(0).max(100_000).optional(),
   binTareKg:           z.number().min(0).max(20_000).optional(),
   materialId:          z.string().optional(),
+  // Bins: the type expected, and the bin taken away (set by the dispatcher or a driver's scan).
+  // The bin put down is reserved through POST /api/missions/[id]/container, which checks it.
+  containerTypeId:      z.string().optional(),
+  collectedContainerId: z.string().optional(),
 })
 
 const NOT_USER_CREATABLE_TYPES = new Set(['VIDER', 'PAUSE'])

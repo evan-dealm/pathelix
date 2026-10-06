@@ -60,6 +60,8 @@ const PUBLIC_PATHS: Array<string | RegExp> = [
   // POST /api/tracking (link creation) verifies the staff session in the handler.
   '/track',
   '/api/tracking',
+  // Page a bin's QR code opens with any camera: number + owner only (src/app/c/[token]).
+  '/c',
   '/api/webhooks/nessy',
   '/api/webhooks/geotab',
   '/api/webhooks/samsara',
@@ -98,6 +100,7 @@ const DRIVER_API_ALLOWLIST: RegExp[] = [
   /^\/api\/auth\//,
   /^\/api\/driver-plan\/[^/]+$/,
   /^\/api\/driver-status(?:\/update)?$/,
+  /^\/api\/driver-scan$/,
   /^\/api\/driver-position$/,
   /^\/api\/driver-photos$/,
   /^\/api\/delivery-proof$/,

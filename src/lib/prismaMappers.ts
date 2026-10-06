@@ -92,6 +92,9 @@ export function prismaRowToMission(row: Record<string, unknown>): Mission {
     weightUncertaintyKg:  (r.weightUncertaintyKg as number | null) ?? undefined,
     binTareKg:            (r.binTareKg as number | null) ?? undefined,
     materialId:           (r.materialId as string) || undefined,
+    containerTypeId:      (r.containerTypeId as string) || undefined,
+    placedContainerId:    (r.placedContainerId as string) || undefined,
+    collectedContainerId: (r.collectedContainerId as string) || undefined,
 
     actualDurationMin:    (r.actualDurationMin as number) ?? undefined,
     actualDistanceKm:     (r.actualDistanceKm as number) ?? undefined,

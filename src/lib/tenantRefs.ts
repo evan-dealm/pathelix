@@ -14,7 +14,7 @@ export class ForeignTenantRefError extends Error {
   }
 }
 
-type RefModel = 'client' | 'site' | 'siteProduct' | 'exutoire' | 'mission' | 'driver' | 'vehicle' | 'missionTemplate' | 'material'
+type RefModel = 'client' | 'site' | 'siteProduct' | 'exutoire' | 'mission' | 'driver' | 'vehicle' | 'missionTemplate' | 'material' | 'container' | 'containerType'
 
 const FIELD_MODELS: Record<string, RefModel> = {
   clientId:                'client',
@@ -30,6 +30,11 @@ const FIELD_MODELS: Record<string, RefModel> = {
   vehicleId:               'vehicle',
   generatedFromTemplateId: 'missionTemplate',
   materialId:              'material',
+  containerTypeId:         'containerType',
+  typeId:                  'containerType',
+  placedContainerId:       'container',
+  collectedContainerId:    'container',
+  containerId:             'container',
 }
 
 interface FindFirstDelegate {

@@ -8,6 +8,7 @@ import { getAllExutoires } from '@/lib/data/exutoires'
 import { checkTenantSuspension } from '@/lib/data/context'
 import { canActForDriver } from '@/lib/driverAccess'
 import { isMissionStatus, type MissionStatus } from '@/lib/missionStatus'
+import { driverContainerInfo, type DriverMissionContainers } from '@/lib/containers/driverInfo'
 
 import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
 
@@ -74,6 +75,8 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     // Server-side progression per mission (Plan.statuses) — the app merges it with its own
     // not-yet-synced local changes, so a status survives a device change or a cleared cache.
     const statuses: Record<string, MissionStatus> = {}
+    // Bins expected per mission (cached by the app so a scan can be checked offline).
+    let containers: Record<string, DriverMissionContainers> = {}
 
     if (useMock) {
       exutoires = await getAllExutoires(tenantId)
@@ -101,10 +104,12 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
       }
       trade = tenantRow?.trade ?? null
       exutoires = exutoireRows
+      containers = await driverContainerInfo(getTenantDb(tenantId), plan.filter(m => !m.isSynthetic).map(m => m.id))
+        .catch(err => { log.warn('Container info unavailable', { err: err instanceof Error ? err.message : String(err) }); return {} })
     }
 
     return NextResponse.json(
-      { driver, plan, statuses, startTime, speedKmh, date, trade, exutoires },
+      { driver, plan, statuses, startTime, speedKmh, date, trade, exutoires, containers },
       { headers: { 'Cache-Control': 'private, no-store' } },
     )
   } catch (err) {

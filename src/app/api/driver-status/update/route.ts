@@ -11,6 +11,7 @@ import { withIdempotency } from '@/lib/idempotency'
 import { canActForDriver } from '@/lib/driverAccess'
 import { checkTenantSuspension } from '@/lib/data/context'
 import { MISSION_STATUSES, type MissionStatus } from '@/lib/missionStatus'
+import { onStepStatus } from '@/lib/containers/service'
 
 const log = createLogger('/api/driver-status/update')
 
@@ -85,6 +86,13 @@ interface StatusUpdateParams {
 
 type StatusEntry = { status: string; weightKg?: number; en_routeAt?: string; arrivedAt?: string; startedAt?: string; doingAt?: string; doneAt?: string; lat?: number; lng?: number }
 
+function parsePlanSteps(missions: unknown): string[] {
+  let arr = missions
+  if (typeof arr === 'string') { try { arr = JSON.parse(arr) } catch { return [] } }
+  if (!Array.isArray(arr)) return []
+  return arr.map(m => (m && typeof m === 'object' ? (m as { id?: unknown }).id : undefined)).filter((id): id is string => typeof id === 'string')
+}
+
 function planHasMission(missions: unknown, missionId: string): boolean {
   let arr = missions
   if (typeof arr === 'string') { try { arr = JSON.parse(arr) } catch { return false } }
@@ -143,7 +151,7 @@ async function handleStatusUpdate({
         } as Parameters<typeof tx.auditLog.create>[0]['data'],
       })
 
-      return { kind: 'ok' as const, statuses: statuses as Record<string, StatusEntry> }
+      return { kind: 'ok' as const, statuses: statuses as Record<string, StatusEntry>, planMissions: plan.missions }
     })
 
     if (outcome.kind === 'no-plan') {
@@ -156,6 +164,21 @@ async function handleStatusUpdate({
     log.info('Status updated', { driverId, missionId, status, weightKg, date })
     // Weight-only update on an already-reported step: no status side effects to replay.
     if (!status) return NextResponse.json({ ok: true, weightKg, timestamp: ts })
+
+    // Bins follow the field (pose → at the customer, retrait → on the truck, exutoire → emptied).
+    // Done after the status commit and never failing it: the driver's action is recorded even if
+    // the inventory update has to be corrected by hand.
+    if (status === 'done' || status === 'en_route') {
+      try {
+        const steps = parsePlanSteps(outcome.planMissions)
+        const doneIds = new Set(Object.entries(outcome.statuses).filter(([, s]) => s?.status === 'done').map(([id]) => id))
+        await db.$transaction(tx => onStepStatus(tx, {
+          driverId, stepId: missionId, status, planStepIds: steps, doneStepIds: doneIds, at: new Date(ts), latitude, longitude,
+        }))
+      } catch (err) {
+        log.error('Container update after status failed', { missionId, status, err: err instanceof Error ? err.message : String(err) })
+      }
+    }
 
     if (status === 'done') {
       void emitEvent(tenantId, 'mission.done', { missionId, driverId, driverName: driverFullName, date, status })
