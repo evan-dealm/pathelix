@@ -541,12 +541,12 @@ export default function AdminPage() {
     { id: 'drivers',   label: vocab.drivers, adminOnly: true, permission: 'manage_drivers', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 15.5c0-2.5 2.5-4.5 6-4.5s6 2 6 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
     { id: 'vehicles',  label: vocab.vehicles, adminOnly: true, permission: 'manage_vehicles', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="5" width="14" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="5.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="12.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg> },
     { id: 'exutoires', label: vocab.exutoires, adminOnly: true, permission: 'manage_exutoires', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L2 7v8a1 1 0 001 1h12a1 1 0 001-1V7L9 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg> },
-    { id: 'templates', label: 'Recurrentes', adminOnly: true, permission: 'manage_missions', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 1012 0A6 6 0 003 9z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 6v3l2 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M1 9h2M15 9h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'templates', label: 'Récurrentes', adminOnly: true, permission: 'manage_missions', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 1012 0A6 6 0 003 9z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 6v3l2 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M1 9h2M15 9h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
 
     { id: 'users',     label: 'Utilisateurs', section: 'Administration', adminOnly: true, permission: 'manage_users', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="7" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/><path d="M1.5 15c0-2.2 2.2-4 5.5-4s5.5 1.8 5.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
     { id: 'audit',     label: 'Audit', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 3h8a2 2 0 012 2v10l-3-2-3 2-3-2-3 2V5a2 2 0 012-2z" stroke="currentColor" strokeWidth="1.5"/></svg> },
-    { id: 'telematics',label: 'Telematique', adminOnly: true, permission: 'manage_integrations', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 15v-3M5 12l4 3 4-3M3 9l6 3 6-3M1 6l8 3 8-3-8-3-8 3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg> },
-    { id: 'settings',  label: 'Parametres', adminOnly: true, permission: 'manage_settings', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.4 3.4l1.4 1.4M13.2 13.2l1.4 1.4M3.4 14.6l1.4-1.4M13.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
+    { id: 'telematics',label: 'Télématique', adminOnly: true, permission: 'manage_integrations', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 15v-3M5 12l4 3 4-3M3 9l6 3 6-3M1 6l8 3 8-3-8-3-8 3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg> },
+    { id: 'settings',  label: 'Paramètres', adminOnly: true, permission: 'manage_settings', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.4 3.4l1.4 1.4M13.2 13.2l1.4 1.4M3.4 14.6l1.4-1.4M13.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
     { id: 'weekly-plan', label: 'Planning semaine', section: 'Planification', adminOnly: true, permission: 'optimize', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6 2v2M12 2v2M2 7h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5 11h2M8.5 11h2M12 11h1M5 13.5h2M8.5 13.5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [vocab, missionCount])
@@ -608,7 +608,7 @@ export default function AdminPage() {
             <span className="text-surface-300">·</span>
             <span className="font-semibold text-surface-500">{( Array.isArray(missions) ? missions : [] ).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length}</span> missions
           </div>
-          <button type="button" title="Deconnexion" onClick={async () => {
+          <button type="button" title="Déconnexion" onClick={async () => {
             await fetch('/api/auth/logout', { method: 'POST' })
             await usePlanningStore.persist.clearStorage()
             window.location.href = '/login'
@@ -617,7 +617,7 @@ export default function AdminPage() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
               <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
             </svg>
-            <span className="nav-label">Deconnexion</span>
+            <span className="nav-label">Déconnexion</span>
           </button>
         </div>
       </aside>
@@ -690,13 +690,13 @@ export default function AdminPage() {
               )}
             </div>
             {}
-            <button type="button" onClick={() => setShowValidation(true)} title="Verifier le planning"
+            <button type="button" onClick={() => setShowValidation(true)} title="Vérifier le planning"
               className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
             {}
             <SyncIndicator />
-            <button type="button" onClick={() => window.location.reload()} title="Rafraichir"
+            <button type="button" onClick={() => window.location.reload()} title="Rafraîchir"
               className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-surface-600 hover:bg-surface-100 rounded-lg transition-colors">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 0111.5-2.5M15 3v3.5h-3.5M15 9a6 6 0 01-11.5 2.5M3 15v-3.5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
@@ -1030,7 +1030,7 @@ export default function AdminPage() {
               </div>
               <div className={`px-6 py-3 border-t border-surface-100 text-center text-xs font-semibold
                 ${hasErrors ? 'text-red-600' : hasWarnings ? 'text-amber-600' : 'text-emerald-600'}`}>
-                {hasErrors ? 'Le planning necessite des corrections' : hasWarnings ? 'Le planning est pret avec quelques avertissements' : 'Le planning est parfait !'}
+                {hasErrors ? 'Le planning nécessite des corrections' : hasWarnings ? 'Le planning est pret avec quelques avertissements' : 'Le planning est parfait !'}
               </div>
             </div>
           </div>
@@ -1044,7 +1044,7 @@ export default function AdminPage() {
         {[
           { id: 'dashboard' as AppTab, icon: '⬡', label: 'Home' },
           { id: 'missions' as AppTab, icon: '📋', label: 'Missions' },
-          { id: 'tours' as AppTab, icon: '🗺', label: 'Tournees' },
+          { id: 'tours' as AppTab, icon: '🗺', label: 'Tournées' },
           { id: 'stats' as AppTab, icon: '📊', label: 'Stats' },
           { id: 'catalogue' as AppTab, icon: '📦', label: 'Catalogue' },
         ].map(tab => (

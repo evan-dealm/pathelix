@@ -144,7 +144,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
         <div className="flex-1" />
         <DateNav dateStr={browseDate} setDate={setBrowseDate} label="Date :" />
         {datesWithEntries.has(browseDate) && (
-          <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" title="Tournees enregistrees" />
+          <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" title="Tournées enregistrees" />
         )}
       </div>
 
@@ -152,13 +152,13 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-surface-900 font-bold text-sm uppercase tracking-wider">
-              Historique des tournees
+              Historique des tournées
             </h2>
             <p className="text-surface-400 text-xs mt-0.5 capitalize">{displayFull(browseDate)}</p>
           </div>
           {hasPlansForDate && !showLabelInput && (
             <Btn onClick={() => setShowLabelInput(true)} variant="primary" size="sm">
-              Sauvegarder la tournee actuelle
+              Sauvegarder la tournée actuelle
             </Btn>
           )}
         </div>
@@ -201,11 +201,11 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
           <div className="flex items-center justify-center py-16 text-surface-400 text-sm">Chargement...</div>
         ) : entriesForDate.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-surface-400 gap-2">
-            <div className="text-sm">Aucune tournee enregistree pour cette date</div>
+            <div className="text-sm">Aucune tournée enregistree pour cette date</div>
             <div className="text-xs text-surface-300">
               {entries.length === 0
-                ? 'Sauvegardez une tournee planifiee pour la retrouver ici.'
-                : 'Utilisez les fleches pour naviguer vers une date avec des donnees.'}
+                ? 'Sauvegardez une tournée planifiee pour la retrouver ici.'
+                : 'Utilisez les flèches pour naviguer vers une date avec des données.'}
             </div>
           </div>
         ) : (
@@ -242,7 +242,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
                   {isExpanded && (
                     <div className="border-t border-surface-200 px-4 py-4 space-y-4 bg-surface-50/40">
                       {!hasSnapshot ? (
-                        <div className="text-surface-400 text-xs text-center py-2">Detail non disponible</div>
+                        <div className="text-surface-400 text-xs text-center py-2">Détail non disponible</div>
                       ) : (
                         <>
                           {}
@@ -257,7 +257,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
                                 <div className="text-surface-900 text-lg font-bold mt-0.5">{stats.driverCount}</div>
                               </div>
                               <div className="bg-white border border-surface-200 rounded-xl px-4 py-3">
-                                <div className="text-surface-400 text-[10px] font-medium uppercase tracking-wider">Duree totale</div>
+                                <div className="text-surface-400 text-[10px] font-medium uppercase tracking-wider">Durée totale</div>
                                 <div className="text-surface-900 text-lg font-bold mt-0.5">{formatDuration(stats.totalDurationMin)}</div>
                               </div>
                             </div>
@@ -265,7 +265,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
 
                           {}
                           <div className="space-y-2">
-                            <div className="text-surface-500 text-[10px] font-semibold uppercase tracking-wider">Detail par chauffeur</div>
+                            <div className="text-surface-500 text-[10px] font-semibold uppercase tracking-wider">Détail par chauffeur</div>
                             {driversInSnap.map(d => {
                               const driverDuration = (d.missions || [])
                                 .filter(m => !m.isSynthetic)
@@ -284,7 +284,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
                                       <div className="text-surface-900 text-sm font-semibold">{d.missionCount}</div>
                                     </div>
                                     <div className="text-right">
-                                      <div className="text-surface-400 text-[10px] font-medium uppercase tracking-wider">Duree</div>
+                                      <div className="text-surface-400 text-[10px] font-medium uppercase tracking-wider">Durée</div>
                                       <div className="text-surface-900 text-sm font-semibold">{formatDuration(driverDuration)}</div>
                                     </div>
                                   </div>

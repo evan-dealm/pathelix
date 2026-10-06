@@ -707,13 +707,13 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
             </div>
           ) : (
             <div className="relative flex items-center gap-2">
-              <button onClick={() => setShowWeights(v => !v)} type="button" title="Parametres d'optimisation"
+              <button onClick={() => setShowWeights(v => !v)} type="button" title="Paramètres d'optimisation"
                 className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${showWeights ? 'bg-brand-50 text-brand-500 border-brand-200' : 'bg-surface-50 text-surface-400 border-surface-200 hover:text-surface-600'}`}>
                 ⚙
               </button>
               {plannedCount > 0 && (
                 <button type="button" onClick={handleLiveOptimize} disabled={isLiveOptimizing}
-                  title="Re-optimiser en temps reel depuis les positions GPS actuelles"
+                  title="Re-optimiser en temps réel depuis les positions GPS actuelles"
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-95 ${
                     isLiveOptimizing
                       ? 'bg-amber-50 text-amber-600 border-amber-200 cursor-wait'
@@ -739,14 +739,14 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
                   <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
                     <div className="bg-white border border-surface-200 rounded-2xl shadow-2xl p-6 w-80 pointer-events-auto">
                       <div className="flex items-center justify-between mb-4">
-                        <div className="text-sm font-semibold text-surface-800">Priorites d&apos;optimisation</div>
+                        <div className="text-sm font-semibold text-surface-800">Priorités d&apos;optimisation</div>
                         <button onClick={() => setShowWeights(false)} type="button"
                           className="text-surface-400 hover:text-surface-600 text-lg leading-none">&times;</button>
                       </div>
                       {([
                         { key: 'distance' as const, label: 'Optimiser la distance', desc: 'Reduire les kilometres parcourus', icon: '📏' },
-                        { key: 'punctuality' as const, label: 'Respecter les horaires', desc: 'Prioriser les fenetres horaires et urgences P1', icon: '⏰' },
-                        { key: 'balance' as const, label: 'Equilibrer la charge', desc: 'Repartir equitablement le travail entre chauffeurs', icon: '⚖️' },
+                        { key: 'punctuality' as const, label: 'Respecter les horaires', desc: 'Prioriser les fenêtres horaires et urgences P1', icon: '⏰' },
+                        { key: 'balance' as const, label: 'Equilibrer la charge', desc: 'Repartir équitablement le travail entre chauffeurs', icon: '⚖️' },
                         { key: 'stability' as const, label: 'Garder les habitudes', desc: 'Reassigner les chauffeurs a leurs sites habituels', icon: '🔄' },
                       ]).map(({ key, label, desc, icon }) => (
                         <button key={key} type="button"
@@ -787,7 +787,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
                         </div>
                       </button>
                       <div className="text-[10px] text-surface-400 mt-2 pt-2 border-t border-surface-100">
-                        Activez ou desactivez les criteres pris en compte par l&apos;algorithme.
+                        Activez ou desactivez les critères pris en compte par l&apos;algorithme.
                       </div>
                     </div>
                   </div>
@@ -937,7 +937,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
                       <div className="text-center"><div className="text-surface-900 font-bold">{formatDuration(result.totalOnSiteMin)}</div><div className="text-surface-400">Sur site</div></div>
                       {canViewCosts && <>
                       <div className="text-center"><div className="text-amber-500 font-bold">{cb.fuelCost.toFixed(1)}€</div><div className="text-surface-400">Carburant</div></div>
-                      <div className="text-center"><div className="text-purple-400 font-bold">{cb.tollCost.toFixed(1)}€</div><div className="text-surface-400">Peages</div></div>
+                      <div className="text-center"><div className="text-purple-400 font-bold">{cb.tollCost.toFixed(1)}€</div><div className="text-surface-400">Péages</div></div>
                       <div className="text-center"><div className="text-surface-600 font-bold">{cb.wearCost.toFixed(1)}€</div><div className="text-surface-400">Usure</div></div>
                       <div className="text-center border-l border-surface-200 pl-3"><div className="text-amber-500 font-bold">{(showTTC ? cb.totalTTC : cb.totalHT).toFixed(1)}€</div><div className="text-surface-400">{showTTC ? 'Total TTC' : 'Total HT'}</div></div>
                       </>}

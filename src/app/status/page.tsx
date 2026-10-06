@@ -40,7 +40,7 @@ export default function StatusPage() {
       <div className="relative z-[1] max-w-2xl mx-auto px-6 py-16">
         <div className="text-center mb-12">
           <h1 className="text-3xl font-bold">PATHÉLIX Status</h1>
-          <p className="text-zinc-500 mt-2">Etat des services en temps reel</p>
+          <p className="text-zinc-500 mt-2">État des services en temps réel</p>
         </div>
 
         {data ? (

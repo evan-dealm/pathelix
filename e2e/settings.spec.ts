@@ -8,7 +8,7 @@ async function goToGeneralSettings(page: import('@playwright/test').Page) {
     { timeout: 30_000 },
   ).catch(() => {})
   await page.waitForTimeout(300)
-  const generalBtn = page.locator('[role="tabpanel"] button:has-text("General")').first()
+  const generalBtn = page.locator('[role="tabpanel"] button:has-text("Général")').first()
   if (await generalBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await generalBtn.click({ force: true })
     await page.waitForTimeout(500)
@@ -98,7 +98,7 @@ test.describe('Settings Tab', () => {
   })
 
   test('integrations sub-tab exists and is clickable', async ({ page }) => {
-    const intTab = page.locator('[role="tabpanel"] button:has-text("Integrations")').first()
+    const intTab = page.locator('[role="tabpanel"] button:has-text("Intégrations")').first()
     await expect(intTab).toBeVisible({ timeout: 5_000 })
     await intTab.click()
     await page.waitForTimeout(500)

@@ -207,7 +207,7 @@ export function DateNav({ dateStr, setDate, label }: { dateStr: string; setDate:
   return (
     <div className="flex items-center gap-1">
       {label && <span className="text-surface-400 text-xs mr-1 font-medium">{label}</span>}
-      <button type="button" onClick={() => setDate(addDays(dateStr, -1))} title="Jour precedent" aria-label="Jour precedent"
+      <button type="button" onClick={() => setDate(addDays(dateStr, -1))} title="Jour précédent" aria-label="Jour précédent"
         className="w-7 h-7 flex items-center justify-center text-surface-400 hover:text-surface-700 hover:bg-surface-100 rounded-lg transition-colors text-sm">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5L5 7l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
       </button>

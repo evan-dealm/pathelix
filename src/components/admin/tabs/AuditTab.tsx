@@ -32,9 +32,9 @@ const ENTITY_TYPES = [
   { value: '', label: 'Tous les types' },
   { value: 'Mission', label: 'Mission' },
   { value: 'Driver', label: 'Chauffeur' },
-  { value: 'Vehicle', label: 'Vehicule' },
+  { value: 'Vehicle', label: 'Véhicule' },
   { value: 'User', label: 'Utilisateur' },
-  { value: 'Integration', label: 'Integration' },
+  { value: 'Integration', label: 'Intégration' },
   { value: 'tenant', label: 'Tenant (superadmin)' },
 ]
 
@@ -127,7 +127,7 @@ export function AuditTab() {
         <div className="w-36">
           <SelectInput value={actionFilter} onChange={handleActionFilterChange} options={ACTION_TYPES} />
         </div>
-        <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} title="Date debut"
+        <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} title="Date début"
           className="bg-surface-100 border border-surface-200 rounded-lg px-3 py-1 text-surface-900 text-xs focus:outline-none focus:border-[#0055A4] w-36" />
         <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} title="Date fin"
           className="bg-surface-100 border border-surface-200 rounded-lg px-3 py-1 text-surface-900 text-xs focus:outline-none focus:border-[#0055A4] w-36" />
@@ -142,7 +142,7 @@ export function AuditTab() {
         ) : filteredEntries.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-surface-400 gap-2">
             <div className="text-3xl">📋</div>
-            <div className="text-sm">Aucune entree d&apos;audit</div>
+            <div className="text-sm">Aucune entrée d&apos;audit</div>
           </div>
         ) : (
           <>
@@ -167,7 +167,7 @@ export function AuditTab() {
             <table className="w-full text-sm border-collapse hidden md:table">
               <thead className="sticky top-0 bg-surface-50 z-10">
                 <tr>
-                  {['Date', 'Utilisateur', 'Action', 'Type entite', 'ID entite', 'Details'].map(h => (
+                  {['Date', 'Utilisateur', 'Action', 'Type entité', 'ID entité', 'Détails'].map(h => (
                     <th key={h} className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -193,7 +193,7 @@ export function AuditTab() {
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 px-4 py-2.5 border-t border-surface-200 flex-shrink-0">
           <Btn onClick={() => setPage(p => Math.max(0, p - 1))} variant="ghost" size="xs" disabled={page === 0}>
-            Precedent
+            Précédent
           </Btn>
           <span className="text-surface-400 text-xs">
             Page {page + 1} / {totalPages}

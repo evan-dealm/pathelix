@@ -23,7 +23,7 @@ function buildSections(v: TradeVocabulary) {
     title: 'Optimisation',
     icon: '\u{1F9E0}',
     content: [
-      { q: 'Que signifient les curseurs Distance / Ponctualite / Equilibre ?', a: `Ces curseurs ajustent les priorites de l'algorithme. "Distance" minimise les km. "Ponctualite" respecte les fenetres horaires. "Equilibre" repartit equitablement la charge entre ${v.drivers.toLowerCase()}. Ajustez selon vos priorites du jour.` },
+      { q: 'Que signifient les curseurs Distance / Ponctualité / Équilibre ?', a: `Ces curseurs ajustent les priorites de l'algorithme. "Distance" minimise les km. "Ponctualité" respecte les fenetres horaires. "Équilibre" repartit equitablement la charge entre ${v.drivers.toLowerCase()}. Ajustez selon vos priorites du jour.` },
       { q: 'Combien de temps prend une optimisation ?', a: `De 5 a 120 secondes selon le nombre de ${v.missions.toLowerCase()} et ${v.drivers.toLowerCase()}. L'algorithme utilise un budget temps configurable.` },
       { q: `Que sont les ${v.missions.toLowerCase()} P1, P2, P3 ?`, a: `P1 = urgente (doit etre servie avant 10h). P2 = importante. P3 = normale. Les ${v.missions.toLowerCase()} P1 sont toujours assignees en priorite.` },
       { q: 'Comment fonctionne le planning multi-jours ?', a: `Via l'API /api/weekly-plan, vous pouvez optimiser une semaine entiere. L'algorithme equilibre la charge sur 5 jours pour eviter les pics.` },
@@ -41,7 +41,7 @@ function buildSections(v: TradeVocabulary) {
   },
   {
     id: 'legal',
-    title: 'Conformite legale',
+    title: 'Conformité legale',
     icon: '\u{2696}',
     content: [
       { q: 'Quelles reglementations sont respectees ?', a: 'L\'algorithme respecte le reglement CE 561/2006 : maximum 4h30 de conduite continue, pause obligatoire de 45 minutes, maximum 9h de conduite par jour, 10h de travail total.' },
@@ -50,12 +50,12 @@ function buildSections(v: TradeVocabulary) {
   },
   {
     id: 'api',
-    title: 'API et integrations',
+    title: 'API et intégrations',
     icon: '\u{1F50C}',
     content: [
-      { q: 'Comment obtenir une cle API ?', a: 'Panneau admin > Parametres > Cles API > "+ Nouvelle cle". La cle est affichee UNE SEULE FOIS. Copiez-la immediatement. Format: ef_live_xxxx.' },
-      { q: 'Quels endpoints sont disponibles ?', a: 'GET /api/drivers, GET /api/missions, POST /api/optimize, GET /api/plans, POST /api/import, GET /api/reports. Documentation complete disponible via la cle API.' },
-      { q: 'Comment connecter mon ERP (Nessy, SAP, Sage) ?', a: 'Panneau admin > Integrations. Configurez le type d\'integration, les credentials, et activez-la. Les webhooks Nessy sont deja integres nativement.' },
+      { q: 'Comment obtenir une clé API ?', a: 'Panneau admin > Paramètres > Clés API > "+ Nouvelle clé". La clé est affichée UNE SEULE FOIS. Copiez-la immédiatement. Format: ef_live_xxxx.' },
+      { q: 'Quels endpoints sont disponibles ?', a: 'GET /api/drivers, GET /api/missions, POST /api/optimize, GET /api/plans, POST /api/import, GET /api/reports. Documentation complète disponible via la clé API.' },
+      { q: 'Comment connecter mon ERP (Nessy, SAP, Sage) ?', a: 'Panneau admin > Intégrations. Configurez le type d\'intégration, les credentials, et activez-la. Les webhooks Nessy sont déjà intégrés nativement.' },
     ],
   },
   {
@@ -65,7 +65,7 @@ function buildSections(v: TradeVocabulary) {
     content: [
       { q: 'L\'optimisation est lente ou echoue', a: `Verifiez que vos ${v.missions.toLowerCase()} ont des coordonnees GPS valides (latitude/longitude). Augmentez le budget temps si necessaire. Pour > 500 ${v.missions.toLowerCase()}, l'algorithme decompose automatiquement en secteurs.` },
       { q: `Un ${v.driver.toLowerCase()} n'apparait pas dans les ${v.tours.toLowerCase()}`, a: `Verifiez qu'il n'est pas archive (onglet ${v.drivers}). Verifiez qu'il n'a pas d'indisponibilite sur la date concernee.` },
-      { q: 'Les distances semblent incorrectes', a: 'Par defaut, les distances sont estimees en haversine avec un facteur de tortuosite. Pour des distances routieres precises, configurez OSRM dans les integrations.' },
+      { q: 'Les distances semblent incorrectes', a: 'Par défaut, les distances sont estimées en haversine avec un facteur de tortuosité. Pour des distances routières précises, configurez OSRM dans les intégrations.' },
     ],
   },
 ]

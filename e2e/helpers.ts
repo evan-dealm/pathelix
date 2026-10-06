@@ -52,11 +52,11 @@ export async function navigateToTab(page: Page, tabName: string) {
     drivers: 'Chauffeurs',
     vehicles: 'Camions',
     exutoires: 'Exutoires',
-    templates: 'Recurrentes',
+    templates: 'Récurrentes',
     users: 'Utilisateurs',
     audit: 'Audit',
-    telematics: 'Telematique',
-    settings: 'Parametres',
+    telematics: 'Télématique',
+    settings: 'Paramètres',
   }
 
   // Several spec files call this with the capitalized display label (e.g. 'Dashboard',

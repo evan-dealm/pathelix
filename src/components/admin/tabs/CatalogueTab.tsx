@@ -127,7 +127,7 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-surface-50 z-10">
               <tr>
-                {['Client', 'Contact', 'Telephone', 'Email', 'Flags', 'Sites', 'Actions'].map(h => (
+                {['Client', 'Contact', 'Téléphone', 'Email', 'Flags', 'Sites', 'Actions'].map(h => (
                   <th key={h} className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-medium">{h}</th>
                 ))}
               </tr>
@@ -213,7 +213,7 @@ function ClientFormModal({ mode, onClose, onSaved }: {
         <Field label="Contact"><Input value={form.contact} onChange={v => setForm(f => ({ ...f, contact: v }))} placeholder="Nom du contact" /></Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Telephone"><Input value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="06..." /></Field>
+        <Field label="Téléphone"><Input value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="06..." /></Field>
         <Field label="Email"><Input value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="email@..." /></Field>
       </div>
 
@@ -253,7 +253,7 @@ function ClientFormModal({ mode, onClose, onSaved }: {
       <div className="flex items-center justify-end gap-2 pt-2">
         <Btn onClick={onClose} variant="ghost" size="sm">Annuler</Btn>
         <Btn onClick={handleSave} variant="primary" size="sm" disabled={saving}>
-          {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer' : 'Creer'}
+          {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer' : 'Créer'}
         </Btn>
       </div>
     </Modal>
@@ -349,7 +349,7 @@ function SitesPanel({ readOnly = false }: { readOnly?: boolean }) {
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-surface-50 z-10">
               <tr>
-                {['Site', 'Adresse', 'GPS', 'Secteur', 'Clients lies', 'Acces', 'Actions'].map(h => (
+                {['Site', 'Adresse', 'GPS', 'Secteur', 'Clients liés', 'Accès', 'Actions'].map(h => (
                   <th key={h} className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-medium">{h}</th>
                 ))}
               </tr>
@@ -455,7 +455,7 @@ function SiteFormModal({ mode, clients, onClose, onSaved }: {
       </div>
       <Field label="Adresse">
         <div className="flex gap-2">
-          <Input value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} placeholder="Adresse complete" />
+          <Input value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} placeholder="Adresse complète" />
           <button type="button" onClick={handleGeocode} disabled={geocoding}
             className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-brand-500 hover:bg-brand-600 text-white disabled:opacity-40 transition-colors whitespace-nowrap">
             {geocoding ? '...' : 'GPS'}
@@ -466,7 +466,7 @@ function SiteFormModal({ mode, clients, onClose, onSaved }: {
         <Field label="Latitude"><Input type="number" value={String(form.latitude)} onChange={v => setForm(f => ({ ...f, latitude: parseFloat(v) || 0 }))} /></Field>
         <Field label="Longitude"><Input type="number" value={String(form.longitude)} onChange={v => setForm(f => ({ ...f, longitude: parseFloat(v) || 0 }))} /></Field>
       </div>
-      <Field label="Notes d'acces"><Textarea value={form.accessNotes} onChange={v => setForm(f => ({ ...f, accessNotes: v }))} placeholder="Portail code 1234, rue etroite..." rows={2} /></Field>
+      <Field label="Notes d'accès"><Textarea value={form.accessNotes} onChange={v => setForm(f => ({ ...f, accessNotes: v }))} placeholder="Portail code 1234, rue étroite..." rows={2} /></Field>
       <div className="grid grid-cols-3 gap-3">
         <Field label="Ville"><Input value={form.city ?? ''} onChange={v => setForm(f => ({ ...f, city: v }))} placeholder="Lyon" /></Field>
         <Field label="Code postal"><Input value={form.zipCode ?? ''} onChange={v => setForm(f => ({ ...f, zipCode: v }))} placeholder="69001" /></Field>
@@ -483,14 +483,14 @@ function SiteFormModal({ mode, clients, onClose, onSaved }: {
             { value: 'autre', label: 'Autre' },
           ]} />
         </Field>
-        <Field label="Temps manoeuvre par defaut (min)"><Input type="number" value={String(form.defaultManeuverMin)} onChange={v => setForm(f => ({ ...f, defaultManeuverMin: parseInt(v) || 15 }))} /></Field>
+        <Field label="Temps manoeuvre par défaut (min)"><Input type="number" value={String(form.defaultManeuverMin)} onChange={v => setForm(f => ({ ...f, defaultManeuverMin: parseInt(v) || 15 }))} /></Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Heure ouverture (hhmm ex: 480=08h00)"><Input type="number" value={form.openingHoursOpen !== null && form.openingHoursOpen !== undefined ? String(form.openingHoursOpen) : ''} placeholder="480" onChange={v => setForm(f => ({ ...f, openingHoursOpen: v ? parseInt(v) : null }))} /></Field>
         <Field label="Heure fermeture (hhmm ex: 1080=18h00)"><Input type="number" value={form.openingHoursClose !== null && form.openingHoursClose !== undefined ? String(form.openingHoursClose) : ''} placeholder="1080" onChange={v => setForm(f => ({ ...f, openingHoursClose: v ? parseInt(v) : null }))} /></Field>
       </div>
 
-      <Field label="Clients lies">
+      <Field label="Clients liés">
         <div className="flex flex-wrap gap-2">
           {clients.filter(c => !c.archived).map(c => {
             const selected = form.clientIds.includes(c.id)
@@ -512,7 +512,7 @@ function SiteFormModal({ mode, clients, onClose, onSaved }: {
       <div className="flex items-center justify-end gap-2 pt-2">
         <Btn onClick={onClose} variant="ghost" size="sm">Annuler</Btn>
         <Btn onClick={handleSave} variant="primary" size="sm" disabled={saving}>
-          {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer' : 'Creer'}
+          {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer' : 'Créer'}
         </Btn>
       </div>
     </Modal>
@@ -594,7 +594,7 @@ function ProductsPanel({ readOnly = false }: { readOnly?: boolean }) {
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-surface-50 z-10">
               <tr>
-                {['Client', 'Site', 'Matiere', 'Materiel', 'Volume', 'Duree', 'Exutoire', 'Actions'].map(h => (
+                {['Client', 'Site', 'Matière', 'Matériel', 'Volume', 'Durée', 'Exutoire', 'Actions'].map(h => (
                   <th key={h} className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-medium">{h}</th>
                 ))}
               </tr>
@@ -662,7 +662,7 @@ function ProductFormModal({ mode, clients, sites, exutoires, onClose, onSaved }:
 
   async function handleSave() {
     if (!form.clientId || !form.siteId || !form.wasteType.trim()) {
-      setError('Client, site et matiere sont obligatoires')
+      setError('Client, site et matière sont obligatoires')
       return
     }
     setSaving(true)
@@ -695,15 +695,15 @@ function ProductFormModal({ mode, clients, sites, exutoires, onClose, onSaved }:
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Matiere (dechet) *"><Input value={form.wasteType} onChange={v => setForm(f => ({ ...f, wasteType: v }))} placeholder="Gravats, DIB, Papier..." /></Field>
-        <Field label="Materiel (libelle)"><Input value={form.binSizeLabel} onChange={v => setForm(f => ({ ...f, binSizeLabel: v }))} placeholder="Benne 35m³" /></Field>
+        <Field label="Matière (déchet) *"><Input value={form.wasteType} onChange={v => setForm(f => ({ ...f, wasteType: v }))} placeholder="Gravats, DIB, Papier..." /></Field>
+        <Field label="Matériel (libelle)"><Input value={form.binSizeLabel} onChange={v => setForm(f => ({ ...f, binSizeLabel: v }))} placeholder="Benne 35m³" /></Field>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <Field label="Volume (m³)"><Input type="number" value={form.binSizeM3 !== null ? String(form.binSizeM3) : ''} onChange={v => setForm(f => ({ ...f, binSizeM3: v ? parseFloat(v) : null }))} placeholder="35" /></Field>
         <Field label="Type equipement"><Input value={form.equipmentType} onChange={v => setForm(f => ({ ...f, equipmentType: v }))} placeholder="ampliroll, grue..." /></Field>
-        <Field label="Duree par defaut (min)"><Input type="number" value={String(form.defaultDurationMin)} onChange={v => setForm(f => ({ ...f, defaultDurationMin: parseInt(v) || 30 }))} /></Field>
+        <Field label="Durée par défaut (min)"><Input type="number" value={String(form.defaultDurationMin)} onChange={v => setForm(f => ({ ...f, defaultDurationMin: parseInt(v) || 30 }))} /></Field>
       </div>
-      <Field label="Exutoire par defaut">
+      <Field label="Exutoire par défaut">
         <SelectInput value={form.defaultExutoireId || ''} onChange={v => setForm(f => ({ ...f, defaultExutoireId: v }))}
           options={[{ value: '', label: '-- Aucun --' }, ...exutoires.map(e => ({ value: e.id, label: e.name }))]} />
       </Field>
@@ -714,7 +714,7 @@ function ProductFormModal({ mode, clients, sites, exutoires, onClose, onSaved }:
       <div className="flex items-center justify-end gap-2 pt-2">
         <Btn onClick={onClose} variant="ghost" size="sm">Annuler</Btn>
         <Btn onClick={handleSave} variant="primary" size="sm" disabled={saving}>
-          {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer' : 'Creer'}
+          {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer' : 'Créer'}
         </Btn>
       </div>
     </Modal>

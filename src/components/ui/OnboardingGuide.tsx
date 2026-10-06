@@ -24,7 +24,7 @@ const ADMIN_STEPS: OnboardingStep[] = [
   {
     icon: '📊',
     title: 'Suivez les indicateurs',
-    description: 'Le tableau de bord affiche KPIs, retards et taux de complétion en temps réel. Le moteur ML affine les estimations de temps automatiquement.',
+    description: 'Le tableau de bord affiché KPIs, retards et taux de complétion en temps réel. Le moteur ML affine les estimations de temps automatiquement.',
   },
   {
     icon: '❓',

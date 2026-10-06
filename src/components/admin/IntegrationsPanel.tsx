@@ -30,14 +30,14 @@ interface ConfigField {
 
 const CONFIG_FIELDS: Record<string, ConfigField[]> = {
   trimble: [
-    { key: 'apiKey', label: 'Cle API Trimble', type: 'password', placeholder: 'trimble_key_...', required: true },
+    { key: 'apiKey', label: 'Clé API Trimble', type: 'password', placeholder: 'trimble_key_...', required: true },
     { key: 'baseUrl', label: 'URL de base', type: 'url', placeholder: 'https://pcmiler.alk.com/apis/rest/v1.0' },
   ],
   here: [
-    { key: 'apiKey', label: 'Cle API HERE', type: 'password', placeholder: 'here_api_key_...', required: true },
+    { key: 'apiKey', label: 'Clé API HERE', type: 'password', placeholder: 'here_api_key_...', required: true },
   ],
   geotab: [
-    { key: 'apiKey', label: 'Cle API Geotab', type: 'password', placeholder: 'geotab_...', required: true },
+    { key: 'apiKey', label: 'Clé API Geotab', type: 'password', placeholder: 'geotab_...', required: true },
     { key: 'database', label: 'Nom de la base', type: 'text', placeholder: 'my_company_db' },
     { key: 'server', label: 'Serveur', type: 'url', placeholder: 'my1.geotab.com' },
   ],
@@ -45,7 +45,7 @@ const CONFIG_FIELDS: Record<string, ConfigField[]> = {
     { key: 'apiToken', label: 'Token API Samsara', type: 'password', placeholder: 'samsara_api_...', required: true },
   ],
   sage: [
-    { key: 'apiKey', label: 'Cle API Sage', type: 'password', placeholder: 'sage_key_...', required: true },
+    { key: 'apiKey', label: 'Clé API Sage', type: 'password', placeholder: 'sage_key_...', required: true },
     { key: 'companyId', label: 'Company ID', type: 'text', placeholder: 'COMP001' },
   ],
   sap: [
@@ -65,16 +65,16 @@ const CONFIG_FIELDS: Record<string, ConfigField[]> = {
   twilio_sms: [
     { key: 'accountSid', label: 'Account SID', type: 'text', placeholder: 'AC...', required: true },
     { key: 'authToken', label: 'Auth Token', type: 'password', placeholder: 'auth_token_...', required: true },
-    { key: 'fromNumber', label: 'Numero expediteur', type: 'text', placeholder: '+33612345678', required: true },
+    { key: 'fromNumber', label: 'Numéro expéditeur', type: 'text', placeholder: '+33612345678', required: true },
   ],
   power_bi: [
     { key: 'workspaceId', label: 'Workspace ID', type: 'text', placeholder: 'ws-...', required: true },
-    { key: 'apiKey', label: 'Cle API', type: 'password', placeholder: 'pbi_key_...' },
+    { key: 'apiKey', label: 'Clé API', type: 'password', placeholder: 'pbi_key_...' },
   ],
   custom_webhook: [
     { key: 'url', label: 'URL du webhook', type: 'url', placeholder: 'https://votre-service.com/webhook', required: true },
     { key: 'secret', label: 'Secret HMAC (optionnel)', type: 'password', placeholder: 'hmac_secret_...' },
-    { key: 'events', label: 'Evenements (comma-separated)', type: 'text', placeholder: 'mission.done, tour.optimized, anomaly.detected' },
+    { key: 'events', label: 'Événements (comma-separated)', type: 'text', placeholder: 'mission.done, tour.optimized, anomaly.detected' },
   ],
   osrm: [
     { key: 'url', label: 'URL du serveur OSRM', type: 'url', placeholder: 'http://10.8.0.2:5000', required: true },
@@ -100,43 +100,43 @@ const TYPE_META: Record<string, { icon: string; color: string }> = {
 const CATEGORY_LABELS: Record<string, string> = {
   routing:      'Routage & Cartographie',
   erp:          'ERP & Facturation',
-  telemetry:    'Telematique & Flotte',
+  telemetry:    'Télématique & Flotte',
   notifications: 'Notifications',
   productivity: 'Productivite',
   reporting:    'Reporting & BI',
-  custom:       'Personnalise',
+  custom:       'Personnalisé',
 }
 
 const INFO_TEXT: Record<string, string> = {
-  trimble: 'Trimble Maps remplace OSRM pour le calcul d\'itineraires poids-lourds. Il prend en compte les peages, les restrictions de gabarit et les couts carburant. Si Trimble est active, il est utilise en priorite. Si l\'appel echoue, le systeme bascule sur OSRM puis sur le calcul a vol d\'oiseau. Utile si vous avez deja un contrat Trimble.',
-  here: 'HERE Truck Routing calcule les itineraires poids-lourds avec le trafic en temps reel. Il connait les Zones a Faibles Emissions (ZFE) de Lyon, Paris, Grenoble et interdit les camions non-conformes. Meme cascade que Trimble : HERE → OSRM → vol d\'oiseau.',
-  osrm: 'OSRM est le moteur de routage open-source integre par defaut. Il tourne sur votre serveur local avec un profil camion (26t, 4m hauteur, 2.55m largeur). Configurez l\'URL ici au lieu de la variable d\'environnement pour pouvoir la changer sans redeployer.',
-  geotab: 'Geotab recoit les positions GPS de vos boitiers telematiques OBD. Les positions arrivent automatiquement sans dependre de l\'application mobile. Vous voyez les camions sur la carte meme si le chauffeur n\'a pas ouvert l\'app. Configurez le mapping entre les IDs Geotab et vos chauffeurs.',
-  samsara: 'Samsara fonctionne comme Geotab : il envoie les positions GPS de vos boitiers. En plus, Samsara peut envoyer des alertes camera (freinage brusque, virage dangereux) et le suivi de temperature pour les transports alimentaires.',
-  nessy: 'Nessy envoie automatiquement les missions depuis votre ERP vers PATHÉLIX via un webhook securise (HMAC-SHA256). Les missions sont injectees dans le pool et prises en compte a la prochaine optimisation. Configurez le secret HMAC partage avec Nessy.',
-  sage: 'Quand un chauffeur termine une mission, une ligne de facturation est creee automatiquement dans Sage. Plus besoin de re-saisir manuellement chaque mission en fin de journee. Les donnees envoyees : client, type de dechet, poids, duree, chauffeur.',
-  sap: 'Meme principe que Sage mais pour SAP Business One. Chaque mission terminee genere un bon de livraison dans SAP. Le mapping entre les clients PATHÉLIX et les Business Partners SAP est automatique.',
-  slack: 'Recevez les notifications directement dans Slack : optimisation terminee (nb missions, score), anomalie ML detectee (clic rafale, GPS incoherent), mission P1 en retard, chauffeur hors zone depuis 30 min. Configurez l\'URL du webhook Slack.',
-  teams: 'Meme chose que Slack mais pour Microsoft Teams. Les notifications arrivent sous forme de cartes adaptatives dans le canal configure. Configurez l\'URL du connecteur Incoming Webhook de Teams.',
-  twilio_sms: 'Envoie un SMS au client quand le chauffeur est en route : "Votre benne arrive dans environ 30 minutes. Chauffeur : Gabin Martin." Reduit les acces bloques de 30-40% car le client peut preparer l\'acces. Necessite un compte Twilio et un numero expediteur.',
-  power_bi: 'Les KPIs du jour (missions, km, duree moyenne, taux de conformite) sont envoyes automatiquement vers votre dataset Power BI. Vos dirigeants voient les tableaux de bord sans ouvrir PATHÉLIX.',
-  custom_webhook: 'Envoyez des evenements vers n\'importe quelle URL quand quelque chose se passe : mission terminee, tournee optimisee, anomalie detectee, position chauffeur. Chaque evenement est signe HMAC-SHA256 pour la securite. Connectez Zapier, Make, ou votre propre systeme.',
+  trimble: 'Trimble Maps remplace OSRM pour le calcul d\'itinéraires poids-lourds. Il prend en compte les péages, les restrictions de gabarit et les coûts carburant. Si Trimble est active, il est utilise en priorité. Si l\'appel echoue, le système bascule sur OSRM puis sur le calcul a vol d\'oiseau. Utile si vous avez déjà un contrat Trimble.',
+  here: 'HERE Truck Routing calcule les itinéraires poids-lourds avec le trafic en temps réel. Il connaît les Zones a Faibles Émissions (ZFE) de Lyon, Paris, Grenoble et interdit les camions non-conformes. Même cascade que Trimble : HERE → OSRM → vol d\'oiseau.',
+  osrm: 'OSRM est le moteur de routage open-source intégré par défaut. Il tourne sur votre serveur local avec un profil camion (26t, 4m hauteur, 2.55m largeur). Configurez l\'URL ici au lieu de la variable d\'environnement pour pouvoir la changer sans redeployer.',
+  geotab: 'Geotab reçoit les positions GPS de vos boîtiers télématiques OBD. Les positions arrivent automatiquement sans dépendre de l\'application mobile. Vous voyez les camions sur la carte même si le chauffeur n\'a pas ouvert l\'app. Configurez le mapping entre les IDs Geotab et vos chauffeurs.',
+  samsara: 'Samsara fonctionne comme Geotab : il envoie les positions GPS de vos boîtiers. En plus, Samsara peut envoyer des alertes camera (freinage brusque, virage dangereux) et le suivi de temperature pour les transports alimentaires.',
+  nessy: 'Nessy envoie automatiquement les missions depuis votre ERP vers PATHÉLIX via un webhook securise (HMAC-SHA256). Les missions sont injectées dans le pool et prises en compte a la prochaine optimisation. Configurez le secret HMAC partage avec Nessy.',
+  sage: 'Quand un chauffeur termine une mission, une ligne de facturation est creee automatiquement dans Sage. Plus besoin de re-saisir manuellement chaque mission en fin de journée. Les données envoyees : client, type de déchet, poids, durée, chauffeur.',
+  sap: 'Même principe que Sage mais pour SAP Business One. Chaque mission terminee genere un bon de livraison dans SAP. Le mapping entre les clients PATHÉLIX et les Business Partners SAP est automatique.',
+  slack: 'Recevez les notifications directement dans Slack : optimisation terminee (nb missions, score), anomalie ML détectée (clic rafale, GPS incohérent), mission P1 en retard, chauffeur hors zone depuis 30 min. Configurez l\'URL du webhook Slack.',
+  teams: 'Même chose que Slack mais pour Microsoft Teams. Les notifications arrivent sous forme de cartes adaptatives dans le canal configure. Configurez l\'URL du connecteur Incoming Webhook de Teams.',
+  twilio_sms: 'Envoie un SMS au client quand le chauffeur est en route : "Votre benne arrive dans environ 30 minutes. Chauffeur : Gabin Martin." Réduit les accès bloqués de 30-40% car le client peut préparer l\'accès. Nécessite un compte Twilio et un numéro expéditeur.',
+  power_bi: 'Les KPIs du jour (missions, km, durée moyenne, taux de conformité) sont envoyés automatiquement vers votre dataset Power BI. Vos dirigeants voient les tableaux de bord sans ouvrir PATHÉLIX.',
+  custom_webhook: 'Envoyez des événements vers n\'importe quelle URL quand quelque chose se passe : mission terminee, tournée optimisée, anomalie détectée, position chauffeur. Chaque événement est signe HMAC-SHA256 pour la sécurité. Connectez Zapier, Make, ou votre propre système.',
 }
 
 const FULL_MARKETPLACE: Array<{ type: string; name: string; description: string; category: string }> = [
-  { type: 'trimble',         name: 'Trimble Maps',         description: 'Calcul de routes poids-lourds (restrictions, peages)', category: 'routing' },
-  { type: 'here',            name: 'HERE Truck Routing',   description: 'Routage PL avec trafic temps reel et zones ZFE', category: 'routing' },
+  { type: 'trimble',         name: 'Trimble Maps',         description: 'Calcul de routes poids-lourds (restrictions, péages)', category: 'routing' },
+  { type: 'here',            name: 'HERE Truck Routing',   description: 'Routage PL avec trafic temps réel et zones ZFE', category: 'routing' },
   { type: 'osrm',            name: 'OSRM (Self-hosted)',   description: 'Matrice de distances open-source pour l\'optimisation VRP', category: 'routing' },
-  { type: 'geotab',          name: 'Geotab',               description: 'Telematique universelle — positions GPS et donnees moteur via boitier OBD', category: 'telemetry' },
+  { type: 'geotab',          name: 'Geotab',               description: 'Télématique universelle — positions GPS et données moteur via boîtier OBD', category: 'telemetry' },
   { type: 'samsara',         name: 'Samsara',              description: 'GPS + cameras embarquees + suivi temperature', category: 'telemetry' },
   { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Reception automatique des missions depuis l\'ERP Nessy', category: 'erp' },
-  { type: 'sage',            name: 'Sage Comptabilite',    description: 'Export automatique des tournees vers la comptabilite', category: 'erp' },
+  { type: 'sage',            name: 'Sage Comptabilite',    description: 'Export automatique des tournées vers la comptabilite', category: 'erp' },
   { type: 'sap',             name: 'SAP Business One',     description: 'Synchronisation bons de livraison et factures', category: 'erp' },
-  { type: 'slack',           name: 'Slack',                description: 'Notifications tournees et alertes anomalies dans vos canaux', category: 'notifications' },
+  { type: 'slack',           name: 'Slack',                description: 'Notifications tournées et alertes anomalies dans vos canaux', category: 'notifications' },
   { type: 'teams',           name: 'Microsoft Teams',      description: 'Notifications dans Teams via webhook', category: 'notifications' },
   { type: 'twilio_sms',      name: 'SMS (Twilio)',         description: 'Notifier vos clients par SMS : "Votre benne arrive dans 30 min"', category: 'notifications' },
-  { type: 'power_bi',        name: 'Power BI',             description: 'Connecter vos donnees a des tableaux de bord avances', category: 'reporting' },
-  { type: 'custom_webhook',  name: 'Webhook personnalise', description: 'Envoyer des evenements vers n\'importe quelle URL', category: 'custom' },
+  { type: 'power_bi',        name: 'Power BI',             description: 'Connecter vos données a des tableaux de bord avancés', category: 'reporting' },
+  { type: 'custom_webhook',  name: 'Webhook personnalise', description: 'Envoyer des événements vers n\'importe quelle URL', category: 'custom' },
 ]
 
 export function IntegrationsPanel() {
@@ -223,7 +223,7 @@ export function IntegrationsPanel() {
         message: `${data.message ?? 'Erreur'}${data.latencyMs ? ` (${data.latencyMs}ms)` : ''}`,
       })
     } catch {
-      setTestResult({ ok: false, message: 'Erreur reseau — impossible de contacter le serveur' })
+      setTestResult({ ok: false, message: 'Erreur réseau — impossible de contacter le serveur' })
     } finally { setTesting(false) }
   }
 
@@ -240,7 +240,7 @@ export function IntegrationsPanel() {
   })
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-surface-400 text-sm">Chargement des integrations...</div>
+    return <div className="flex items-center justify-center py-12 text-surface-400 text-sm">Chargement des intégrations...</div>
   }
 
   return (
@@ -248,7 +248,7 @@ export function IntegrationsPanel() {
       {}
       <div className="flex items-center gap-2 mb-3 flex-shrink-0 flex-wrap">
         <input value={searchFilter} onChange={e => setSearchFilter(e.target.value)} placeholder="Rechercher une API..."
-          title="Rechercher une integration"
+          title="Rechercher une intégration"
           className="px-3 py-1 rounded-full text-[11px] bg-surface-50 border border-surface-200 text-surface-700 placeholder-surface-400 focus:outline-none focus:border-brand-400 w-44" />
         <button type="button" onClick={() => setCatFilter('all')}
           className={`px-3 py-1 rounded-full text-[11px] font-medium transition-colors ${catFilter === 'all' ? 'bg-brand-500 text-white' : 'bg-surface-100 text-surface-500 hover:bg-surface-200'}`}>
@@ -384,7 +384,7 @@ export function IntegrationsPanel() {
 
                 {(CONFIG_FIELDS[configuring] ?? []).length === 0 && (
                   <div className="text-sm text-surface-400 text-center py-4">
-                    Aucune configuration requise pour cette integration.
+                    Aucune configuration requise pour cette intégration.
                   </div>
                 )}
               </div>

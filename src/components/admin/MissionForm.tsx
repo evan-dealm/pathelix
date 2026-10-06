@@ -246,7 +246,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
 
       {}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Type d'operation">
+        <Field label="Type d'opération">
           <SelectInput value={form.type} onChange={v => setForm(p => ({ ...p, type: v as MissionType }))} options={typeOpts} />
         </Field>
         <Field label="Date">
@@ -255,7 +255,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label={<span>Priorite <JargonTip term="p1" position="right" /></span>}>
+        <Field label={<span>Priorité <JargonTip term="p1" position="right" /></span>}>
           <SelectInput
             value={form.priority !== null && form.priority !== undefined ? String(form.priority) : '2'}
             onChange={v => setForm(p => ({ ...p, priority: v ? (Number(v) as 1 | 2 | 3) : undefined }))}
@@ -280,7 +280,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
             </Field>
             <Field label="Adresse">
               <div className="flex gap-2">
-                <Input value={form.address} onChange={v => { set('address')(v); setGeocodeMsg(null) }} placeholder="Adresse complete" />
+                <Input value={form.address} onChange={v => { set('address')(v); setGeocodeMsg(null) }} placeholder="Adresse complète" />
                 <button type="button" onClick={handleGeocode} disabled={geocoding}
                   className="flex-shrink-0 px-2 py-1 rounded-lg text-xs font-medium bg-brand-500 hover:bg-brand-600 text-white disabled:opacity-40 transition-colors">
                   {geocoding ? '...' : '\ud83d\udccd G\u00e9ocoder'}
@@ -305,7 +305,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
             <Field label="Volume (m³)">
               <Input type="number" step="0.5" value={form.binSizeM3 !== null ? String(form.binSizeM3) : ''} onChange={v => setForm(p => ({ ...p, binSizeM3: v ? parseFloat(v) : undefined }))} />
             </Field>
-            <Field label="Notes d'acces">
+            <Field label="Notes d'accès">
               <Input value={form.accessNotes || ''} onChange={set('accessNotes')} placeholder="Code portail..." />
             </Field>
           </div>
@@ -313,7 +313,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Duree sur place (min)">
+        <Field label="Durée sur place (min)">
           <Input type="number" value={String(form.estimatedDurationMin)} onChange={setN('estimatedDurationMin')} min="0" />
         </Field>
         <Field label="Manoeuvre (min)">
@@ -405,7 +405,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
       {mode === 'catalogue' && (
         <Field label="Adresse (override)">
           <div className="flex gap-2">
-            <Input value={form.address} onChange={v => { set('address')(v); setGeocodeMsg(null) }} placeholder="Adresse complete" />
+            <Input value={form.address} onChange={v => { set('address')(v); setGeocodeMsg(null) }} placeholder="Adresse complète" />
             <button type="button" onClick={handleGeocode} disabled={geocoding}
               className="flex-shrink-0 px-2 py-1 rounded-lg text-xs font-medium bg-brand-500 hover:bg-brand-600 text-white disabled:opacity-40 transition-colors whitespace-nowrap">
               {geocoding ? '...' : '\ud83d\udccd G\u00e9ocoder'}
@@ -422,11 +422,11 @@ export function MissionForm({ initial, onSave, onClose, title }: {
       {}
       {mode === 'catalogue' && (form.address || form.latitude !== 0) && (
         <div className="bg-surface-50 rounded-lg p-3 text-xs text-surface-500 space-y-1">
-          <div className="font-medium text-surface-700 text-[11px] uppercase tracking-wider mb-1">Donnees auto-remplies</div>
+          <div className="font-medium text-surface-700 text-[11px] uppercase tracking-wider mb-1">Données auto-remplies</div>
           {form.latitude !== 0 && <div>GPS: <span className="text-surface-900">{form.latitude.toFixed(4)}, {form.longitude.toFixed(4)}</span></div>}
-          {form.wasteTypeLabel && <div>Matiere: <span className="text-surface-900">{form.wasteTypeLabel}</span></div>}
-          {form.binSize && <div>Materiel: <span className="text-surface-900">{form.binSize}</span></div>}
-          {form.accessNotes && <div>Acces: <span className="text-surface-900">{form.accessNotes}</span></div>}
+          {form.wasteTypeLabel && <div>Matière: <span className="text-surface-900">{form.wasteTypeLabel}</span></div>}
+          {form.binSize && <div>Matériel: <span className="text-surface-900">{form.binSize}</span></div>}
+          {form.accessNotes && <div>Accès: <span className="text-surface-900">{form.accessNotes}</span></div>}
         </div>
       )}
 

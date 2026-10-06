@@ -12,7 +12,7 @@ import { EXUTOIRE_COLUMNS, parseExutoireRows } from '@/lib/importExportColumns'
 import { cachedFetch, invalidateClientCache } from '@/lib/clientCache'
 
 const WASTE_TYPES = [
-  { value: '', label: 'Tous les dechets' },
+  { value: '', label: 'Tous les déchets' },
   { value: 'OM', label: 'OM' },
   { value: 'CS', label: 'CS' },
   { value: 'Verre', label: 'Verre' },

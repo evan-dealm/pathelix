@@ -396,7 +396,7 @@ export function VehiclesTab() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Supprimer ce vehicule ? Cette action est irreversible.')) return
+    if (!confirm('Supprimer ce véhicule ? Cette action est irréversible.')) return
     setDeleting(id)
     try {
       const res = await fetch(`/api/vehicles/${id}`, { method: 'DELETE' })
@@ -519,7 +519,7 @@ export function VehiclesTab() {
             }}
           />
           <Btn onClick={openNew} variant="primary" size="sm">
-            <span className="hidden sm:inline">+ Nouveau vehicule</span><span className="sm:hidden">+</span>
+            <span className="hidden sm:inline">+ Nouveau véhicule</span><span className="sm:hidden">+</span>
           </Btn>
         </div>
       </div>
@@ -530,7 +530,7 @@ export function VehiclesTab() {
         ) : filtered.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-surface-400 gap-2">
             <div className="text-3xl">🚛</div>
-            <div className="text-sm">Aucun vehicule trouve</div>
+            <div className="text-sm">Aucun véhicule trouve</div>
           </div>
         ) : (
           <>
@@ -568,7 +568,7 @@ export function VehiclesTab() {
             <table className="w-full text-sm border-collapse hidden md:table">
               <thead className="sticky top-0 bg-surface-50 z-10">
                 <tr>
-                  {['Immatriculation', 'Type', 'Marque / Modele', 'Capacite', 'Gabarit', 'Kilometrage', 'Prochaine CT', 'Statut', 'Chauffeur', 'Actions'].map(h => (
+                  {['Immatriculation', 'Type', 'Marque / Modèle', 'Capacité', 'Gabarit', 'Kilométrage', 'Prochaine CT', 'Statut', 'Chauffeur', 'Actions'].map(h => (
                     <th key={h} className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -625,7 +625,7 @@ export function VehiclesTab() {
 
       {}
       {modal && (
-        <Modal title={modal.kind === 'new' ? 'Nouveau vehicule' : 'Modifier le vehicule'} onClose={() => setModal(null)}>
+        <Modal title={modal.kind === 'new' ? 'Nouveau véhicule' : 'Modifier le véhicule'} onClose={() => setModal(null)}>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Immatriculation *">
@@ -639,18 +639,18 @@ export function VehiclesTab() {
               <Field label="Marque">
                 <Input value={form.marque} onChange={v => setForm(f => ({ ...f, marque: v }))} placeholder="Renault" />
               </Field>
-              <Field label="Modele">
+              <Field label="Modèle">
                 <Input value={form.modele} onChange={v => setForm(f => ({ ...f, modele: v }))} placeholder="D-Wide" />
               </Field>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Capacite (m3)">
+              <Field label="Capacité (m3)">
                 <Input value={String(form.capaciteM3)} onChange={v => setForm(f => ({ ...f, capaciteM3: parseFloat(v) || 0 }))} type="number" min="0" step="0.5" />
               </Field>
               <Field label="Nb bennes">
                 <Input value={String(form.nbBennes)} onChange={v => setForm(f => ({ ...f, nbBennes: parseInt(v) || 0 }))} type="number" min="0" />
               </Field>
-              <Field label="Kilometrage">
+              <Field label="Kilométrage">
                 <Input value={String(form.kilometrage)} onChange={v => setForm(f => ({ ...f, kilometrage: parseInt(v) || 0 }))} type="number" min="0" />
               </Field>
             </div>
@@ -684,7 +684,7 @@ export function VehiclesTab() {
                 <Input value={form.color} onChange={v => setForm(f => ({ ...f, color: v }))} placeholder="Blanc" />
               </Field>
             </div>
-            <Field label="VIN (numero de serie)">
+            <Field label="VIN (numéro de serie)">
               <Input value={form.vin} onChange={v => setForm(f => ({ ...f, vin: v }))} placeholder="VF1AB12CD3E456789" />
             </Field>
 
@@ -704,7 +704,7 @@ export function VehiclesTab() {
               <Field label="Expiration assurance">
                 <Input value={form.insuranceExpiry} onChange={v => setForm(f => ({ ...f, insuranceExpiry: v }))} type="date" />
               </Field>
-              <Field label="Reference assurance">
+              <Field label="Référence assurance">
                 <Input value={form.insuranceRef} onChange={v => setForm(f => ({ ...f, insuranceRef: v }))} placeholder="POL-2024-XXXXX" />
               </Field>
             </div>
@@ -717,14 +717,14 @@ export function VehiclesTab() {
               <Field label="Date dernier entretien">
                 <Input value={form.lastServiceDate} onChange={v => setForm(f => ({ ...f, lastServiceDate: v }))} type="date" />
               </Field>
-              <Field label="Kilometrage dernier entretien">
+              <Field label="Kilométrage dernier entretien">
                 <Input value={form.lastServiceKm === '' ? '' : String(form.lastServiceKm)} onChange={v => setForm(f => ({ ...f, lastServiceKm: v ? parseInt(v) || '' : '' }))} type="number" min="0" placeholder="150000" />
               </Field>
             </div>
 
             {}
             <div className="border-t border-surface-100 pt-3 mt-1">
-              <p className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-1">Gabarit vehicule</p>
+              <p className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-1">Gabarit véhicule</p>
               <p className="text-[10px] text-surface-400 mb-3">Determine les restrictions de route (ponts, tunnels, poids lourds)</p>
             </div>
 
@@ -732,13 +732,13 @@ export function VehiclesTab() {
               <select
                 value={form.gabaritProfile}
                 onChange={e => applyProfile(e.target.value)}
-                title="Profil gabarit vehicule"
+                title="Profil gabarit véhicule"
                 className="w-full bg-surface-50 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 text-sm focus:outline-none focus:border-[#0055A4] focus:ring-1 focus:ring-[#0055A4]/30"
               >
                 {GABARIT_PROFILES.map(p => (
                   <option key={p.key} value={p.key}>{p.label} — {p.description}</option>
                 ))}
-                <option value="custom">Personnalise</option>
+                <option value="custom">Personnalisé</option>
               </select>
             </Field>
 
@@ -796,7 +796,7 @@ export function VehiclesTab() {
                   <Field label="Nombre d'essieux">
                     <Input value={String(form.axleCount)} onChange={v => setForm(f => ({ ...f, axleCount: parseInt(v) || 2 }))} type="number" min="2" max="10" />
                   </Field>
-                  <Field label="Matieres dangereuses (ADR)">
+                  <Field label="Matières dangereuses (ADR)">
                     <label className="flex items-center gap-2 cursor-pointer py-1">
                       <input type="checkbox" checked={form.hazmat} onChange={e => setForm(f => ({ ...f, hazmat: e.target.checked }))}
                         className="w-4 h-4 rounded border-surface-300 text-[#0055A4] focus:ring-[#0055A4]" />
@@ -809,10 +809,10 @@ export function VehiclesTab() {
 
             {}
             <div className="border-t border-surface-100 pt-3 mt-1">
-              <p className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-2">Peages</p>
+              <p className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-2">Péages</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Classe peage">
+              <Field label="Classe péage">
                 <SelectInput value={String(form.tollClass)} onChange={v => setForm(f => ({ ...f, tollClass: parseInt(v) || 3 }))} options={TOLL_CLASSES.map(c => ({ value: String(c.value), label: c.label }))} />
               </Field>
               <Field label="Badge telepeage">
@@ -828,7 +828,7 @@ export function VehiclesTab() {
             </Field>
 
             <Field label="Notes">
-              <Textarea value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} placeholder="Notes sur le vehicule..." rows={2} />
+              <Textarea value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} placeholder="Notes sur le véhicule..." rows={2} />
             </Field>
 
             {error && (
@@ -838,7 +838,7 @@ export function VehiclesTab() {
             <div className="flex items-center justify-end gap-2 pt-2">
               <Btn onClick={() => setModal(null)} variant="ghost" size="sm">Annuler</Btn>
               <Btn onClick={handleSave} variant="primary" size="sm" disabled={saving}>
-                {saving ? 'Enregistrement...' : modal.kind === 'new' ? 'Creer' : 'Enregistrer'}
+                {saving ? 'Enregistrement...' : modal.kind === 'new' ? 'Créer' : 'Enregistrer'}
               </Btn>
             </div>
           </div>

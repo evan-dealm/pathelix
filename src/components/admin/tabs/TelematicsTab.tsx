@@ -204,25 +204,25 @@ export function TelematicsTab({ date }: Props) {
           <div className="space-y-2 text-xs text-surface-600">
             <div className="flex items-start gap-2">
               <span className="text-brand-500 font-bold shrink-0">1.</span>
-              <span>Le chauffeur ouvre sa page sur son telephone (<code className="text-surface-500">/driver/[id]</code>)</span>
+              <span>Le chauffeur ouvre sa page sur son téléphone (<code className="text-surface-500">/driver/[id]</code>)</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-brand-500 font-bold shrink-0">2.</span>
-              <span>Le GPS du telephone envoie la position toutes les 30 secondes</span>
+              <span>Le GPS du téléphone envoie la position toutes les 30 secondes</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-brand-500 font-bold shrink-0">3.</span>
-              <span>Les graphiques de vitesse et positions apparaissent ici en temps reel</span>
+              <span>Les graphiques de vitesse et positions apparaissent ici en temps réel</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-brand-500 font-bold shrink-0">4.</span>
-              <span>En zone blanche, les positions sont stockees localement puis envoyees au retour du reseau</span>
+              <span>En zone blanche, les positions sont stockees localement puis envoyees au retour du réseau</span>
             </div>
           </div>
 
           <div className="mt-4 pt-3 border-t border-surface-100">
             <p className="text-surface-400 text-[10px]">
-              Compatible aussi avec les boitiers telematiques (Geotab, Samsara) — configurez-les dans Parametres &gt; Integrations.
+              Compatible aussi avec les boîtiers télématiques (Geotab, Samsara) — configurez-les dans Paramètres &gt; Intégrations.
             </p>
           </div>
         </div>

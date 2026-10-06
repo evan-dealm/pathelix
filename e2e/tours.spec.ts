@@ -27,7 +27,7 @@ test.describe('Tours Tab', () => {
   })
 
   test('optimization weight panel can be opened', async ({ page }) => {
-    const gearBtn = page.locator('button[title="Parametres d\'optimisation"]').first()
+    const gearBtn = page.locator('button[title="Paramètres d\'optimisation"]').first()
     await expect(gearBtn).toBeVisible({ timeout: 10_000 })
     await gearBtn.click()
     await page.waitForTimeout(400)

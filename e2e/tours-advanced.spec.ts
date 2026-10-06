@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { login, waitForAdminReady, navigateToTab, dismissDialogs } from './helpers'
 
 async function openWeightPanel(page: import('@playwright/test').Page) {
-  const gearBtn = page.locator('button[title="Parametres d\'optimisation"]').first()
+  const gearBtn = page.locator('button[title="Paramètres d\'optimisation"]').first()
   await expect(gearBtn).toBeVisible({ timeout: 10_000 })
   await gearBtn.click()
   await page.waitForTimeout(300)

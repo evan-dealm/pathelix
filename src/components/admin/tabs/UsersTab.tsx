@@ -204,7 +204,7 @@ export function UsersTab() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Supprimer cet utilisateur ? Cette action est irreversible.')) return
+    if (!confirm('Supprimer cet utilisateur ? Cette action est irréversible.')) return
     setDeleting(id)
     try {
       const res = await fetch(`/api/users/${id}`, { method: 'DELETE' })
@@ -398,7 +398,7 @@ export function UsersTab() {
 
             {modal.kind === 'edit' && (
               <div className="border-t border-surface-200 pt-3">
-                <div className="text-xs font-medium text-surface-500 uppercase tracking-wider mb-2">Reinitialiser le mot de passe</div>
+                <div className="text-xs font-medium text-surface-500 uppercase tracking-wider mb-2">Réinitialiser le mot de passe</div>
                 <div className="flex items-center gap-2">
                   <Input value={resetPwdValue} onChange={v => setResetPwdValue(v)} placeholder="Nouveau mot de passe (min. 12 car.)" />
                   <Btn
@@ -410,7 +410,7 @@ export function UsersTab() {
                     {resetPwdId === modal.user.id ? '...' : 'Changer'}
                   </Btn>
                 </div>
-                {resetPwdStatus === 'ok' && <p className="text-emerald-600 text-xs mt-1.5">Mot de passe modifie avec succes</p>}
+                {resetPwdStatus === 'ok' && <p className="text-emerald-600 text-xs mt-1.5">Mot de passe modifie avec succès</p>}
                 {resetPwdStatus === 'error' && <p className="text-red-600 text-xs mt-1.5">Erreur — min. 12 caractères</p>}
               </div>
             )}
@@ -453,7 +453,7 @@ export function UsersTab() {
                 <p className="text-surface-400 text-[10px] mt-1.5">
                   {permsIsCustom
                     ? 'Permissions personnalisées — remplacent les valeurs par défaut du rôle.'
-                    : 'Valeurs par défaut du rôle actuel — cocher/décocher personnalise cet utilisateur.'}
+                    : 'Valeurs par défaut du rôle actuel — cocher/décocher personnalisé cet utilisateur.'}
                 </p>
                 {permsStatus === 'ok' && <p className="text-emerald-600 text-xs mt-1">Permissions mises à jour</p>}
                 {permsStatus === 'error' && <p className="text-red-600 text-xs mt-1">Erreur lors de la mise à jour</p>}
@@ -463,7 +463,7 @@ export function UsersTab() {
             <div className="flex items-center justify-end gap-2 pt-2">
               <Btn onClick={() => setModal(null)} variant="ghost" size="sm">Annuler</Btn>
               <Btn onClick={handleSave} variant="primary" size="sm" disabled={saving}>
-                {saving ? 'Enregistrement...' : modal.kind === 'new' ? 'Creer' : 'Enregistrer'}
+                {saving ? 'Enregistrement...' : modal.kind === 'new' ? 'Créer' : 'Enregistrer'}
               </Btn>
             </div>
           </div>

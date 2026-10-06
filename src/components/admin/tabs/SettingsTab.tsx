@@ -460,13 +460,13 @@ export function SettingsTab() {
           className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
             settingsSubTab === 'general' ? 'bg-brand-50 text-brand-500' : 'text-surface-500 hover:bg-surface-50 hover:text-surface-700'
           }`}>
-          General
+          Général
         </button>
         <button type="button" onClick={() => setSettingsSubTab('integrations')}
           className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
             settingsSubTab === 'integrations' ? 'bg-brand-50 text-brand-500' : 'text-surface-500 hover:bg-surface-50 hover:text-surface-700'
           }`}>
-          Integrations
+          Intégrations
         </button>
         <button type="button" onClick={() => setSettingsSubTab('api')}
           className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
@@ -911,7 +911,7 @@ export function SettingsTab() {
               <h3 className="text-surface-900 font-semibold text-xs mb-2">Données locales</h3>
               <button type="button" onClick={handleClearLocalData}
                 className="px-3 py-1.5 bg-surface-50 hover:bg-amber-50 text-surface-600 hover:text-amber-700 text-xs font-medium rounded-lg border border-surface-200 hover:border-amber-200 transition-colors">
-                Reinitialiser
+                Réinitialiser
               </button>
             </div>
 
@@ -953,13 +953,13 @@ export function SettingsTab() {
 
             {}
             <div className="flex-shrink-0">
-              <h3 className="text-surface-900 font-semibold text-xs mb-2">A propos</h3>
+              <h3 className="text-surface-900 font-semibold text-xs mb-2">À propos</h3>
               <div className="grid grid-cols-2 gap-y-1.5 text-[10px]">
                 <span className="text-surface-400">Application</span><span className="text-surface-600">PATHÉLIX</span>
                 <span className="text-surface-400">Version</span><span className="text-surface-600">1.0.0</span>
                 <span className="text-surface-400">Framework</span><span className="text-surface-600">Next.js 15 / TypeScript</span>
                 <span className="text-surface-400">Optimisation</span><span className="text-surface-600">MV-ALNS + Cheapest Insertion + Regret-3</span>
-                <span className="text-surface-400">Base de donnees</span><span className="text-surface-600">PostgreSQL (Prisma)</span>
+                <span className="text-surface-400">Base de données</span><span className="text-surface-600">PostgreSQL (Prisma)</span>
                 <span className="text-surface-400">Routage</span><span className="text-surface-600">OSRM / Haversine</span>
               </div>
             </div>

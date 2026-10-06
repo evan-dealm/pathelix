@@ -765,8 +765,8 @@ function AuditHistoryTab({ logs, total, tenants, filter, onFilterChange }: {
                         <th className="px-5 py-2 w-36">Date</th>
                         <th className="px-4 py-2 w-28">Utilisateur</th>
                         <th className="px-4 py-2 w-40">Action</th>
-                        <th className="px-4 py-2 w-24">Entite</th>
-                        <th className="px-4 py-2">Details</th>
+                        <th className="px-4 py-2 w-24">Entité</th>
+                        <th className="px-4 py-2">Détails</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1105,9 +1105,9 @@ function PricingTab() {
             <div className="space-y-2.5">
               <Feature text="Interface admin (13 onglets)" />
               <Feature text="App Chauffeur PWA hors-ligne" />
-              <Feature text="Distances Haversine + tortuosite" />
+              <Feature text="Distances Haversine + tortuosité" />
               <Feature text="Planning jour par jour" />
-              <Feature text="Historique des tournees" />
+              <Feature text="Historique des tournées" />
               <Feature text="Support email" />
             </div>
             <div className="mt-5 pt-4 border-t border-zinc-800">
@@ -1131,9 +1131,9 @@ function PricingTab() {
               <Feature text="Tout le plan Starter" included />
               <Feature text="Algorithme ALNS v5 (6 operateurs)" highlight />
               <Feature text="Valhalla multi-profil (distances réelles + trafic)" highlight />
-              <Feature text="Conformite CE 561/2006 automatique" highlight />
-              <Feature text="Trafic temps reel directionnel" />
-              <Feature text="Multi-objectif (distance/ponctualite)" />
+              <Feature text="Conformité CE 561/2006 automatique" highlight />
+              <Feature text="Trafic temps réel directionnel" />
+              <Feature text="Multi-objectif (distance/ponctualité)" />
               <Feature text="Planning multi-jours (semaine)" />
               <Feature text="Rapports analytics" />
               <Feature text="Import/Export CSV massif" />
@@ -1154,12 +1154,12 @@ function PricingTab() {
             <div className="space-y-2.5">
               <Feature text="Tout le plan Pro" included />
               <Feature text="Decomposition K-Means (1000+ camions)" highlight />
-              <Feature text="API publique + cles API" highlight />
+              <Feature text="API publique + clés API" highlight />
               <Feature text="Webhooks sortants" highlight />
               <Feature text="SSO (SAML/OIDC)" highlight />
               <Feature text="Worker BullMQ dedie (async)" />
               <Feature text="Permissions granulaires (11 niveaux)" />
-              <Feature text="Integrations ERP (SAP, Sage, Nessy)" />
+              <Feature text="Intégrations ERP (SAP, Sage, Nessy)" />
               <Feature text="SLA 99.9% garanti" />
               <Feature text="Support dedie + Account Manager" />
             </div>
@@ -1175,19 +1175,19 @@ function PricingTab() {
             name="IA : OCR & Vision"
             price="+ 150"
             period="/ mois"
-            features={['Reconnaissance automatique des bons', 'Detection des bennes par camera', 'Extraction de donnees photo']}
+            features={['Reconnaissance automatique des bons', 'Détection des bennes par camera', 'Extraction de données photo']}
           />
           <AddOnCard
             name="Tracking Client (SMS)"
             price="+ 100"
             period="/ mois"
-            features={['SMS de notification au client', 'Lien de suivi Uber-like', 'ETA en temps reel']}
+            features={['SMS de notification au client', 'Lien de suivi Uber-like', 'ETA en temps réel']}
           />
           <AddOnCard
             name="Marque Blanche"
             price="+ 300"
             period="/ mois"
-            features={['Logo et couleurs custom', 'Domaine personnalise (fleet.client.fr)', 'Emails depuis le domaine client']}
+            features={['Logo et couleurs custom', 'Domaine personnalisé (fleet.client.fr)', 'Emails depuis le domaine client']}
           />
         </div>
       </div>
@@ -1199,14 +1199,14 @@ function PricingTab() {
           <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 flex items-center justify-between">
             <div>
               <div className="font-bold text-sm">Setup PME</div>
-              <div className="text-zinc-500 text-xs mt-0.5">5 a 15 camions — import donnees, formation admin, go-live</div>
+              <div className="text-zinc-500 text-xs mt-0.5">5 a 15 camions — import données, formation admin, go-live</div>
             </div>
             <div className="text-xl font-black text-right whitespace-nowrap">1 500 - 3 000 &euro;</div>
           </div>
           <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 flex items-center justify-between">
             <div>
               <div className="font-bold text-sm">Setup Enterprise</div>
-              <div className="text-zinc-500 text-xs mt-0.5">100+ camions — integration ERP, SSO, migration, formation equipe</div>
+              <div className="text-zinc-500 text-xs mt-0.5">100+ camions — intégration ERP, SSO, migration, formation équipe</div>
             </div>
             <div className="text-xl font-black text-right whitespace-nowrap">5 000 - 10 000 &euro;</div>
           </div>
@@ -1219,7 +1219,7 @@ function PricingTab() {
         <p>&bull; Les prix sont HT. TVA applicable selon le pays.</p>
         <p>&bull; Engagement 12 mois minimum. Mensualisation possible a +10%.</p>
         <p>&bull; Reduction -15% sur engagement 24 mois.</p>
-        <p>&bull; Le plan Enterprise est personnalise — contacter pour devis.</p>
+        <p>&bull; Le plan Enterprise est personnalisé — contacter pour devis.</p>
         <p>&bull; Les modules add-on sont cumulables sur n&apos;importe quel forfait.</p>
         <p>&bull; Migration depuis un concurrent : setup offert si engagement 24 mois.</p>
       </div>
@@ -1717,7 +1717,7 @@ export default function SuperAdminPage() {
                         // above, in the dashboard/stats views).
                         const selectableTenants = tenants.filter(t => t.slug !== '__platform__')
                         return (
-                          <input type="checkbox" title="Tout selectionner"
+                          <input type="checkbox" title="Tout sélectionner"
                             checked={selectedTenants.size === selectableTenants.length && selectableTenants.length > 0}
                             onChange={e => setSelectedTenants(e.target.checked ? new Set(selectableTenants.map(t => t.id)) : new Set())}
                             className="accent-red-500" />
@@ -1813,7 +1813,7 @@ export default function SuperAdminPage() {
                               await fetchTenants()
                             }} />
                           ) : (
-                            <div className="text-zinc-600 text-xs py-4 text-center">Impossible de charger les donnees</div>
+                            <div className="text-zinc-600 text-xs py-4 text-center">Impossible de charger les données</div>
                           )}
                         </td>
                       </tr>
@@ -1846,7 +1846,7 @@ export default function SuperAdminPage() {
               <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Telemetrie Système</h2>
               <div className="flex items-center gap-3">
                 <span className="text-[10px] text-zinc-600 font-mono">Rafraichi toutes les 15s</span>
-                <button onClick={fetchHealth} className="text-xs text-zinc-400 border border-zinc-700 px-3 py-1 rounded hover:border-zinc-500 transition">Rafraichir</button>
+                <button onClick={fetchHealth} className="text-xs text-zinc-400 border border-zinc-700 px-3 py-1 rounded hover:border-zinc-500 transition">Rafraîchir</button>
               </div>
             </div>
 
@@ -1860,7 +1860,7 @@ export default function SuperAdminPage() {
                       <span className="text-xs font-bold uppercase text-zinc-400">PostgreSQL</span>
                     </div>
                     <div className="text-xl font-bold">{health.database.status === 'ok' ? `${health.database.responseTimeMs}ms` : 'Erreur'}</div>
-                    <div className="text-[10px] text-zinc-500">Latence requete</div>
+                    <div className="text-[10px] text-zinc-500">Latence requête</div>
                   </div>
 
                   <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
@@ -1938,7 +1938,7 @@ export default function SuperAdminPage() {
 
                 {}
                 <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-4">Memoire Node.js</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-4">Mémoire Node.js</h3>
                   <div className="grid grid-cols-4 gap-4">
                     <div>
                       <div className="text-2xl font-bold font-mono">{health.memory.heapUsedMb} <span className="text-sm text-zinc-500">MB</span></div>
@@ -1966,7 +1966,7 @@ export default function SuperAdminPage() {
                 </div>
               </>
             ) : (
-              <div className="text-zinc-600 text-sm">Impossible de charger les donnees systeme</div>
+              <div className="text-zinc-600 text-sm">Impossible de charger les données système</div>
             )}
           </div>
         )}
@@ -2064,7 +2064,7 @@ function MLCalibrationTab() {
   }, [])
 
   if (loading) {
-    return <div className="text-zinc-400 animate-pulse py-12 text-center">Chargement des donnees ML...</div>
+    return <div className="text-zinc-400 animate-pulse py-12 text-center">Chargement des données ML...</div>
   }
 
   const totalReliable = data.reduce((s, t) => s + t.metrics.reliable, 0)
