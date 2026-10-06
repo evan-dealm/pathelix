@@ -13,7 +13,11 @@ export interface ParsedMissionFields {
   timeWindow?:           { openMin: number; closeMin: number }
   notes?:                string
   binSize?:              string
+  /** YYYY-MM-DD when the text names a day. */
+  date?:                 string
 }
+
+interface ParseInfo { source: 'llm' | 'rules'; warnings: string[]; missing: string[] }
 
 interface Props {
   date:      string
@@ -32,6 +36,7 @@ export function NaturalMissionInput({ date, onParsed, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
   const [result, setResult]   = useState<ParsedMissionFields | null>(null)
+  const [info, setInfo]       = useState<ParseInfo | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -51,18 +56,15 @@ export function NaturalMissionInput({ date, onParsed, onClose }: Props) {
         body:    JSON.stringify({ text: text.trim(), date }),
       })
 
-      const data = await res.json() as { mission?: ParsedMissionFields; error?: string; code?: string }
+      const data = await res.json() as { mission?: ParsedMissionFields; error?: unknown } & Partial<ParseInfo>
 
       if (!res.ok) {
-        if (data.code === 'OLLAMA_UNAVAILABLE') {
-          setError('Le service LLM local (Ollama) n\'est pas démarré. Saisissez la mission manuellement ou démarrez Ollama.')
-        } else {
-          setError(data.error ?? 'Erreur lors du parsing')
-        }
+        setError(typeof data.error === 'string' ? data.error : 'Texte non analysable : saisissez la mission dans le formulaire.')
         return
       }
 
       setResult(data.mission ?? null)
+      setInfo({ source: data.source ?? 'rules', warnings: data.warnings ?? [], missing: data.missing ?? [] })
     } catch {
       setError('Erreur réseau. Vérifiez votre connexion.')
     } finally {
@@ -79,13 +81,13 @@ export function NaturalMissionInput({ date, onParsed, onClose }: Props) {
   }
 
   return (
-    <Modal title="Saisie rapide — IA locale" onClose={onClose} size="md">
+    <Modal title="Saisie rapide" onClose={onClose} size="md">
       <div className="space-y-4">
 
         {}
         <p className="text-surface-500 text-xs leading-relaxed">
-          Décrivez la mission en langage naturel. Le LLM local (Ollama) extrait les champs automatiquement.
-          Vous pourrez modifier le résultat avant de valider.
+          Décrivez la mission comme vous la diriez au téléphone. Les champs reconnus pré-remplissent
+          le formulaire : rien n&apos;est créé avant que vous l&apos;ayez vérifié et enregistré.
         </p>
 
         {}
@@ -134,7 +136,7 @@ export function NaturalMissionInput({ date, onParsed, onClose }: Props) {
               </svg>
               Analyse en cours…
             </span>
-          ) : '✨ Analyser avec l\'IA'}
+          ) : 'Analyser le texte'}
         </Btn>
 
         {}
@@ -147,7 +149,13 @@ export function NaturalMissionInput({ date, onParsed, onClose }: Props) {
         {}
         {result && (
           <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 space-y-3">
-            <p className="text-green-700 font-semibold text-sm">✓ Champs extraits — vérifiez avant de valider</p>
+            <p className="text-green-700 font-semibold text-sm">Champs reconnus{info?.source === 'llm' ? ' par l\'assistant IA' : ''} — vérifiez avant de valider</p>
+            {info && (info.warnings.length > 0 || info.missing.length > 0) && (
+              <ul className="space-y-0.5 text-xs text-amber-800">
+                {info.warnings.map(w => <li key={w}>{w}</li>)}
+                {info.missing.length > 0 && <li>À compléter : {info.missing.join(', ')}</li>}
+              </ul>
+            )}
             <div className="grid grid-cols-2 gap-2 text-xs">
               {result.type && (
                 <div>
@@ -165,6 +173,12 @@ export function NaturalMissionInput({ date, onParsed, onClose }: Props) {
                 <div className="col-span-2">
                   <span className="text-surface-400">Adresse</span>
                   <p className="font-medium text-surface-900">{result.address}</p>
+                </div>
+              )}
+              {result.date && (
+                <div>
+                  <span className="text-surface-400">Date</span>
+                  <p className="font-medium text-surface-900">{result.date.split('-').reverse().join('/')}</p>
                 </div>
               )}
               {result.estimatedDurationMin && (
@@ -204,9 +218,9 @@ export function NaturalMissionInput({ date, onParsed, onClose }: Props) {
             </div>
             <div className="flex gap-2 pt-1">
               <Btn onClick={handleConfirm} variant="primary">
-                Ouvrir le formulaire pré-rempli →
+                Ouvrir le formulaire pré-rempli
               </Btn>
-              <Btn onClick={() => setResult(null)} variant="ghost">
+              <Btn onClick={() => { setResult(null); setInfo(null) }} variant="ghost">
                 Recommencer
               </Btn>
             </div>

@@ -14,6 +14,7 @@ vi.mock('@/lib/rateLimit', () => ({
 
 const mockGetCtx = vi.hoisted(() => vi.fn(() => ({ tenantId: 't1', userId: 'u1', role: 'admin', requestId: 'req-123', trade: null })))
 vi.mock('@/lib/data/context', () => ({ getRequestContext: mockGetCtx }))
+vi.mock('@/lib/permissions', () => ({ hasPermission: vi.fn(async (_u: string, role: string) => role !== 'driver') }))
 
 // Redis + DB for system-health
 const mockGetRedis = vi.hoisted(() => vi.fn())
@@ -45,6 +46,7 @@ beforeEach(() => {
   mockRlCheck.mockResolvedValue(true)
   mockGetCtx.mockReturnValue({ tenantId: 't1', userId: 'u1', role: 'admin', requestId: 'req-123', trade: null })
   vi.stubGlobal('fetch', mockFetch)
+  vi.unstubAllEnvs()
 })
 
 // ─── POST /api/missions/parse-natural ────────────────────────────────────────
@@ -86,43 +88,57 @@ describe('POST /api/missions/parse-natural', () => {
     expect(res.status).toBe(400)
   })
 
-  it('returns 503 when Ollama health check fails', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 })
-    const res = await parseNatural(makeParseReq(VALID_PARSE_BODY))
-    expect(res.status).toBe(503)
-    const body = await res.json()
-    expect(body.code).toBe('OLLAMA_UNAVAILABLE')
-  })
+  const llmAnswer = (content: unknown) => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(content) } }] }) })
 
-  it('returns 503 when Ollama health check throws (network error)', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'))
-    const res = await parseNatural(makeParseReq(VALID_PARSE_BODY))
-    expect(res.status).toBe(503)
-  })
-
-  it('returns 200 with parsed mission', async () => {
-    const llmResponse = { type: 'POSER', address: '14 rue des Artisans', clientName: 'Dupont', estimatedDurationMin: 30 }
-    mockFetch
-      .mockResolvedValueOnce({ ok: true })  // health check
-      .mockResolvedValueOnce({              // LLM call
-        ok: true,
-        json: async () => ({
-          choices: [{ message: { content: JSON.stringify(llmResponse) } }],
-        }),
-      })
+  it('without a configured LLM, answers with the deterministic reading (no network call)', async () => {
+    vi.stubEnv('OLLAMA_URL', '')
     const res = await parseNatural(makeParseReq(VALID_PARSE_BODY))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.mission.type).toBe('POSER')
-    expect(body.mission.address).toBe('14 rue des Artisans')
+    expect(body.source).toBe('rules')
+    expect(body.mission).toMatchObject({ type: 'POSER', clientName: 'Dupont', address: '14 rue des Artisans Lyon' })
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('returns 500 when LLM call fails', async () => {
-    mockFetch
-      .mockResolvedValueOnce({ ok: true })     // health check OK
-      .mockRejectedValueOnce(new Error('LLM timeout')) // LLM call throws
+  it('refuses users without the missions permission', async () => {
+    mockGetCtx.mockReturnValue({ tenantId: 't1', userId: 'u1', role: 'driver', requestId: 'r', trade: null })
     const res = await parseNatural(makeParseReq(VALID_PARSE_BODY))
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(403)
+  })
+
+  it('uses the LLM reading, validated field by field and grounded in the text', async () => {
+    vi.stubEnv('OLLAMA_URL', 'http://ollama:11434')
+    mockFetch.mockResolvedValueOnce(llmAnswer({ type: 'POSER', address: '14 rue des Artisans, Lyon', clientName: 'Dupont', priority: 9, notes: 'Accès par le portail' }))
+    const body = await (await parseNatural(makeParseReq(VALID_PARSE_BODY))).json()
+    expect(body.source).toBe('llm')
+    expect(body.mission).toMatchObject({ type: 'POSER', address: '14 rue des Artisans, Lyon', clientName: 'Dupont', notes: 'Accès par le portail' })
+    expect(body.mission.priority).toBeUndefined()
+    expect(body.warnings.join(' ')).toMatch(/priorité/)
+  })
+
+  it('drops a client or address the LLM invented', async () => {
+    vi.stubEnv('OLLAMA_URL', 'http://ollama:11434')
+    mockFetch.mockResolvedValueOnce(llmAnswer({ type: 'RETIRER', address: '1 place Bellecour, Lyon', clientName: 'Durand SA' }))
+    const body = await (await parseNatural(makeParseReq(VALID_PARSE_BODY))).json()
+    expect(body.mission.clientName).toBe('Dupont') // from the rules, not the invention
+    expect(body.mission.address).toBe('14 rue des Artisans Lyon')
+    expect(body.warnings.join(' ')).toMatch(/absent de votre texte/)
+  })
+
+  it('falls back to the deterministic reading when the LLM fails, then stops calling it (circuit open)', async () => {
+    vi.stubEnv('OLLAMA_URL', 'http://ollama:11434')
+    mockFetch.mockRejectedValue(new Error('timeout'))
+    for (let i = 0; i < 3; i++) {
+      const res = await parseNatural(makeParseReq(VALID_PARSE_BODY))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.source).toBe('rules')
+      expect(body.warnings.join(' ')).toMatch(/indisponible/)
+    }
+    mockFetch.mockClear()
+    const body = await (await parseNatural(makeParseReq(VALID_PARSE_BODY))).json()
+    expect(body.source).toBe('rules')
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 })
 
