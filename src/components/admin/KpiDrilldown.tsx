@@ -70,6 +70,9 @@ export function KpiDrilldown({ metric, history, onClose }: Props) {
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Détail de l'indicateur"
         className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6"
         onClick={e => e.stopPropagation()}
       >

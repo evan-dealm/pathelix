@@ -349,7 +349,7 @@ export function IntegrationsPanel() {
         <>
           <div className="fixed inset-0 bg-black/30 dark:bg-black/60 z-[9998]" onClick={() => { setConfiguring(null); setTestResult(null) }} />
           <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
-            <div className="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl p-6 w-96 max-h-[80vh] overflow-y-auto pointer-events-auto">
+            <div role="dialog" aria-modal="true" aria-label="Configuration de l'intégration" className="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl p-6 w-96 max-h-[80vh] overflow-y-auto pointer-events-auto">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{TYPE_META[configuring]?.icon ?? '🔌'}</span>

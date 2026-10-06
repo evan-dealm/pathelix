@@ -119,6 +119,19 @@ describe('POST /api/auth/login — real DB mode', () => {
     expect(res.status).toBe(429)
   })
 
+  it('locks an account after 10 failed attempts — but successful logins never count', async () => {
+    mockRlCheck.mockResolvedValue(true)
+    const email = 'lockout-' + Date.now() + '@x.com'
+    mockUserFindFirst.mockResolvedValue({ ...BASE_USER, email })
+    // 12 successful logins in a row: no lockout (shared tablet, several devices)
+    for (let i = 0; i < 12; i++) expect((await POST(makeLogin({ email, password: 'good' }))).status).toBe(200)
+    mockBcryptCompare.mockResolvedValue(false)
+    for (let i = 0; i < 10; i++) expect((await POST(makeLogin({ email, password: 'bad' }))).status).toBe(401)
+    expect((await POST(makeLogin({ email, password: 'bad' }))).status).toBe(429)
+    mockBcryptCompare.mockResolvedValue(true)
+    expect((await POST(makeLogin({ email, password: 'good' }))).status).toBe(429)
+  }, 20_000)
+
   // ── JSON parse ─────────────────────────────────────────────────────────────
 
   it('400 on invalid JSON body', async () => {

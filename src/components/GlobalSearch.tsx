@@ -109,6 +109,9 @@ export function GlobalSearch({ onNavigate }: Props) {
     >
       <div className="absolute inset-0 bg-surface-900/20 backdrop-blur-sm" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Recherche globale"
         className="relative w-full max-w-lg mx-4 bg-white rounded-2xl shadow-modal border border-surface-200 overflow-hidden"
         onClick={e => e.stopPropagation()}
       >

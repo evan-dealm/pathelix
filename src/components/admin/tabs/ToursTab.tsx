@@ -737,7 +737,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
                   <div className="fixed inset-0 bg-black/30 z-[9998]" onClick={() => setShowWeights(false)} />
                   {}
                   <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
-                    <div className="bg-white border border-surface-200 rounded-2xl shadow-2xl p-6 w-80 pointer-events-auto">
+                    <div role="dialog" aria-modal="true" aria-label="Paramètres d'optimisation" className="bg-white border border-surface-200 rounded-2xl shadow-2xl p-6 w-80 pointer-events-auto">
                       <div className="flex items-center justify-between mb-4">
                         <div className="text-sm font-semibold text-surface-800">Priorités d&apos;optimisation</div>
                         <button onClick={() => setShowWeights(false)} type="button"

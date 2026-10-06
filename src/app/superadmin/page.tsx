@@ -76,7 +76,7 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, onConfirm, o
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onCancel}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label={title} className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold">{title}</h3>
         <p className="text-sm text-zinc-400">{message}</p>
         {children}
@@ -96,7 +96,7 @@ function FormModal({ open, title, onClose, onSubmit, submitLabel, error, childre
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label={title} className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold">{title}</h3>
         {error && <div className="text-red-400 text-xs bg-red-900/30 px-3 py-2 rounded-lg">{error}</div>}
         {children}
@@ -609,7 +609,7 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
       {}
       {editRes && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setEditRes(null)}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={`Modifier — ${editRes.label}`} className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold">Modifier — {editRes.label}</h3>
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(editResForm).map(([key, val]) => (

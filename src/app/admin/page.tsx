@@ -1008,7 +1008,7 @@ export default function AdminPage() {
 
         return (
           <div className="fixed inset-0 bg-surface-900/30 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowValidation(false)}>
-            <div className="bg-white border border-surface-200 rounded-2xl w-full max-w-md overflow-hidden shadow-modal" onClick={e => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-label="Vérification du planning" className="bg-white border border-surface-200 rounded-2xl w-full max-w-md overflow-hidden shadow-modal" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100">
                 <h2 className="text-surface-900 font-semibold text-base">
                   Validation — {displayShort(todayStr)}

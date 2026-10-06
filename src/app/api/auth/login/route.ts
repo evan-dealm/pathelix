@@ -16,9 +16,31 @@ const USE_MOCK       = process.env.USE_MOCK_DATA !== 'false'
 // deployment without ADMIN_PASSWORD answers 503 in the handler instead.
 
 const _loginRl = createRateLimiter(5, 60_000)
-// Per-account limiter on top of the per-IP one: a distributed guessing attack (many IPs, one
-// account) is throttled too. Keyed by the normalised email.
-const _accountRl = createRateLimiter(10, 15 * 60_000)
+// Per-account lockout on top of the per-IP limiter: a distributed guessing attack (many IPs, one
+// account) is throttled too. Only FAILED attempts count, and a successful login clears them — the
+// previous limiter counted every attempt, so a shared tablet or a user signing in on several
+// devices was locked out after 10 legitimate logins in 15 minutes.
+const ACCOUNT_MAX_FAILURES = 10
+const ACCOUNT_WINDOW_MS    = 15 * 60_000
+const _accountFailures = new Map<string, { count: number; resetAt: number }>()
+
+function accountLocked(email: string): boolean {
+  const e = _accountFailures.get(email)
+  if (!e) return false
+  if (Date.now() > e.resetAt) { _accountFailures.delete(email); return false }
+  return e.count >= ACCOUNT_MAX_FAILURES
+}
+
+function recordAccountFailure(email: string): void {
+  const now = Date.now()
+  const e = _accountFailures.get(email)
+  if (!e || now > e.resetAt) {
+    if (_accountFailures.size >= 10_000) _accountFailures.clear()
+    _accountFailures.set(email, { count: 1, resetAt: now + ACCOUNT_WINDOW_MS })
+  } else {
+    e.count++
+  }
+}
 
 // bcrypt hash of a random string — compared against when the email is unknown, so a miss costs
 // the same time as a wrong password and response timing doesn't reveal which emails exist.
@@ -67,10 +89,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const normalizedEmail = email.trim().toLowerCase()
-    if (!(await _accountRl.check(normalizedEmail))) {
+    if (accountLocked(normalizedEmail)) {
       return NextResponse.json(
         { error: 'Trop de tentatives pour ce compte. Réessayez dans quelques minutes.' },
-        { status: 429, headers: _accountRl.headers(normalizedEmail) },
+        { status: 429, headers: { 'Retry-After': String(ACCOUNT_WINDOW_MS / 1000) } },
       )
     }
 
@@ -83,7 +105,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const { compare } = await import('bcryptjs')
       const ok = await compare(password, user?.passwordHash ?? DUMMY_HASH)
-      if (!user || !ok) return deny('Identifiants incorrects')
+      if (!user || !ok) {
+        recordAccountFailure(normalizedEmail)
+        return deny('Identifiants incorrects')
+      }
+      _accountFailures.delete(normalizedEmail)
 
       if (user.tenant?.suspendedAt && user.role !== 'SUPERADMIN') {
         return deny('Compte suspendu. Contactez votre administrateur.', 403)

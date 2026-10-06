@@ -192,16 +192,18 @@ function ImportModal({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[700px] max-w-[95vw] max-h-[85vh] flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="import-modal-title"
+        className="bg-white rounded-2xl shadow-2xl w-[700px] max-w-[95vw] max-h-[85vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => { if (e.key === 'Escape') onClose() }}>
 
         {}
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200">
           <div>
-            <h3 className="text-sm font-bold text-surface-900">Importer des données</h3>
+            <h3 id="import-modal-title" className="text-sm font-bold text-surface-900">Importer des données</h3>
             <p className="text-[11px] text-surface-400 mt-0.5">Formats acceptés : CSV, Excel (.xlsx)</p>
           </div>
-          <button type="button" onClick={onClose} className="text-surface-400 hover:text-surface-600 text-lg">✕</button>
+          <button type="button" onClick={onClose} aria-label="Fermer" className="text-surface-400 hover:text-surface-600 text-lg">✕</button>
         </div>
 
         {}
