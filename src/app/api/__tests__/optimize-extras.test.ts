@@ -262,11 +262,17 @@ describe('GET /api/plans/p1-risk', () => {
 describe('POST /api/missions/parse-natural', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
-  it('returns 503 when Ollama service unavailable', async () => {
+  // Changed on purpose: an unreachable LLM no longer fails the entry (503) — the deterministic
+  // reader answers and says so (see lib/nl/missionText).
+  it('falls back to the deterministic reading when the LLM is unreachable', async () => {
+    vi.stubEnv('OLLAMA_URL', 'http://ollama:11434')
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('Network error') }))
     const res = await parseNaturalPost(makePost('http://localhost/api/missions/parse-natural', { text: 'Poser benne 8m3 chez Dupont BTP demain matin' }))
-    expect(res.status).toBe(503)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ source: 'rules', mission: { type: 'POSER', binSize: '8m3', clientName: 'Dupont BTP' } })
     vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
   })
 
   it('returns 400 for invalid JSON body', async () => {
