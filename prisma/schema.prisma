@@ -373,6 +373,7 @@ model Mission {
   @@index([placedContainerId])
   @@index([collectedContainerId])
   @@index([orderId])
+  @@index([tenantId, clientId, completedAt])
 }
 
 model MissionComment {
@@ -1207,6 +1208,7 @@ model Invoice {
   @@unique([tenantId, number])
   @@index([tenantId, clientId])
   @@index([tenantId, status, dueDate])
+  @@index([tenantId, issueDate])
 }
 
 model InvoiceLine {
@@ -1256,6 +1258,7 @@ model Payment {
 
   @@index([tenantId, clientId])
   @@index([tenantId, invoiceId])
+  @@index([tenantId, receivedAt])
 }
 
 /// A weighing ticket: from the driver, an OCR reading (to be confirmed by a person) or an import.
