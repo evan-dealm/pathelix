@@ -256,7 +256,7 @@ describe('formatSolutionForAPI — ALLER_RETOUR', () => {
   it('warns when no exutoire found for ALLER_RETOUR', () => {
     const m = mission('m-ar', { type: 'ALLER_RETOUR' })
     const result = formatSolutionForAPI(solution('d-1', [m]), [driver()], ctx({ exutoires: [] }))
-    const warn = result.warnings.find(w => w.message.includes('exutoire introuvable'))
+    const warn = result.warnings.find(w => w.message.includes('aucun exutoire'))
     expect(warn).toBeDefined()
     expect(warn!.severity).toBe('warning')
   })

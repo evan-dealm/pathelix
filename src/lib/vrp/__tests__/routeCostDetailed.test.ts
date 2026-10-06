@@ -10,8 +10,8 @@ vi.mock('@/lib/familiarityLoader', () => ({
   getFamiliarityBonus: () => 0,
 }))
 vi.mock('../realDistance', () => ({
-  realDurationMin: () => null,
-  realDistanceKm:  () => null,
+  realDurationMin: () => 10,
+  realDistanceKm:  () => 5,
 }))
 vi.mock('../distanceCache', () => ({
   cachedDist: () => 5,
@@ -88,7 +88,7 @@ describe('computeRouteCostDetailed — basic', () => {
       { driverId: 'd-1', missions: [mission('m-1')] },
       ctx({ startTimeMin: 480 }), DRIVERS,
     )
-    // travelTimeMin mocked to return 10
+    // realDurationMin mocked to return 10
     expect(result.entries[0].arrivalMin).toBe(490)
   })
 

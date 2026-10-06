@@ -11,16 +11,17 @@ const DEFAULTS: VrpCostConfig = {
   nearmaxPerMin:         20,
   balancePenaltyWeight:  0.8,
   fixedRouteCost:        50,
+  lunchBreakEnabled:     true,
   lunchBreakStartMin:    720,
   lunchBreakEndMin:      810,
   lunchBreakDurationMin: 30,
   lunchBreakPenalty:     80,
 }
 
-describe('createVrpCostConfig — no args returns all 12 defaults', () => {
-  it('returns an object with all 12 keys', () => {
+describe('createVrpCostConfig — no args returns all 13 defaults', () => {
+  it('returns an object with all 13 keys', () => {
     const cfg = createVrpCostConfig()
-    expect(Object.keys(cfg)).toHaveLength(12)
+    expect(Object.keys(cfg)).toHaveLength(13)
   })
 
   it('overtimePenalty default is 30000', () => {
@@ -185,7 +186,7 @@ describe('createVrpCostConfig — lunchBreakStartMin / lunchBreakEndMin override
   })
 })
 
-describe('createVrpCostConfig — override all 12 fields at once', () => {
+describe('createVrpCostConfig — override all 13 fields at once', () => {
   const fullOverride: VrpCostConfig = {
     overtimePenalty:       1,
     overtimePerMin:        2,
@@ -195,13 +196,14 @@ describe('createVrpCostConfig — override all 12 fields at once', () => {
     nearmaxPerMin:         6,
     balancePenaltyWeight:  7,
     fixedRouteCost:        8,
+    lunchBreakEnabled:     false,
     lunchBreakStartMin:    9,
     lunchBreakEndMin:      10,
     lunchBreakDurationMin: 11,
     lunchBreakPenalty:     12,
   }
 
-  it('returns exact values when all 12 fields are overridden', () => {
+  it('returns exact values when all 13 fields are overridden', () => {
     const cfg = createVrpCostConfig(fullOverride)
     expect(cfg).toEqual(fullOverride)
   })
@@ -254,7 +256,7 @@ describe('createVrpCostConfig — return type and independence', () => {
     const requiredKeys: (keyof VrpCostConfig)[] = [
       'overtimePenalty', 'overtimePerMin', 'closedExutoirePenalty',
       'distanceCostFactor', 'nearmaxStartMin', 'nearmaxPerMin',
-      'balancePenaltyWeight', 'fixedRouteCost', 'lunchBreakStartMin',
+      'balancePenaltyWeight', 'fixedRouteCost', 'lunchBreakEnabled', 'lunchBreakStartMin',
       'lunchBreakEndMin', 'lunchBreakDurationMin', 'lunchBreakPenalty',
     ]
     for (const key of requiredKeys) {
@@ -293,7 +295,8 @@ describe('createVrpCostConfig — default value coherence', () => {
 
   it('all numeric values are finite numbers', () => {
     const cfg = createVrpCostConfig()
-    for (const [, value] of Object.entries(cfg)) {
+    for (const [key, value] of Object.entries(cfg)) {
+      if (key === 'lunchBreakEnabled') { expect(typeof value).toBe('boolean'); continue }
       expect(typeof value).toBe('number')
       expect(isFinite(value)).toBe(true)
     }

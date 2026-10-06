@@ -1,4 +1,6 @@
 import type { PlannedMission } from '@/lib/types'
+import { auditTimeline, type Activity, type ClockState } from './driverClock'
+import { planningWeightKg } from './vehicleLoad'
 
 /**
  * Helpers for re-optimising a day that has already started (POST /api/optimize/live,
@@ -59,4 +61,81 @@ export function nowMinutesInTimeZone(timeZone: string, now: Date = new Date()): 
 export function minutesToHHMM(min: number): string {
   const m = Math.max(0, Math.min(1439, Math.round(min)))
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+
+type TimedStatus = {
+  status?: string
+  en_routeAt?: string
+  arrivedAt?: string
+  startedAt?: string
+  doingAt?: string
+  doneAt?: string
+  weightKg?: number
+}
+
+/** Minutes since midnight of an ISO timestamp in the tenant's time zone. */
+function isoToMinutes(iso: string | undefined, timeZone: string): number | undefined {
+  if (!iso) return undefined
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return undefined
+  return nowMinutesInTimeZone(timeZone, d)
+}
+
+/**
+ * Regulatory counters and load of a driver whose day has started, rebuilt from the field statuses
+ * of the steps already acted on — so a re-optimisation never restarts the 4 h 30 driving counter
+ * at zero in the middle of the afternoon.
+ *
+ * Conservative where the field data is silent: time between two recorded events that is not a
+ * PAUSE step counts as driving (travel) or work (on site), never as a break.
+ */
+export function liveStartState(
+  locked: PlannedMission[],
+  statuses: Record<string, unknown>,
+  dayStartMin: number,
+  nowMin: number,
+  timeZone: string,
+  lunchEndMin = 810,
+): { clock: ClockState; lunchTaken: boolean; load: { kg: number; m3: number; bins: number } } {
+  const acts: Activity[] = []
+  let prevEnd = dayStartMin
+  let lunchTaken = nowMin > lunchEndMin
+  let bins = 0, kg = 0, m3 = 0
+  for (const step of locked) {
+    const raw = statuses[step.id]
+    const st = (raw && typeof raw === 'object' ? raw : {}) as TimedStatus
+    const arrived = isoToMinutes(st.arrivedAt ?? st.startedAt ?? st.doingAt, timeZone)
+    const done = isoToMinutes(st.doneAt, timeZone)
+    const isDone = st.status === 'done' || done !== undefined
+    if (step.type === 'PAUSE') {
+      const start = arrived ?? prevEnd
+      const end = done ?? (isDone ? start + step.estimatedDurationMin : nowMin)
+      acts.push({ kind: 'BREAK', minutes: Math.max(0, end - start) })
+      if (step.breakKind === 'LUNCH') lunchTaken = true
+      prevEnd = Math.max(prevEnd, end)
+      continue
+    }
+    const arrival = arrived ?? (isDone ? done : undefined)
+    if (arrival !== undefined) {
+      acts.push({ kind: 'DRIVE', minutes: Math.max(0, arrival - prevEnd) })
+      const end = done ?? (isDone ? arrival : nowMin)
+      acts.push({ kind: 'WORK', minutes: Math.max(0, end - arrival) })
+      prevEnd = Math.max(prevEnd, end)
+    } else if (st.status === 'en_route') {
+      acts.push({ kind: 'DRIVE', minutes: Math.max(0, nowMin - prevEnd) })
+      prevEnd = nowMin
+    }
+    if (isDone) {
+      if (step.type === 'VIDER') { bins = 0; kg = 0; m3 = 0 }
+      else if (step.type === 'RETIRER' || step.type === 'ECHANGER' || step.type === 'CHARGER_IMMEDIAT') {
+        bins++
+        kg += planningWeightKg(step) ?? 0
+        m3 += step.binSizeM3 ?? 0
+      }
+    }
+  }
+  // Since the last recorded event: the driver was working (conservative), not resting.
+  if (nowMin > prevEnd) acts.push({ kind: 'WORK', minutes: nowMin - prevEnd })
+  const { clock } = auditTimeline(acts)
+  return { clock, lunchTaken, load: { kg, m3, bins } }
 }

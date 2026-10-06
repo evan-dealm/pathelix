@@ -1,22 +1,19 @@
 import { minToHHMM } from '@/lib/algorithm'
 import {
-  MAX_CONTINUOUS_MIN,
   MAX_WORK_MIN,
   MAX_DRIVING_MIN,
-  BREAK_DURATION_MIN,
   P1_DEADLINE_MIN,
   computeDriverScore,
   computeDistributionScore,
 } from '@/lib/constraints'
-import type { Mission, Driver, PlannedMission, OptimizationResult } from '@/lib/types'
+import type { Mission, Driver, Exutoire, PlannedMission, OptimizationResult } from '@/lib/types'
 import type { VRPSolution, CostContext } from './types'
 import { cachedDist } from './distanceCache'
-import { findBestExutoire } from './exutoireSearch'
 import { isHfvrpCompatible } from './hfvrp'
-import { isAllerRetourCompatible } from './routeCost'
+import { isAllerRetourCompatible, simulateRouteTrace, type RouteTrace, type TraceEvent } from './routeCost'
 import { getFamiliarityBonus } from '@/lib/familiarityLoader'
-import { realDistanceKm, realDurationMin } from './realDistance'
-import { initLoadState, loadBin, dumpAll } from './multiCompartment'
+import { realDistanceKm } from './realDistance'
+import { loadIssueAlone } from './vehicleLoad'
 
 const _routeWorkCache = new WeakMap<{ missions: Mission[] }, { work: number; travel: number; len: number }>()
 
@@ -206,6 +203,9 @@ export function buildInitialSolution(
       for (let ri = 0; ri < routes.length; ri++) {
         const driver = drivers[ri]
         if (!isHfvrpCompatible(mission, driver)) continue
+        // Static infeasibilities — never seed a route the final validation would undo.
+        if (loadIssueAlone(mission, driver)) continue
+        if (mission.requiredSkills?.some(sk => !(driver.skills ?? []).includes(sk))) continue
         if (!isAllerRetourCompatible(routes[ri].missions, mission.type)) continue
 
         const route = routes[ri]
@@ -262,373 +262,230 @@ export function buildInitialSolution(
   return { routes, cost: 0 }
 }
 
+const BREAK_LABEL: Record<NonNullable<PlannedMission['breakKind']>, string> = {
+  FULL:         'Pause réglementaire',
+  SPLIT_FIRST:  'Pause réglementaire (1re partie)',
+  SPLIT_SECOND: 'Pause réglementaire (2e partie)',
+  WORK:         'Pause (temps de travail)',
+  LUNCH:        'Pause déjeuner',
+}
+
+/** Plan steps of one simulated route: missions, exutoire trips, breaks — in driving order. */
+function traceToPlannedSteps(trace: RouteTrace, date: string): PlannedMission[] {
+  const planned: PlannedMission[] = []
+  let seq = 0
+  let pendingBreaks: Extract<TraceEvent, { kind: 'break' }>[] = []
+
+  // Breaks belong to the leg that ends at the next destination; their offsets split its travel.
+  const flushBreaks = (legTravelMin: number): number => {
+    let driven = 0
+    for (const b of pendingBreaks) {
+      const offset = b.legOffsetMin < 0 ? legTravelMin : Math.min(legTravelMin, b.legOffsetMin)
+      const kind = b.breakKind
+      const label = b.reason === 'WAIT' ? `${BREAK_LABEL[kind]} pendant l'attente` : BREAK_LABEL[kind]
+      planned.push({
+        id:                   `_pause_${trace.driverId}_${seq}`,
+        type:                 'PAUSE',
+        date,
+        address:              `${label} (${Math.round(b.durationMin)} min)`,
+        latitude:             b.lat,
+        longitude:            b.lng,
+        estimatedDurationMin: b.durationMin,
+        maneuverTimeMin:      0,
+        sequenceOrder:        seq++,
+        isSynthetic:          true,
+        precomputedTravelMin: Math.max(0, offset - driven),
+        breakKind:            kind,
+      })
+      driven = Math.max(driven, offset)
+    }
+    pendingBreaks = []
+    return driven
+  }
+
+  for (const ev of trace.events) {
+    switch (ev.kind) {
+      case 'break':
+        pendingBreaks.push(ev)
+        break
+      case 'mission': {
+        const driven = flushBreaks(ev.travelMin)
+        planned.push({
+          ...ev.mission,
+          sequenceOrder:        seq++,
+          precomputedTravelMin: Math.max(0, ev.travelMin - driven),
+          ...(ev.loadKg > 0 ? { plannedLoadKg: Math.round(ev.loadKg) } : {}),
+        })
+        break
+      }
+      case 'exutoire': {
+        const driven = flushBreaks(ev.travelMin)
+        const ex = ev.exutoire
+        const id = ev.allerRetour ? `_vider_ar_${ex.id}_${ev.forMissionId}`
+          : ev.beforePickup ? `_vider_pre_${ex.id}_${ev.forMissionId}`
+          : `_vider_${ex.id}_${ev.forMissionId}`
+        planned.push({
+          id,
+          type:                 'VIDER',
+          date,
+          clientName:           ex.name,
+          address:              ex.address,
+          latitude:             ex.lat,
+          longitude:            ex.lng,
+          estimatedDurationMin: ex.serviceTimeMin,
+          maneuverTimeMin:      0,
+          linkedExutoireId:     ex.id,
+          sequenceOrder:        seq++,
+          isSynthetic:          true,
+          precomputedTravelMin: Math.max(0, ev.travelMin - driven),
+        })
+        break
+      }
+      case 'repose': {
+        const driven = flushBreaks(ev.travelMin)
+        const m = ev.mission
+        planned.push({
+          id:                   `_pose_ar_${m.id}`,
+          type:                 'POSER',
+          date,
+          clientName:           m.clientName,
+          address:              m.address,
+          latitude:             m.latitude,
+          longitude:            m.longitude,
+          estimatedDurationMin: ev.departureMin - ev.arrivalMin,
+          maneuverTimeMin:      0,
+          accessNotes:          m.accessNotes,
+          sequenceOrder:        seq++,
+          isSynthetic:          true,
+          precomputedTravelMin: Math.max(0, ev.travelMin - driven),
+        })
+        break
+      }
+      case 'return':
+        // Breaks needed on the way home are the last steps of the day.
+        flushBreaks(ev.travelMin)
+        break
+    }
+  }
+  return planned
+}
+
+/** Field-readable warnings for one route, from the violations its simulation recorded. */
+function traceWarnings(trace: RouteTrace, ctx: CostContext, maxWorkMin: number): OptimizationResult['warnings'] {
+  const out: OptimizationResult['warnings'] = []
+  const missionEv = new Map<string, Extract<TraceEvent, { kind: 'mission' }>>()
+  const exById = new Map<string, Exutoire>()
+  const missionById = new Map<string, Mission>()
+  for (const ev of trace.events) {
+    if (ev.kind === 'mission') { missionEv.set(ev.mission.id, ev); missionById.set(ev.mission.id, ev.mission) }
+    if (ev.kind === 'exutoire') exById.set(ev.exutoire.id, ev.exutoire)
+  }
+  const startMin = ctx.driverStartOverrides?.get(trace.driverId)?.timeMin ?? ctx.startTimeMin
+  const p1Deadline = Math.min(1320, Math.max(P1_DEADLINE_MIN, startMin + 240))
+  const seen = new Set<string>()
+  const push = (message: string, severity: 'warning' | 'error') => {
+    if (seen.has(message)) return
+    seen.add(message)
+    out.push({ driverId: trace.driverId, message, severity })
+  }
+  for (const v of trace.violations) {
+    const ev = v.missionId ? missionEv.get(v.missionId) : undefined
+    const m = v.missionId ? missionById.get(v.missionId) : undefined
+    const label = m ? (m.clientName || m.address) : (v.missionId ?? '')
+    switch (v.code) {
+      case 'TIME_WINDOW':
+        if (ev && m?.timeWindow) push(`Mission ${m.id} (${m.address}) : arrivée à ${minToHHMM(ev.startMin)}, après la fermeture de la fenêtre (${minToHHMM(m.timeWindow.closeMin)})`, 'warning')
+        break
+      case 'P1_LATE':
+        if (ev && m) push(`Mission P1 ${m.id} servie après ${minToHHMM(p1Deadline)} (${minToHHMM(ev.startMin)})`, 'error')
+        break
+      case 'EXUTOIRE_CLOSED': {
+        const ex = v.exutoireId ? exById.get(v.exutoireId) : undefined
+        if (ex) push(`Exutoire "${ex.name}" : arrivée hors horaires${v.amount ? ` (${Math.round(v.amount)} min après la fermeture)` : ''}`, 'warning')
+        break
+      }
+      case 'NO_EXUTOIRE':
+        push(`Mission "${label}" : aucun exutoire ouvert n'accepte ce déchet ce jour-là`, 'warning')
+        break
+      case 'WORK_TIME':
+        push(`Durée de travail totale dépasse ${Math.round(maxWorkMin / 60)}h (${Math.round(trace.totals.workMin)} min)`, 'error')
+        break
+      case 'DAILY_DRIVING':
+        push(`Durée de conduite dépasse 9h (${Math.round(trace.totals.drivingMin)} min) — CE 561/2006`, 'error')
+        break
+      case 'DEPENDENCY':
+        push(`Mission "${label}" planifiée avant la mission dont elle dépend`, 'warning')
+        break
+      case 'BIN_SIZE':
+        push(`Mission "${label}" : benne ${v.amount ?? ''} m³ trop grande pour le véhicule`, 'error')
+        break
+      case 'PAYLOAD':
+        push(`Mission "${label}" : ${Math.round(v.amount ?? 0)} kg dépassent la charge utile du véhicule`, 'error')
+        break
+      case 'VOLUME':
+        push(`Mission "${label}" : ${v.amount ?? ''} m³ dépassent le volume du véhicule`, 'error')
+        break
+      case 'SKILL':
+        push(`Mission "${label}" : compétence requise absente chez le chauffeur`, 'error')
+        break
+      case 'NO_EMPTY_BIN':
+        push(`Mission "${label}" : plus de benne vide disponible dans le camion`, 'error')
+        break
+    }
+  }
+  return out
+}
+
+/**
+ * Turns a solution into the API result: every route is replayed through the cost simulator
+ * ({@link simulateRouteTrace}) and its trace becomes the plan — breaks, lunch, exutoire trips and
+ * timings are exactly those the optimiser costed.
+ */
 export function formatSolutionForAPI(
   solution: VRPSolution,
   drivers: Driver[],
   ctx: CostContext,
 ): OptimizationResult {
-  const { startTimeMin, speedKmh, exutoires, date } = ctx
-  const [_fy, _fm, _fd] = date.split('-').map(Number)
-  const dow = new Date(_fy, _fm - 1, _fd).getDay()
-
-  const effectiveP1Deadline = Math.max(P1_DEADLINE_MIN, startTimeMin + 240)
+  const { exutoires, date } = ctx
+  const maxWorkMin = ctx.maxWorkMin ?? MAX_WORK_MIN
 
   const assignments: Record<string, PlannedMission[]> = {}
   const warnings: OptimizationResult['warnings']      = []
-
   const exutoireArrivals = new Map<string, number[]>()
-
   const assignedIds = new Set<string>()
 
+  const driverScores:    number[] = []
+  const workMinByDriver: number[] = []
+
   for (const route of solution.routes) {
-    const driver = drivers.find(d => d.id === route.driverId)
-    if (!driver) continue
+    if (route.missions.length === 0) continue
+    const trace = simulateRouteTrace(route, ctx, drivers)
+    if (!trace) continue
 
-    const depotLat = driver.depotLat
-    const depotLng = driver.depotLng
-
-    const planned: PlannedMission[] = []
-    let currentMin        = startTimeMin
-    let currentLat        = depotLat
-    let currentLng        = depotLng
-    let currentId: string | undefined = `depot:${driver.id}`
-    let continuousDriving = 0
-    let totalWork         = 0
-    let totalDriving      = 0
-    let seq               = 0
-
-    let loadState = initLoadState(driver)
-
-    let emptyBins        = loadState.maxBins
-    let echangersPending = 0
-
-    const routeLastBinIdx = (() => {
-      for (let j = route.missions.length - 1; j >= 0; j--) {
-        const t = route.missions[j].type
-        if (t === 'RETIRER' || t === 'ECHANGER' || t === 'CHARGER_IMMEDIAT') return j
-      }
-      return -1
-    })()
-
-    for (let _mi = 0; _mi < route.missions.length; _mi++) {
-      const mission = route.missions[_mi]
-
-      const travelMin = realDurationMin(
-        ctx, currentId, currentLat, currentLng,
-        mission.id, mission.latitude, mission.longitude,
-        currentMin,
-      )
-
-      if (continuousDriving + travelMin > MAX_CONTINUOUS_MIN) {
-        const breakMission: PlannedMission = {
-          id:                    `_pause_${route.driverId}_${seq}`,
-          type:                  'PAUSE',
-          date,
-          address:               'Pause réglementaire',
-          latitude:              currentLat,
-          longitude:             currentLng,
-          estimatedDurationMin:  BREAK_DURATION_MIN,
-          maneuverTimeMin:       0,
-          sequenceOrder:         seq++,
-          isSynthetic:           true,
-          precomputedTravelMin:  0,
-        }
-        planned.push(breakMission)
-        currentMin        += BREAK_DURATION_MIN
-        totalWork         += BREAK_DURATION_MIN
-        continuousDriving  = 0
-      }
-
-      currentMin        += travelMin
-      continuousDriving += travelMin
-      totalDriving      += travelMin
-      totalWork         += travelMin
-
-      if (mission.timeWindow && currentMin < mission.timeWindow.openMin) {
-
-        const waitMin = mission.timeWindow.openMin - currentMin
-        totalWork += waitMin
-        currentMin = mission.timeWindow.openMin
-      }
-
-      const arrivalMin   = currentMin
-      const onSiteMin    = (mission.estimatedDurationMin ?? 0) + (mission.maneuverTimeMin ?? 0)
-      const departureMin = arrivalMin + onSiteMin
-      totalWork         += onSiteMin
-      currentMin         = departureMin
-
-      if (mission.timeWindow && arrivalMin > mission.timeWindow.closeMin) {
-        warnings.push({
-          driverId: route.driverId,
-          message:  `Mission ${mission.id} (${mission.address}) : arrivée à ${minToHHMM(arrivalMin)}, après la fermeture de la fenêtre (${minToHHMM(mission.timeWindow.closeMin)})`,
-          severity: 'warning',
-        })
-      }
-
-      if (mission.priority === 1 && arrivalMin > effectiveP1Deadline) {
-        warnings.push({
-          driverId: route.driverId,
-          message:  `Mission P1 ${mission.id} servie après ${minToHHMM(effectiveP1Deadline)} (${minToHHMM(arrivalMin)})`,
-          severity: 'error',
-        })
-      }
-
-      planned.push({
-        ...mission,
-        sequenceOrder:        seq++,
-        precomputedTravelMin: travelMin,
-      })
-
-      assignedIds.add(mission.id)
-      currentId  = mission.id
-      currentLat = mission.latitude
-      currentLng = mission.longitude
-
-      if (mission.type === 'POSER' && emptyBins > 0) {
-        emptyBins--
-      }
-
-      if (mission.type === 'ALLER_RETOUR') {
-        const ex = findBestExutoire(
-          mission.latitude, mission.longitude,
-          mission.linkedExutoireId,
-          mission.wasteTypeLabel,
-          exutoires,
-          dow,
-          currentMin,
-        )
-        if (ex) {
-          const exuId = `exu:${ex.id}`
-
-          const toExTravel = realDurationMin(ctx, currentId, currentLat, currentLng, exuId, ex.lat, ex.lng, currentMin)
-          if (continuousDriving + toExTravel > MAX_CONTINUOUS_MIN) {
-            planned.push({
-              id: `_pause_ar_${route.driverId}_${seq}`,
-              type: 'PAUSE', date,
-              address: 'Pause réglementaire',
-              latitude: currentLat, longitude: currentLng,
-              estimatedDurationMin: BREAK_DURATION_MIN, maneuverTimeMin: 0,
-              sequenceOrder: seq++, isSynthetic: true, precomputedTravelMin: 0,
-            })
-            currentMin += BREAK_DURATION_MIN
-            totalWork  += BREAK_DURATION_MIN
-            continuousDriving = 0
-          }
-          currentMin        += toExTravel
-          continuousDriving += toExTravel
-          totalDriving      += toExTravel
-          totalWork         += toExTravel
-
-          if (currentMin < ex.openingHoursOpen) {
-            totalWork  += ex.openingHoursOpen - currentMin
-            currentMin  = ex.openingHoursOpen
-          }
-
-          const exArr = exutoireArrivals.get(ex.id) ?? []
-          exArr.push(currentMin)
-          exutoireArrivals.set(ex.id, exArr)
-
-          planned.push({
-            id: `_vider_ar_${ex.id}_${mission.id}`,
-            type: 'VIDER', date,
-            clientName: ex.name,
-            address: ex.address,
-            latitude: ex.lat, longitude: ex.lng,
-            estimatedDurationMin: ex.serviceTimeMin, maneuverTimeMin: 0,
-            linkedExutoireId: ex.id,
-            sequenceOrder: seq++, isSynthetic: true, precomputedTravelMin: toExTravel,
-          })
-          currentMin        += ex.serviceTimeMin
-          totalWork         += ex.serviceTimeMin
-          continuousDriving  = 0
-
-          const fromExTravel = realDurationMin(ctx, exuId, ex.lat, ex.lng, mission.id, mission.latitude, mission.longitude, currentMin)
-          if (continuousDriving + fromExTravel > MAX_CONTINUOUS_MIN) {
-            planned.push({
-              id: `_pause_ar2_${route.driverId}_${seq}`,
-              type: 'PAUSE', date,
-              address: 'Pause réglementaire',
-              latitude: ex.lat, longitude: ex.lng,
-              estimatedDurationMin: BREAK_DURATION_MIN, maneuverTimeMin: 0,
-              sequenceOrder: seq++, isSynthetic: true, precomputedTravelMin: 0,
-            })
-            currentMin += BREAK_DURATION_MIN
-            totalWork  += BREAK_DURATION_MIN
-            continuousDriving = 0
-          }
-          currentMin        += fromExTravel
-          continuousDriving += fromExTravel
-          totalDriving      += fromExTravel
-          totalWork         += fromExTravel
-
-          planned.push({
-            id: `_pose_ar_${mission.id}`,
-            type: 'POSER', date,
-            clientName: mission.clientName,
-            address: mission.address,
-            latitude: mission.latitude, longitude: mission.longitude,
-            estimatedDurationMin: mission.maneuverTimeMin ?? 15,
-            maneuverTimeMin: 0,
-            accessNotes: mission.accessNotes,
-            sequenceOrder: seq++, isSynthetic: true, precomputedTravelMin: fromExTravel,
-          })
-          currentMin        += mission.maneuverTimeMin ?? 15
-          totalWork         += mission.maneuverTimeMin ?? 15
-          currentId  = mission.id
-          currentLat = mission.latitude
-          currentLng = mission.longitude
-
-          if (currentMin > ex.openingHoursClose) {
-            warnings.push({
-              driverId: route.driverId,
-              message: `Exutoire "${ex.name}" : arrivée hors horaires (${minToHHMM(currentMin)})`,
-              severity: 'warning',
-            })
-          }
-        } else {
-          warnings.push({
-            driverId: route.driverId,
-            message: `Mission ALLER_RETOUR "${mission.clientName || mission.address}" : exutoire introuvable`,
-            severity: 'warning',
-          })
-        }
-      }
-
-      if (mission.type === 'RETIRER' || mission.type === 'ECHANGER' || mission.type === 'CHARGER_IMMEDIAT') {
-        loadState = loadBin(loadState, mission)
-
-        if (mission.type === 'ECHANGER') {
-          if (emptyBins > 0) emptyBins--
-          echangersPending++
-        }
-
-        const atCapacity = loadState.binsLoaded >= loadState.maxBins ||
-          (loadState.volumeLoadedM3 > 0 && loadState.volumeLoadedM3 >= loadState.maxVolumeM3)
-        const nextRouteMission = route.missions[_mi + 1]
-        const nextNeedsEmpty = nextRouteMission &&
-          (nextRouteMission.type === 'POSER' || nextRouteMission.type === 'ECHANGER')
-        const needsExutoire = atCapacity || _mi >= routeLastBinIdx ||
-          (emptyBins <= 0 && nextNeedsEmpty && echangersPending > 0)
-
-        if (needsExutoire) {
-          const ex = findBestExutoire(
-            mission.latitude, mission.longitude,
-            mission.linkedExutoireId,
-            mission.wasteTypeLabel,
-            exutoires,
-            dow,
-            currentMin,
-          )
-
-          if (ex) {
-            const exuId = `exu:${ex.id}`
-            const exTravel = realDurationMin(
-              ctx, currentId, currentLat, currentLng,
-              exuId, ex.lat, ex.lng,
-              currentMin,
-            )
-
-            if (continuousDriving + exTravel > MAX_CONTINUOUS_MIN) {
-              const breakMission: PlannedMission = {
-                id:                    `_pause_ex_${route.driverId}_${seq}`,
-                type:                  'PAUSE',
-                date,
-                address:               'Pause réglementaire',
-                latitude:              currentLat,
-                longitude:             currentLng,
-                estimatedDurationMin:  BREAK_DURATION_MIN,
-                maneuverTimeMin:       0,
-                sequenceOrder:         seq++,
-                isSynthetic:           true,
-                precomputedTravelMin:  0,
-              }
-              planned.push(breakMission)
-              currentMin        += BREAK_DURATION_MIN
-              totalWork         += BREAK_DURATION_MIN
-              continuousDriving  = 0
-            }
-
-            currentMin        += exTravel
-            continuousDriving += exTravel
-            totalDriving      += exTravel
-            totalWork         += exTravel
-
-            if (currentMin < ex.openingHoursOpen) {
-              currentMin = ex.openingHoursOpen
-            }
-
-            const _exArr = exutoireArrivals.get(ex.id) ?? []
-            _exArr.push(currentMin)
-            exutoireArrivals.set(ex.id, _exArr)
-
-            const exMission: PlannedMission = {
-              id:                    `_vider_${ex.id}_${mission.id}`,
-              type:                  'VIDER',
-              date,
-              clientName:            ex.name,
-              address:               ex.address,
-              latitude:              ex.lat,
-              longitude:             ex.lng,
-              estimatedDurationMin:  ex.serviceTimeMin,
-              maneuverTimeMin:       0,
-              linkedExutoireId:      ex.id,
-              sequenceOrder:         seq++,
-              isSynthetic:           true,
-              precomputedTravelMin:  exTravel,
-            }
-            planned.push(exMission)
-
-            currentMin        += ex.serviceTimeMin
-            totalWork         += ex.serviceTimeMin
-            currentId          = exuId
-            currentLat         = ex.lat
-            currentLng         = ex.lng
-            continuousDriving  = 0
-            loadState          = dumpAll(loadState)
-
-            emptyBins        += echangersPending
-            echangersPending  = 0
-
-            if (currentMin > ex.openingHoursClose) {
-              warnings.push({
-                driverId: route.driverId,
-                message:  `Exutoire "${ex.name}" : arrivée hors horaires (${minToHHMM(currentMin)})`,
-                severity: 'warning',
-              })
-            }
-          } else {
-
-            loadState         = dumpAll(loadState)
-            emptyBins        += echangersPending
-            echangersPending  = 0
-            warnings.push({
-              driverId: route.driverId,
-              message:  `Mission "${mission.clientName || mission.address}" : exutoire lié introuvable (id: ${mission.linkedExutoireId || 'aucun'})`,
-              severity: 'warning',
-            })
-          }
-        }
-      }
+    const planned = traceToPlannedSteps(trace, date)
+    for (const m of route.missions) assignedIds.add(m.id)
+    for (const ev of trace.events) {
+      if (ev.kind !== 'exutoire') continue
+      const arr = exutoireArrivals.get(ev.exutoire.id) ?? []
+      arr.push(ev.arrivalMin)
+      exutoireArrivals.set(ev.exutoire.id, arr)
     }
+    const routeWarnings = traceWarnings(trace, ctx, maxWorkMin)
+    warnings.push(...routeWarnings)
+    if (planned.length > 0) assignments[route.driverId] = planned
 
-    if (totalWork > MAX_WORK_MIN) {
-      warnings.push({
-        driverId: route.driverId,
-        message:  `Durée de travail totale dépasse 10h (${Math.round(totalWork)} min)`,
-        severity: 'error',
-      })
-    }
-    if (totalDriving > MAX_DRIVING_MIN) {
-      warnings.push({
-        driverId: route.driverId,
-        message:  `Durée de conduite dépasse 9h (${Math.round(totalDriving)} min)`,
-        severity: 'error',
-      })
-    }
-
-    if (planned.length > 0) {
-      assignments[route.driverId] = planned
-    }
+    const t = trace.totals
+    const ds = computeDriverScore({
+      workMin:          t.workMin,
+      drivingMin:       t.drivingMin,
+      onSiteMin:        t.onSiteMin,
+      roadDistKm:       t.distanceKm,
+      hasOvertime:      t.workMin > maxWorkMin,
+      hasBreachDriving: t.drivingMin > MAX_DRIVING_MIN,
+      warnings:         routeWarnings.filter(w => w.severity === 'warning').length,
+    })
+    driverScores.push(ds.total)
+    workMinByDriver.push(t.workMin)
   }
 
   for (const [exId, arrivals] of exutoireArrivals) {
@@ -650,63 +507,8 @@ export function formatSolutionForAPI(
 
   const allMissions = solution.routes.flatMap(r => r.missions)
   const unassignedMissions = allMissions.filter(m => !assignedIds.has(m.id))
-
-  const assignedCount = Array.from(assignedIds).length
+  const assignedCount = assignedIds.size
   const totalCount    = allMissions.length
-
-  const driverScores:  number[] = []
-  const workMinByDriver: number[] = []
-
-  for (const route of solution.routes) {
-    if (route.missions.length === 0) continue
-    const driver = drivers.find(d => d.id === route.driverId)
-    if (!driver) continue
-
-    let routeWork    = 0
-    let routeDriving = 0
-    let routeOnSite  = 0
-    let routeDist    = 0
-    let lat = driver.depotLat
-    let lng = driver.depotLng
-    let curMin = startTimeMin
-
-    for (const m of route.missions) {
-      const dist = cachedDist(lat, lng, m.latitude, m.longitude)
-      routeDist   += dist
-      const safeSpeed = speedKmh > 0 ? speedKmh : 50
-      const travel = dist / safeSpeed * 60
-      routeDriving += travel
-      routeWork    += travel
-      curMin       += travel
-
-      if (m.timeWindow && curMin < m.timeWindow.openMin) {
-
-        const waitMin = m.timeWindow.openMin - curMin
-        routeWork += waitMin
-        curMin = m.timeWindow.openMin
-      }
-
-      const onSite = (m.estimatedDurationMin ?? 0) + (m.maneuverTimeMin ?? 0)
-      routeOnSite += onSite
-      routeWork   += onSite
-      curMin      += onSite
-      lat = m.latitude
-      lng = m.longitude
-    }
-
-    const driverWarnings = warnings.filter(w => w.driverId === route.driverId && w.severity === 'warning').length
-    const ds = computeDriverScore({
-      workMin:          routeWork,
-      drivingMin:       routeDriving,
-      onSiteMin:        routeOnSite,
-      roadDistKm:       routeDist,
-      hasOvertime:      routeWork > MAX_WORK_MIN,
-      hasBreachDriving: routeDriving > MAX_DRIVING_MIN,
-      warnings:         driverWarnings,
-    })
-    driverScores.push(ds.total)
-    workMinByDriver.push(routeWork)
-  }
 
   const assignmentRatio = totalCount > 0 ? assignedCount / totalCount : 1
   const baseScore = computeDistributionScore(driverScores, workMinByDriver)
@@ -725,4 +527,3 @@ export function formatSolutionForAPI(
     warnings,
   }
 }
-

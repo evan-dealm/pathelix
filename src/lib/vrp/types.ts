@@ -1,5 +1,20 @@
 import type { Mission, Exutoire } from '@/lib/types'
 import type { OsrmMatrix } from './osrmMatrix'
+import type { RegulationRules, ClockState } from './driverClock'
+
+/**
+ * Where and in what state a driver resumes a day already started (live re-optimisation): the
+ * position and time, plus — when known from the field statuses — the regulatory counters and the
+ * load already on board. Missing counters are taken as zero (fresh start).
+ */
+export interface DriverStartOverride {
+  lat:     number
+  lng:     number
+  timeMin: number
+  clock?:  Partial<ClockState>
+  lunchTaken?: boolean
+  load?:   { kg: number; m3: number; bins: number }
+}
 
 export interface Route {
   driverId: string
@@ -58,13 +73,20 @@ export interface CostContext {
 
   osrmMatrix?: OsrmMatrix
 
-  driverStartOverrides?: Map<string, { lat: number; lng: number; timeMin: number }>
+  driverStartOverrides?: Map<string, DriverStartOverride>
+
+  /** Driving/working-time rules (defaults: CE 561/2006 + 2002/15). */
+  regulation?: RegulationRules
+
+  /** Maximum work per day (min, breaks excluded) — tenant setting, 600 by default. */
+  maxWorkMin?: number
 
   congestionMap?: Map<string, number>
 
   valhallaFactor?: number
 
   costConfig?: {
+    lunchBreakEnabled?: boolean
     lunchBreakStartMin?: number
     lunchBreakEndMin?: number
     lunchBreakDurationMin?: number

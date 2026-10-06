@@ -51,6 +51,20 @@ export interface Mission {
   cancelReason?:        string
   driverComment?:       string
   signatureUrl?:        string
+
+  /** Content weight of the bin (kg) — weighed, declared or estimated (see weightSource). */
+  weightKg?:            number
+  weightSource?:        'WEIGHED' | 'DECLARED' | 'ESTIMATED'
+  /** Planning margin added to weightKg (kg): estimates carry their uncertainty into the PTAC check. */
+  weightUncertaintyKg?: number
+  /** Empty weight of the bin (kg), when the bin or its type is known. */
+  binTareKg?:           number
+  /** Physical bin (container) assigned to this mission, if any. */
+  containerId?:         string
+  /** Bin type expected (container type id) — used to validate a scanned bin. */
+  containerTypeId?:     string
+  /** Material (matière) collected, when catalogued — density for weight estimates. */
+  materialId?:          string
 }
 
 export interface CatalogClient {
@@ -119,6 +133,10 @@ export interface PlannedMission extends Mission {
   isSynthetic?:          boolean
   manualStartMin?:       number
   precomputedTravelMin?: number
+  /** PAUSE steps: what the break counts as (CE 561/2006 full or split part, working-time break, lunch). */
+  breakKind?:            'FULL' | 'SPLIT_FIRST' | 'SPLIT_SECOND' | 'WORK' | 'LUNCH'
+  /** Planned load on board when leaving this step (kg), when weights are known. */
+  plannedLoadKg?:        number
 }
 
 export interface Driver {
@@ -153,6 +171,18 @@ export interface Driver {
   emergencyContact?:  string
   color?:             string
   startingExutoireId?: string | null
+
+  /** Truck used for the day (first available vehicle assigned to the driver). */
+  vehicleId?:         string
+  /** Weight limits of that truck; absent figures mean "no weight limit known". */
+  payload?: {
+    /** Declared payload (charge utile), kg. */
+    maxPayloadKg?: number
+    /** Gross vehicle weight rating (PTAC), kg. */
+    gvwKg?:        number
+    /** Unladen weight with its equipment (poids à vide), kg. */
+    tareKg?:       number
+  }
 }
 
 export interface Exutoire {
@@ -233,6 +263,11 @@ export interface SettingsApiResponse {
   maxWorkDayMin?:          number
   pauseAfterMin?:          number
   pauseDurationMin?:       number
+  lunchBreakEnabled?:      boolean
+  lunchBreakStart?:        string
+  lunchBreakEnd?:          string
+  lunchBreakDurationMin?:  number
+  breakDuringWait?:        boolean
   costPerKm?:              number
   fuelCostPerLiter?:       number
   consumptionLPer100?:     number
@@ -351,6 +386,8 @@ export interface MissionTemplate {
 export interface OptimizationResult {
   assignments:        Record<string, PlannedMission[]>
   unassignedMissions: Mission[]
+  /** Why each unassigned mission could not be planned (code + sentence for the dispatcher). */
+  unassignedReasons?: Record<string, { code: string; message: string }>
   stats: {
     assignedMissions: number
     totalMissions:    number
@@ -411,4 +448,6 @@ export interface TourResult {
   returnTravelMin:  number
   warnings:         TourWarning[]
   fuelCostEur?:     number
+  /** Break time counted by the regulatory audit (PAUSE steps). */
+  breakMin?:        number
 }

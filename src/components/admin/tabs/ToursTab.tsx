@@ -18,6 +18,7 @@ import { useDriverPositions } from '@/hooks/useDriverPositions'
 import { computeRouteCostBreakdown, type RouteCostBreakdown } from '@/lib/tollDatabase'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ParetoSelector } from '@/components/admin/ParetoSelector'
+import { OptimizationReport, reportFromResult, type OptimizationReportData } from '@/components/admin/OptimizationReport'
 import type { OptimizationResult } from '@/lib/types'
 import { usePermissions, hasPerm } from '@/hooks/usePermissions'
 import { cachedFetch } from '@/lib/clientCache'
@@ -117,6 +118,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
 
   const [usePareto, setUsePareto] = useState(false)
   const [lastParetoFront, setLastParetoFront] = useState<NonNullable<OptimizationResult['stats']['paretoFront']> | null>(null)
+  const [lastReport, setLastReport] = useState<OptimizationReportData | null>(null)
 
   const [optToggles, setOptToggles] = useState({ distance: true, punctuality: true, balance: true, stability: false })
 
@@ -155,6 +157,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
     startOptimization(tourDate, existingPlans, optWeights, (result) => {
 
       applyOptimization(tourDate, result.assignments, result.unassignedMissions, settings.defaultStartTime)
+      setLastReport(reportFromResult(result))
 
       if (result.stats.paretoFront && result.stats.paretoFront.length > 0) {
         setLastParetoFront(result.stats.paretoFront)
@@ -226,7 +229,8 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
       if (data.result?.assignments) {
 
         applyOptimization(tourDate, data.result.assignments, data.result.unassignedMissions || [], settings.defaultStartTime)
-        toastSuccess(`Re-optimisation live : ${data.stats?.reoptimized ?? 0} missions redistribuees (${data.stats?.driversWithGPS ?? 0} chauffeurs avec GPS)`)
+        setLastReport(reportFromResult(data.result))
+        toastSuccess(`Ré-optimisation en cours de journée : ${data.stats?.reoptimized ?? 0} missions replanifiées depuis la position des chauffeurs`)
       } else if (data.message) {
         toastSuccess(data.message)
       }
@@ -797,6 +801,8 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
           )}
         </div>
       </div>
+
+      {lastReport && <OptimizationReport data={lastReport} onDismiss={() => setLastReport(null)} />}
 
       {lastParetoFront && lastParetoFront.length > 0 && (
         <ParetoSelector

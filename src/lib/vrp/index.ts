@@ -15,6 +15,10 @@ import { buildValhallaMatrix, type GeoPoint } from './valhallaMatrix'
 import { buildExternalRoutingMatrix } from './externalRoutingApi'
 import { generateScenarios, evaluateCVaR } from './stochastic'
 import { createLogger } from '@/lib/logger'
+import { validateAndRepair, explainUnassigned, reasonMessage, type UnassignedReasonCode } from './explain'
+import { loadIssueAlone } from './vehicleLoad'
+import type { RegulationRules } from './driverClock'
+import type { DriverStartOverride } from './types'
 
 const log = createLogger('vrp')
 import { computeObjectives, filterParetoFront, labelParetoSolutions } from './paretoFront'
@@ -75,6 +79,17 @@ export async function runVRP(
     valhallaFactor?: number
 
     usePareto?: boolean
+
+    /** Driving/working-time rules (tenant settings may only make them stricter). */
+    regulation?: RegulationRules
+    /** Maximum work per day, breaks excluded (min). */
+    maxWorkMin?: number
+    /** Tenant cost/lunch configuration. */
+    costConfig?: CostContext['costConfig']
+    /** Mid-day restart: live position, regulatory counters and load per driver. */
+    driverStartOverrides?: Map<string, DriverStartOverride>
+    /** Notices computed by the caller (drivers left out, …) returned with the result. */
+    extraWarnings?: OptimizationResult['warnings']
   },
 ): Promise<OptimizationResult> {
   const startTs = Date.now()
@@ -135,31 +150,37 @@ export async function runVRP(
   const hfvrpWarnings: OptimizationResult['warnings'] = []
   const unassignableByCapacity: Mission[] = []
   const assignableMissions: Mission[] = []
+  // Why a mission was set aside before the search (no available truck can physically take it).
+  const knownReasons = new Map<string, UnassignedReasonCode>()
 
   for (const mission of calibratedMissions) {
-    if (!mission.binSizeM3) {
-      assignableMissions.push(mission)
-      continue
-    }
-    const anyCompatible = drivers.some(
-      d => !d.maxBinSizeM3 || mission.binSizeM3! <= d.maxBinSizeM3,
-    )
-    if (!anyCompatible) {
+    if (drivers.length === 0) { assignableMissions.push(mission); continue }
+    if (mission.binSizeM3 && !drivers.some(d => !d.maxBinSizeM3 || mission.binSizeM3! <= d.maxBinSizeM3)) {
       unassignableByCapacity.push(mission)
+      knownReasons.set(mission.id, 'BIN_SIZE')
       hfvrpWarnings.push({
         driverId: '',
         message:  `Mission ${mission.id} (${mission.address}) : benne ${mission.binSizeM3} m³ incompatible avec tous les véhicules disponibles`,
         severity: 'error',
       })
-    } else {
-      assignableMissions.push(mission)
+      continue
     }
+    const loadIssues = drivers.map(d => loadIssueAlone(mission, d))
+    if (loadIssues.every(Boolean)) {
+      const code = loadIssues.includes('PAYLOAD') ? 'PAYLOAD' : 'VOLUME'
+      unassignableByCapacity.push(mission)
+      knownReasons.set(mission.id, code)
+      hfvrpWarnings.push({ driverId: '', message: `Mission ${mission.id} (${mission.address}) : ${reasonMessage(code, mission)}`, severity: 'error' })
+      continue
+    }
+    assignableMissions.push(mission)
   }
 
   if (drivers.length === 0) {
     return {
       assignments:        {},
       unassignedMissions: calibratedMissions,
+      unassignedReasons:  Object.fromEntries(calibratedMissions.map(m => [m.id, { code: 'NO_DRIVER', message: reasonMessage('NO_DRIVER', m) }])),
       stats: {
         assignedMissions: 0,
         totalMissions:    missions.length,
@@ -172,6 +193,7 @@ export async function runVRP(
           message:  'Aucun chauffeur disponible pour optimiser les tournées',
           severity: 'error',
         },
+        ...(options?.extraWarnings ?? []),
         ...hfvrpWarnings,
       ],
     }
@@ -205,7 +227,10 @@ export async function runVRP(
     weights: options?.weights,
     familiarity,
 
-    driverStartOverrides: (options as Record<string, unknown>)?._driverStartOverrides as CostContext['driverStartOverrides'],
+    driverStartOverrides: options?.driverStartOverrides,
+    regulation:           options?.regulation,
+    maxWorkMin:           options?.maxWorkMin,
+    costConfig:           options?.costConfig,
 
     congestionMap: globalCongestion,
 
@@ -396,7 +421,14 @@ export async function runVRP(
     }))
   }
 
+  // Nothing non-executable leaves the optimiser: hard problems are taken out (and re-inserted
+  // elsewhere when another truck can take them), the rest is explained below.
+  const repaired = validateAndRepair(best, drivers, ctx, Date.now() + Math.max(500, Math.round(timeBudgetMs * 0.1)))
+  best = repaired.solution
+  for (const [id, r] of repaired.removed) knownReasons.set(id, r.code)
+
   const result = formatSolutionForAPI(best, drivers, ctx)
+  result.unassignedMissions.push(...[...repaired.removed.values()].map(r => r.mission))
 
   const scenarios = generateScenarios(5, seed)
   const { cvarCost } = evaluateCVaR(best, ctx, drivers, scenarios)
@@ -406,8 +438,9 @@ export async function runVRP(
   if (paretoFrontResult) result.stats.paretoFront = paretoFrontResult
 
   result.unassignedMissions.push(...unassignableByCapacity)
-  result.warnings.push(...hfvrpWarnings)
+  result.warnings.push(...(options?.extraWarnings ?? []), ...hfvrpWarnings)
   enforceMissionConservation(result, calibratedMissions, duplicateIds, drivers)
+  result.unassignedReasons = explainUnassigned(result.unassignedMissions, drivers, best.routes, ctx, knownReasons)
   result.stats.timeTakenMs = Date.now() - startTs
   result.stats.routingSource = ctx.osrmMatrix?.source ?? 'haversine'
 
@@ -515,11 +548,12 @@ function batchByWasteType(
       reordered.push(...sorted)
     }
 
+    const original = route.missions
     route.missions = reordered
     const newCost = computeRouteCost(route, ctx, drivers)
     if (newCost >= baseCost) {
-
-      route.missions = [...p1Missions, ...otherMissions]
+      // Keep the searched order — not "P1 first then the rest", which is a third, uncosted order.
+      route.missions = original
     }
   }
 

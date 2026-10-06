@@ -1,5 +1,6 @@
 import type { PlannedMission, Exutoire, TourResult, TourStep, TourWarning } from '@/lib/types'
 import { MAX_WORK_MIN, MAX_DRIVING_MIN, WARN_WORK_MIN } from '@/lib/constraints'
+import { auditTimeline, type Activity } from '@/lib/vrp/driverClock'
 
 const WARN_WORK_TOTAL_MIN = MAX_DRIVING_MIN
 
@@ -269,6 +270,10 @@ export function calcTour(
   let totalOnSite  = 0
   let totalDist    = 0
 
+  // What the driver does, minute by minute, for the CE 561/2006 + working-time audit: a plan
+  // edited by hand (drag & drop, manual times) is checked with the breaks it actually contains.
+  const activities: Activity[] = []
+
   const exutoireMap = new Map<string, Exutoire>()
   if (exutoires) {
     for (const ex of exutoires) exutoireMap.set(ex.id, ex)
@@ -292,6 +297,7 @@ export function calcTour(
       }
       const onSiteMin    = Math.max(0, mission.estimatedDurationMin) + Math.max(0, mission.maneuverTimeMin ?? 0)
       const departureMin = currentMin + onSiteMin
+      activities.push({ kind: mission.type === 'PAUSE' ? 'BREAK' : 'WORK', minutes: onSiteMin, ref: mission.id })
       steps.push({
         mission,
         arrivalMin:       currentMin,
@@ -331,6 +337,11 @@ export function calcTour(
 
     const onSiteMin    = Math.max(0, mission.estimatedDurationMin) + Math.max(0, mission.maneuverTimeMin ?? 0)
     const departureMin = arrivalMin + onSiteMin
+
+    const driveMin = isFinite(travelMin) ? travelMin : 0
+    activities.push({ kind: 'DRIVE', minutes: driveMin, ref: mission.id })
+    activities.push({ kind: 'WAIT', minutes: arrivalMin - (currentMin + driveMin), ref: mission.id })
+    activities.push({ kind: mission.type === 'PAUSE' ? 'BREAK' : 'WORK', minutes: onSiteMin, ref: mission.id })
 
     steps.push({
       mission,
@@ -390,6 +401,10 @@ export function calcTour(
         }
 
         const exDepartureMin = exArrivalMin + ex.serviceTimeMin
+        const exDrive = isFinite(exTravelMin) ? exTravelMin : 0
+        activities.push({ kind: 'DRIVE', minutes: exDrive })
+        activities.push({ kind: 'WAIT', minutes: exArrivalMin - (departureMin + exDrive) })
+        activities.push({ kind: 'WORK', minutes: ex.serviceTimeMin })
 
         const exMission: PlannedMission = {
           id:                   `_ex_${ex.id}_after_${mission.id}`,
@@ -426,6 +441,8 @@ export function calcTour(
           const returnArrivalMin  = exDepartureMin + (isFinite(returnTravelMin) ? returnTravelMin : 0)
           const poseDurationMin   = mission.maneuverTimeMin ?? 15
           const poseDepartureMin  = returnArrivalMin + poseDurationMin
+          activities.push({ kind: 'DRIVE', minutes: isFinite(returnTravelMin) ? returnTravelMin : 0 })
+          activities.push({ kind: 'WORK', minutes: poseDurationMin })
 
           steps.push({
             mission: {
@@ -485,6 +502,17 @@ export function calcTour(
 
   const totalDurationMin = finishMin - startMin
 
+  activities.push({ kind: 'DRIVE', minutes: safeReturn })
+  const audit = auditTimeline(activities)
+  for (const v of audit.violations) {
+    // Daily driving is reported below with the totals.
+    if (v.code === 'DAILY_DRIVING') continue
+    warnings.push({
+      message:  `${v.message} (CE 561/2006${v.code === 'CONTINUOUS_DRIVING' ? '' : ' — temps de travail'})`,
+      severity: v.code === 'CONTINUOUS_DRIVING' ? 'error' : 'warning',
+    })
+  }
+
   if (totalDriving > MAX_DRIVING_MIN) {
     warnings.push({
       message:  `Durée de conduite totale (${formatDuration(totalDriving)}) dépasse le maximum légal de ${formatDuration(MAX_DRIVING_MIN)} (CE 561/2006)`,
@@ -524,5 +552,6 @@ export function calcTour(
     returnTravelMin:  safeReturn,
     warnings,
     fuelCostEur:      Math.round(fuelCostEur * 100) / 100,
+    breakMin:         audit.clock.breakTotal,
   }
 }

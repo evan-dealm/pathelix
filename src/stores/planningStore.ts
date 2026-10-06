@@ -532,6 +532,17 @@ export const usePlanningStore = create<PlanningStore>()(
               if (!m.isSynthetic) assignedIds.add(m.id)
             }
           }
+          // A driver who got nothing this time (left out, on leave, truck down) must not keep a
+          // mission the optimiser just gave to someone else or returned as unassigned.
+          const movedIds = new Set([...assignedIds, ...unassigned.map(m => m.id)])
+          const suffix = `|${date}`
+          for (const key of Object.keys(updatedPlans)) {
+            if (!key.endsWith(suffix) || assignments[key.slice(0, -suffix.length)]) continue
+            const kept = updatedPlans[key].filter(m => !movedIds.has(m.id))
+            if (kept.length !== updatedPlans[key].length) {
+              updatedPlans[key] = kept.some(m => !m.isSynthetic) ? kept : []
+            }
+          }
 
           const existingIds = new Set(state.missions.map(m => m.id))
           const toAdd       = unassigned.filter(m => !existingIds.has(m.id))
