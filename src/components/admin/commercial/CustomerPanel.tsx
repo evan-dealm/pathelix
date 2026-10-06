@@ -8,6 +8,7 @@ import { OrdersView } from './OrdersView'
 import { InvoicesView } from './InvoicesView'
 import { ContractsView } from './ContractsView'
 import { SidePanel, SubTabs, eur, frDay, inputCls } from './shared'
+import { PortalAccess } from './PortalAccess'
 
 interface Overview {
   client: { id: string; name: string; email: string; phone: string; siret: string; billingAddress: string; notes: string; paymentTermsDays: number; vip: boolean; requiresBsd: boolean }
@@ -114,6 +115,8 @@ export function CustomerPanel({ clientId, onClose }: { clientId: string; onClose
                 <ul className="mt-2 space-y-1 text-sm">{o.documents.map(d => <li key={d.id}><a className="text-brand-600 hover:underline" href={`/api/documents/${d.id}`} target="_blank" rel="noopener noreferrer">{d.filename}</a> <span className="text-xs text-surface-500">{frDay(d.createdAt.slice(0, 10))}{d.visibleToClient ? ' · visible sur le portail' : ''}</span></li>)}</ul>
               </section>
             )}
+
+            <PortalAccess clientId={clientId} />
           </div>
 
           <section aria-labelledby="c-timeline" className="space-y-3">

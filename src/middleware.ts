@@ -62,6 +62,10 @@ const PUBLIC_PATHS: Array<string | RegExp> = [
   '/api/tracking',
   // Page a bin's QR code opens with any camera: number + owner only (src/app/c/[token]).
   '/c',
+  // Customer portal: its own session (cookie pathelix_portal, verified in every portal route by
+  // requirePortal); a staff session never grants access there, a portal session never here.
+  '/portal',
+  '/api/portal',
   '/api/webhooks/nessy',
   '/api/webhooks/geotab',
   '/api/webhooks/samsara',

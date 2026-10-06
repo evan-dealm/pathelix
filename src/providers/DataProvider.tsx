@@ -14,8 +14,9 @@ import type { SettingsApiResponse } from '@/lib/types'
 import type { TradeConfig } from '@/lib/trades'
 
 // Pages that must render without loading the tenant's planning data: the public ones (landing,
-// customer tracking, status, help, API docs) and the driver app, which loads its own plan.
-const PUBLIC_PATH_PREFIXES = ['/login', '/driver', '/track', '/status', '/help', '/api-docs']
+// customer tracking, status, help, API docs, bin QR page), the customer portal (own session) and
+// the driver app, which loads its own plan.
+const PUBLIC_PATH_PREFIXES = ['/login', '/driver', '/track', '/status', '/help', '/api-docs', '/portal', '/c/']
 const isPublicPath = (p: string | null) => p === '/' || PUBLIC_PATH_PREFIXES.some(prefix => p?.startsWith(prefix))
 
 

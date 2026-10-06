@@ -115,6 +115,14 @@ describe('middleware', () => {
     expect(res.status).toBe(401)
   })
 
+  it('lets the customer portal through (own session) but keeps the staff portal routes private', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    expect((await middleware(makeReq('/api/portal/overview'))).status).toBe(200)
+    expect((await middleware(makeReq('/portal/invite'))).status).toBe(200)
+    expect((await middleware(makeReq('/api/portal-requests'))).status).toBe(401)
+    expect((await middleware(makeReq('/api/portal-users/abc'))).status).toBe(401)
+  })
+
   it('passes /api/webhooks/nessy without auth', async () => {
     const req = makeReq('/api/webhooks/nessy')
     const res = await middleware(req)

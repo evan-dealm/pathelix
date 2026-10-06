@@ -82,6 +82,8 @@ model Tenant {
   webhookDeliveries      WebhookDelivery[]
   notifications          Notification[]
   notificationPrefs      NotificationPreference[]
+  portalUsers            PortalUser[]
+  portalRequests         PortalRequest[]
 }
 
 model User {
@@ -184,6 +186,8 @@ model Client {
   orders          Order[]
   invoices        Invoice[]
   payments        Payment[]
+  portalUsers     PortalUser[]
+  portalRequests  PortalRequest[]
 
   @@index([tenantId])
   @@index([tenantId, archived])
@@ -1339,6 +1343,57 @@ model NotificationPreference {
   tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId, kind])
+}
+
+/// A person of a customer who signs in to the customer portal (never to the admin). Sees only
+/// their own company's data; invited by the haulier, sets their own password.
+model PortalUser {
+  id              String    @id @default(cuid())
+  tenantId        String
+  clientId        String
+  /// Lowercase, unique across the platform (login resolves the account from it).
+  email           String    @unique
+  name            String    @default("")
+  passwordHash    String?
+  /// SHA-256 of the one-time invitation / reset token.
+  inviteTokenHash String?   @unique
+  inviteExpiresAt DateTime?
+  sessionVersion  Int       @default(0)
+  disabled        Boolean   @default(false)
+  lastLoginAt     DateTime?
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, clientId])
+}
+
+/// A request made by a customer from the portal (rotation, pickup, extra bin, problem).
+model PortalRequest {
+  id            String    @id @default(cuid())
+  tenantId      String
+  clientId      String
+  siteId        String?
+  portalUserId  String
+  /// ROTATION | PICKUP | NEW_CONTAINER | ISSUE | OTHER
+  kind          String
+  containerId   String?
+  preferredDate String?
+  message       String    @default("")
+  /// NEW | ACCEPTED | DONE | REJECTED
+  status        String    @default("NEW")
+  missionId     String?
+  response      String    @default("")
+  handledBy     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, clientId])
 }
 
 model UserPermission {
