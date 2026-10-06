@@ -73,14 +73,11 @@ async function testIntegration(type: string, config: Record<string, unknown>): P
     case 'here':        return testHERE(config)
     case 'geotab':      return testAPIKey(config, 'Geotab')
     case 'samsara':     return testSamsara(config)
-    case 'sage':        return testAPIKey(config, 'Sage')
-    case 'sap':         return testSAP(config)
     case 'nessy':       return testSecret(config, 'Nessy')
     case 'obd':         return testSecret(config, 'OBD')
     case 'slack':       return testWebhook(config, 'Slack')
     case 'teams':       return testWebhook(config, 'Teams')
     case 'twilio_sms':  return testTwilio(config)
-    case 'power_bi':    return testAPIKey(config, 'Power BI')
     case 'custom_webhook': return testWebhook(config, 'Webhook')
     default:
       return { ok: false, message: `Type d'integration "${type}" non supporte pour le test` }

@@ -6,7 +6,6 @@ import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { publishStatusUpdate } from '@/lib/driverStatusPubSub'
 import { collectInterventionMetric } from '@/lib/metricCollector'
 import { emitEvent } from '@/lib/integrationEvents'
-import { syncMissionToERP } from '@/lib/integrationERP'
 import { withIdempotency } from '@/lib/idempotency'
 import { canActForDriver } from '@/lib/driverAccess'
 import { checkTenantSuspension } from '@/lib/data/context'
@@ -204,25 +203,7 @@ async function handleStatusUpdate({
       void emitEvent(tenantId, 'mission.done', { missionId, driverId, driverName: driverFullName, date, status })
       if (!missionId.startsWith('_')) void emitBusinessEvent(tenantId, 'mission.completed', { missionId, driverId, date, completedAt: ts })
 
-      const missionForERP = await db.mission.findFirst({
-        where: { id: missionId },
-        select: { type: true, clientName: true, wasteTypeLabel: true, address: true },
-      }).catch(() => null)
-
       void collectInterventionMetric({ tenantId, driverId, missionId, date, statuses: outcome.statuses })
-
-      // Synthetic steps (VIDER/PAUSE) have no Mission row and nothing to sync.
-      if (missionForERP) {
-        void syncMissionToERP({
-          tenantId, missionId,
-          missionType: missionForERP.type,
-          clientName: missionForERP.clientName ?? '',
-          wasteType: missionForERP.wasteTypeLabel ?? undefined,
-          date,
-          driverName: driverFullName,
-          durationMin: 0,
-        })
-      }
     }
     if (status === 'en_route') {
       void emitEvent(tenantId, 'driver.en_route', { missionId, driverId, driverName: driverFullName, date })

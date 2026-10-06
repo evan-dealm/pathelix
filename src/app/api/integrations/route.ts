@@ -14,21 +14,16 @@ const INTEGRATION_TYPES = [
 
   { type: 'trimble',         name: 'Trimble Maps',         description: 'Calcul de routes poids-lourds (restrictions, peages)', category: 'routing' },
   { type: 'here',            name: 'HERE Truck Routing',   description: 'Routage PL avec trafic temps reel et zones ZFE', category: 'routing' },
-  { type: 'osrm',            name: 'OSRM (Self-hosted)',   description: 'Matrice de distances open-source pour l\'optimisation VRP', category: 'routing' },
 
   { type: 'geotab',          name: 'Geotab',               description: 'Telematique universelle — positions GPS et donnees moteur via boitier OBD', category: 'telemetry' },
   { type: 'samsara',         name: 'Samsara',              description: 'GPS + cameras embarquees + suivi temperature', category: 'telemetry' },
   { type: 'obd',             name: 'OBD generique',        description: 'Positions GPS/vitesse depuis un boitier OBD generique, un token webhook par tenant', category: 'telemetry' },
 
   { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Reception automatique des missions depuis Nessy via webhook HMAC-SHA256', category: 'erp' },
-  { type: 'sage',            name: 'Sage Comptabilite',    description: 'Export automatique des tournees vers la comptabilite', category: 'erp' },
-  { type: 'sap',             name: 'SAP Business One',     description: 'Synchronisation bons de livraison et factures', category: 'erp' },
 
   { type: 'slack',           name: 'Slack',                description: 'Notifications tournees et alertes anomalies dans vos canaux', category: 'notifications' },
   { type: 'teams',           name: 'Microsoft Teams',      description: 'Notifications dans Teams via webhook', category: 'notifications' },
   { type: 'twilio_sms',      name: 'SMS (Twilio)',         description: 'Notifier vos clients par SMS : "Votre benne arrive dans 30 min"', category: 'notifications' },
-
-  { type: 'power_bi',        name: 'Power BI',             description: 'Connecter vos donnees a des tableaux de bord avances', category: 'reporting' },
 
   { type: 'custom_webhook',  name: 'Webhook personnalise', description: 'Envoyer des evenements vers n\'importe quelle URL', category: 'custom' },
 ] as const

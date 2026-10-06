@@ -18,20 +18,27 @@ interface GeoPoint {
   lng: number
 }
 
+/**
+ * Matrix from a commercial truck-routing API: the organisation's own licence when given
+ * (`provider`), else the server-wide ROUTING_API_* setting; null when none is configured.
+ */
 export async function buildExternalRoutingMatrix(
   points:    GeoPoint[],
   timeoutMs: number = ROUTING_TIMEOUT_MS,
+  provider?: { type: string; apiKey: string } | null,
 ): Promise<OsrmMatrix | null> {
-  if (!ROUTING_API_TYPE || !ROUTING_API_KEY) return null
+  const type = provider?.type ?? ROUTING_API_TYPE
+  const key = provider?.apiKey ?? ROUTING_API_KEY
+  if (!type || !key) return null
   if (points.length < 2) return null
 
   try {
-    switch (ROUTING_API_TYPE) {
-      case 'trimble': return await buildTrimbleMatrix(points, ROUTING_API_KEY, timeoutMs)
-      case 'here':    return await buildHereMatrix(points, ROUTING_API_KEY, timeoutMs)
-      case 'generic': return await buildGenericMatrix(points, ROUTING_API_KEY, ROUTING_API_URL, timeoutMs)
+    switch (type) {
+      case 'trimble': return await buildTrimbleMatrix(points, key, timeoutMs)
+      case 'here':    return await buildHereMatrix(points, key, timeoutMs)
+      case 'generic': return await buildGenericMatrix(points, key, ROUTING_API_URL, timeoutMs)
       default:
-        log.warn('Type de routage inconnu', { type: ROUTING_API_TYPE, accepted: 'trimble, here, generic' })
+        log.warn('Type de routage inconnu', { type, accepted: 'trimble, here, generic' })
         return null
     }
   } catch (err) {

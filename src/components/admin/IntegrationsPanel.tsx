@@ -126,16 +126,12 @@ const INFO_TEXT: Record<string, string> = {
 const FULL_MARKETPLACE: Array<{ type: string; name: string; description: string; category: string }> = [
   { type: 'trimble',         name: 'Trimble Maps',         description: 'Calcul de routes poids-lourds (restrictions, péages)', category: 'routing' },
   { type: 'here',            name: 'HERE Truck Routing',   description: 'Routage PL avec trafic temps réel et zones ZFE', category: 'routing' },
-  { type: 'osrm',            name: 'OSRM (Self-hosted)',   description: 'Matrice de distances open-source pour l\'optimisation VRP', category: 'routing' },
   { type: 'geotab',          name: 'Geotab',               description: 'Télématique universelle — positions GPS et données moteur via boîtier OBD', category: 'telemetry' },
   { type: 'samsara',         name: 'Samsara',              description: 'GPS + cameras embarquees + suivi temperature', category: 'telemetry' },
   { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Reception automatique des missions depuis l\'ERP Nessy', category: 'erp' },
-  { type: 'sage',            name: 'Sage Comptabilite',    description: 'Export automatique des tournées vers la comptabilite', category: 'erp' },
-  { type: 'sap',             name: 'SAP Business One',     description: 'Synchronisation bons de livraison et factures', category: 'erp' },
   { type: 'slack',           name: 'Slack',                description: 'Notifications tournées et alertes anomalies dans vos canaux', category: 'notifications' },
   { type: 'teams',           name: 'Microsoft Teams',      description: 'Notifications dans Teams via webhook', category: 'notifications' },
   { type: 'twilio_sms',      name: 'SMS (Twilio)',         description: 'Notifier vos clients par SMS : "Votre benne arrive dans 30 min"', category: 'notifications' },
-  { type: 'power_bi',        name: 'Power BI',             description: 'Connecter vos données a des tableaux de bord avancés', category: 'reporting' },
   { type: 'custom_webhook',  name: 'Webhook personnalise', description: 'Envoyer des événements vers n\'importe quelle URL', category: 'custom' },
 ]
 

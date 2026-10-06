@@ -273,7 +273,8 @@ export async function runVRP(
         hazmat:    drivers.some(d => d.vehicleDimensions?.hazmat === true),
       }
 
-      const apiMatrix = await buildExternalRoutingMatrix(allGeoPoints)
+      const provider = options?.tenantId ? await (await import('./routingProvider')).tenantRoutingProvider(options.tenantId) : null
+      const apiMatrix = await buildExternalRoutingMatrix(allGeoPoints, undefined, provider)
       if (apiMatrix) {
         ctx.osrmMatrix = apiMatrix
         log.info('Routing matrix ready', { source: apiMatrix.source, points: allGeoPoints.length })
