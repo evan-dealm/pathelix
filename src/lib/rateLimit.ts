@@ -46,10 +46,22 @@ function createInMemoryLimiter(
   const store     = new Map<string, RateBucket>()
   const remaining = new Map<string, number>()
 
+  // Full sweep at most once a second (it used to run on every request once at capacity — O(cap)
+  // per request under a many-IP flood), then a hard cap: oldest buckets go first.
+  let lastSweep = 0
   function evict(now: number): void {
-    if (store.size >= bucketCap) {
+    if (store.size < bucketCap) return
+    if (now - lastSweep > 1000) {
+      lastSweep = now
       for (const [k, b] of store) {
         if (now >= b.resetAt) { store.delete(k); remaining.delete(k) }
+      }
+    }
+    if (store.size >= bucketCap) {
+      let toDrop = Math.ceil(bucketCap * 0.1)
+      for (const k of store.keys()) {
+        store.delete(k); remaining.delete(k)
+        if (--toDrop <= 0) break
       }
     }
   }

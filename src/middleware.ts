@@ -11,13 +11,24 @@ const _globalRl = new Map<string, { count: number; resetAt: number }>()
 const GLOBAL_RL_MAX    = 300
 const GLOBAL_RL_WINDOW = 60_000
 const GLOBAL_RL_CAP    = 10_000
+let _lastSweep = 0
 
 function globalRlCheck(ip: string): boolean {
   const now = Date.now()
 
-  if (_globalRl.size >= GLOBAL_RL_CAP) {
+  // At capacity (many distinct IPs — typically an attack), sweeping the whole map on every request
+  // made each request O(cap). Sweep at most once a second; if still full, drop the oldest entries.
+  if (_globalRl.size >= GLOBAL_RL_CAP && now - _lastSweep > 1000) {
+    _lastSweep = now
     for (const [key, bucket] of _globalRl) {
       if (now > bucket.resetAt) _globalRl.delete(key)
+    }
+  }
+  if (_globalRl.size >= GLOBAL_RL_CAP) {
+    let toDrop = Math.ceil(GLOBAL_RL_CAP * 0.1)
+    for (const key of _globalRl.keys()) {
+      _globalRl.delete(key)
+      if (--toDrop <= 0) break
     }
   }
 
