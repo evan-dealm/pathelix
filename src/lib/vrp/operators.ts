@@ -20,82 +20,46 @@ export class SeededRng {
   }
 }
 
-class RouteGrid {
-  private cells = new Map<string, number[]>()
-  private depotPos: Array<{ lat: number; lng: number }>
-
-  constructor(
-    routes: VRPSolution['routes'],
-    drivers: Driver[],
-    // eslint-disable-next-line no-unused-vars
-    private cellDeg = 0.5,
-  ) {
-    const depotMap = new Map<string, { lat: number; lng: number }>()
-    for (const d of drivers) depotMap.set(d.id, { lat: d.depotLat, lng: d.depotLng })
-
-    this.depotPos = routes.map(r => depotMap.get(r.driverId) ?? { lat: 0, lng: 0 })
-
-    for (let ri = 0; ri < routes.length; ri++) {
-      const key = this._cell(this.depotPos[ri].lat, this.depotPos[ri].lng)
-      const arr = this.cells.get(key) ?? []
-      arr.push(ri)
-      this.cells.set(key, arr)
-    }
-  }
-
-  private _cell(lat: number, lng: number): string {
-    return `${Math.floor(lat / this.cellDeg)},${Math.floor(lng / this.cellDeg)}`
-  }
-
-  getNearestIndices(lat: number, lng: number, N: number): number[] {
-    if (N >= this.depotPos.length) return this.depotPos.map((_, i) => i)
-
-    const cl = Math.floor(lat / this.cellDeg)
-    const cc = Math.floor(lng / this.cellDeg)
-    const found = new Set<number>()
-
-    for (let r = 0; r <= 4 && found.size < N; r++) {
-      for (let dl = -r; dl <= r; dl++) {
-        for (let dc = -r; dc <= r; dc++) {
-          if (Math.abs(dl) !== r && Math.abs(dc) !== r) continue
-          const key = `${cl + dl},${cc + dc}`
-          for (const ri of this.cells.get(key) ?? []) found.add(ri)
-        }
-      }
-    }
-
-    const candidates = Array.from(found)
-    if (candidates.length <= N) return candidates
-
-    candidates.sort((a, b) => {
-      const da = cachedDist(lat, lng, this.depotPos[a].lat, this.depotPos[a].lng)
-      const db = cachedDist(lat, lng, this.depotPos[b].lat, this.depotPos[b].lng)
-      return da - db
-    })
-    return candidates.slice(0, N)
-  }
-}
-
-function findNearestRouteIndices(
-  mission: Mission,
+/**
+ * For each mission, the indices of the N routes passing closest to it — distance to the route's
+ * nearest stop (its depot or any of its missions), not to its depot alone: drivers usually share
+ * one depot, and ranking by depot made every tie resolve to the first N routes, so the other
+ * routes never received a re-inserted mission. Computed once per repair against the partial
+ * solution. Uses a cheap equirectangular distance — only the ranking matters.
+ */
+function nearestRoutesByStops(
+  missions: Mission[],
   routes: VRPSolution['routes'],
   drivers: Driver[],
   N: number,
-  grid?: RouteGrid,
-): number[] {
-  if (N >= routes.length) return routes.map((_, i) => i)
-
-  if (grid) return grid.getNearestIndices(mission.latitude, mission.longitude, N)
-
-  const depotMap = new Map<string, { lat: number; lng: number }>()
-  for (const d of drivers) depotMap.set(d.id, { lat: d.depotLat, lng: d.depotLng })
-
-  const dists = routes.map((r, ri) => {
-    const depot = depotMap.get(r.driverId) ?? { lat: 0, lng: 0 }
-    return { ri, dist: cachedDist(mission.latitude, mission.longitude, depot.lat, depot.lng) }
-  })
-  dists.sort((a, b) => a.dist - b.dist)
-  return dists.slice(0, N).map(x => x.ri)
+): Map<string, number[]> {
+  const out = new Map<string, number[]>()
+  if (N >= routes.length) {
+    const all = routes.map((_, i) => i)
+    for (const m of missions) out.set(m.id, all)
+    return out
+  }
+  const depotMap = new Map<string, Driver>()
+  for (const d of drivers) depotMap.set(d.id, d)
+  const stops: Array<{ ri: number; lat: number; lng: number }> = []
+  for (let ri = 0; ri < routes.length; ri++) {
+    const d = depotMap.get(routes[ri].driverId)
+    if (d) stops.push({ ri, lat: d.depotLat, lng: d.depotLng })
+    for (const m of routes[ri].missions) stops.push({ ri, lat: m.latitude, lng: m.longitude })
+  }
+  const best = new Float64Array(routes.length)
+  for (const m of missions) {
+    best.fill(Infinity)
+    const k = Math.cos(m.latitude * Math.PI / 180)
+    for (const st of stops) {
+      const dLat = st.lat - m.latitude
+      const dLng = (st.lng - m.longitude) * k
+      const d2 = dLat * dLat + dLng * dLng
+      if (d2 < best[st.ri]) best[st.ri] = d2
+    }
+    out.set(m.id, routes.map((_, i) => i).sort((a, b) => best[a] - best[b]).slice(0, N))
+  }
+  return out
 }
 
 export function destroyRandom(
@@ -193,8 +157,10 @@ function repairRegretK(
     cost: 0,
   }
 
-  const useGrid = maxRoutes !== undefined && maxRoutes < solution.routes.length
-  const grid = useGrid ? new RouteGrid(solution.routes, drivers) : undefined
+  const nearest = maxRoutes !== undefined
+    ? nearestRoutesByStops(removed, solution.routes, drivers, maxRoutes)
+    : undefined
+  const allRoutes = solution.routes.map((_, i) => i)
 
   // Per-route evaluation state, valid until that route changes. computeRouteCost and the prefix
   // states depend only on the route, so they are computed once per route version instead of once
@@ -229,9 +195,10 @@ function repairRegretK(
     for (let ui = 0; ui < uninserted.length; ui++) {
       const mission = uninserted[ui]
 
-      const routeIndices = useGrid && maxRoutes !== undefined
-        ? findNearestRouteIndices(mission, solution.routes, drivers, maxRoutes, grid)
-        : solution.routes.map((_, i) => i)
+      const near = nearest?.get(mission.id) ?? allRoutes
+      const routeIndices = near.some(ri => isAllerRetourCompatible(solution.routes[ri].missions, mission.type))
+        ? near
+        : allRoutes
 
       // Best insertion per route: regret-k compares the k best ROUTES (the cost of not putting
       // the mission in its best route), not k positions that may all belong to one route.
@@ -323,8 +290,10 @@ export function repairGreedy(
     cost: 0,
   }
 
-  const useGrid = maxRoutes !== undefined && maxRoutes < solution.routes.length
-  const grid = useGrid ? new RouteGrid(solution.routes, drivers) : undefined
+  const nearest = maxRoutes !== undefined
+    ? nearestRoutesByStops(removed, solution.routes, drivers, maxRoutes)
+    : undefined
+  const allRoutes = solution.routes.map((_, i) => i)
 
   const sortedRemoved = [...removed].sort((a, b) => {
 
@@ -342,9 +311,10 @@ export function repairGreedy(
     let bestRouteIdx  = -1
     let bestPos       = 0
 
-    const routeIndices = useGrid && maxRoutes !== undefined
-      ? findNearestRouteIndices(mission, solution.routes, drivers, maxRoutes, grid)
-      : solution.routes.map((_, i) => i)
+    const near = nearest?.get(mission.id) ?? allRoutes
+    const routeIndices = near.some(ri => isAllerRetourCompatible(solution.routes[ri].missions, mission.type))
+      ? near
+      : allRoutes
 
     for (const ri of routeIndices) {
       const route = solution.routes[ri]
