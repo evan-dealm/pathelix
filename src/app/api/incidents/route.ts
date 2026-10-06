@@ -48,7 +48,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       })
       if (updated.count === 0) return NextResponse.json({ error: 'Mission introuvable' }, { status: 404 })
 
-      broadcastIncident(tenantId, {
+      void broadcastIncident(tenantId, {
         missionId,
         incidentType,
         notes:       notes ?? '',
