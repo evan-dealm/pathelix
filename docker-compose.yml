@@ -191,6 +191,7 @@ services:
       REDIS_PORT: "6379"
       VALHALLA_URL: http://valhalla:8002
       USE_MOCK_DATA: "false"
+      UPLOAD_DIR: /app/uploads
       NESSY_WEBHOOK_SECRET: ${NESSY_WEBHOOK_SECRET:-}
       NESSY_API_URL: ${NESSY_API_URL:-}
       NESSY_API_KEY: ${NESSY_API_KEY:-}

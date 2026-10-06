@@ -35,6 +35,9 @@ COPY --from=builder /app/src/generated ./src/generated
 COPY --from=proddeps /app/node_modules ./node_modules
 COPY --from=deps /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=deps /app/node_modules/prisma ./node_modules/prisma
+# Uploads (photos, signatures) live on the photo_storage volume mounted here; a named volume
+# takes the ownership of the image directory on first creation, so it must exist and be writable.
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
