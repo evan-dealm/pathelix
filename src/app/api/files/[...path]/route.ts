@@ -5,7 +5,7 @@ import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { isStaff } from '@/lib/driverAccess'
 import {
-  contentTypeFor, isSafeSegment, legacyUploadRoot, resolveUploadPath, safeId, type UploadKind,
+  contentTypeFor, isSafeSegment, legacyUploadRoot, readUpload, safeId, type UploadKind,
 } from '@/lib/uploadStorage'
 
 const log = createLogger('/api/files')
@@ -18,19 +18,23 @@ function notFound(): NextResponse {
   return NextResponse.json({ error: 'Fichier introuvable' }, { status: 404 })
 }
 
+function respond(data: Buffer, type: string): NextResponse {
+  return new NextResponse(new Uint8Array(data), {
+    headers: {
+      'Content-Type':           type,
+      'Cache-Control':          'private, max-age=300',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition':    'inline',
+    },
+  })
+}
+
+/** Legacy files on the local disk (public/uploads, before the storage backend existed). */
 async function serve(file: string, name: string): Promise<NextResponse> {
   const type = contentTypeFor(name)
   if (!type) return notFound()
   try {
-    const data = await fs.readFile(file)
-    return new NextResponse(new Uint8Array(data), {
-      headers: {
-        'Content-Type':           type,
-        'Cache-Control':          'private, max-age=300',
-        'X-Content-Type-Options': 'nosniff',
-        'Content-Disposition':    'inline',
-      },
-    })
+    return respond(await fs.readFile(file), type)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       log.error('read failed', { err: err instanceof Error ? err.message : String(err) })
@@ -62,7 +66,15 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   if (segments.length !== 3 || fileTenant !== tenantId || !KINDS.includes(kind as UploadKind)) return notFound()
   if (!isStaff(role) && !(kind === 'photos' && name.startsWith(`${safeId(driverRef)}_`))) return notFound()
 
-  return serve(resolveUploadPath(fileTenant, kind as UploadKind, name), name)
+  const type = contentTypeFor(name)
+  if (!type) return notFound()
+  try {
+    const data = await readUpload(fileTenant, kind as UploadKind, name)
+    return data ? respond(data, type) : notFound()
+  } catch (err) {
+    log.error('read failed', { err: err instanceof Error ? err.message : String(err) })
+    return notFound()
+  }
 }
 
 async function serveLegacy(rest: string[], tenantId: string, role: string, driverRef: string): Promise<NextResponse> {

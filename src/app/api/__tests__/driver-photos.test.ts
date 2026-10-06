@@ -24,13 +24,9 @@ const mockMkdir     = vi.hoisted(() => vi.fn(async () => undefined))
 const mockReaddir   = vi.hoisted(() => vi.fn(async () => [] as string[]))
 const mockWriteFile = vi.hoisted(() => vi.fn(async () => undefined))
 const mockUnlink    = vi.hoisted(() => vi.fn(async () => undefined))
-vi.mock('node:fs/promises', () => ({
-  default: {
-    mkdir:     mockMkdir,
-    readdir:   mockReaddir,
-    writeFile: mockWriteFile,
-    unlink:    mockUnlink,
-  },
+vi.mock('@/lib/storage', () => ({
+  getStorage: () => ({ name: 'local', put: mockWriteFile, get: vi.fn(async () => null), delete: mockUnlink, list: mockReaddir }),
+  localRoot: () => '/tmp/uploads',
 }))
 
 import { GET, POST, DELETE } from '@/app/api/driver-photos/route'
@@ -234,14 +230,10 @@ describe('driver-photos — real mode', () => {
       unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
       getTenantDb:    () => ({ plan: { findFirst: mockPlanFindFirst } }),
     }))
-    vi.mock('node:fs/promises', () => ({
-      default: {
-        mkdir:     mockMkdir,
-        readdir:   mockReaddir,
-        writeFile: mockWriteFile,
-        unlink:    mockUnlink,
-      },
-    }))
+    vi.mock('@/lib/storage', () => ({
+  getStorage: () => ({ name: 'local', put: mockWriteFile, get: vi.fn(async () => null), delete: mockUnlink, list: mockReaddir }),
+  localRoot: () => '/tmp/uploads',
+}))
     const mod = await import('@/app/api/driver-photos/route')
     rGET    = mod.GET
     rPOST   = mod.POST

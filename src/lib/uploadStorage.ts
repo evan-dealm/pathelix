@@ -1,15 +1,16 @@
 import path from 'node:path'
-import fs from 'node:fs/promises'
+import { getStorage, localRoot } from '@/lib/storage'
 
 /**
  * Tenant-namespaced file storage for driver photos, signatures and delivery proofs.
  *
- * Files live OUTSIDE `public/` (default `<cwd>/data/uploads`, override with UPLOAD_DIR) and are
- * only ever served by the authenticated `GET /api/files/<tenantId>/<kind>/<name>` route — a
- * statically-served upload is readable by anyone who learns (or guesses) its URL, across tenants.
+ * Files go through the storage backend (src/lib/storage: local disk outside `public/`, or an
+ * S3-compatible bucket) and are only ever served by the authenticated
+ * `GET /api/files/<tenantId>/<kind>/<name>` route — a statically-served upload is readable by
+ * anyone who learns (or guesses) its URL, across tenants.
  *
- * Layout: `<root>/<tenantId>/<kind>/<name>`. Every path segment is validated against SAFE_SEGMENT
- * so no caller-controlled value can escape the tenant directory.
+ * Key: `<tenantId>/<kind>/<name>`. Every segment is validated against SAFE_SEGMENT so no
+ * caller-controlled value can escape the tenant prefix.
  */
 
 export type UploadKind = 'photos' | 'proofs'
@@ -17,9 +18,7 @@ export type UploadKind = 'photos' | 'proofs'
 const SAFE_SEGMENT = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,159}$/
 
 export function uploadRoot(): string {
-  return process.env.UPLOAD_DIR
-    ? path.resolve(process.env.UPLOAD_DIR)
-    : path.join(process.cwd(), 'data', 'uploads')
+  return localRoot()
 }
 
 /** Files written before tenant-namespaced storage existed (served via /uploads/*). */
@@ -36,9 +35,9 @@ export function safeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)
 }
 
-export function resolveUploadPath(tenantId: string, kind: UploadKind, name: string): string {
+function uploadKey(tenantId: string, kind: UploadKind, name: string): string {
   if (!isSafeSegment(tenantId) || !isSafeSegment(name)) throw new Error('Unsafe upload path segment')
-  return path.join(uploadRoot(), tenantId, kind, name)
+  return `${tenantId}/${kind}/${name}`
 }
 
 export function uploadUrl(tenantId: string, kind: UploadKind, name: string): string {
@@ -46,26 +45,21 @@ export function uploadUrl(tenantId: string, kind: UploadKind, name: string): str
 }
 
 export async function writeUpload(tenantId: string, kind: UploadKind, name: string, data: Buffer): Promise<string> {
-  const target = resolveUploadPath(tenantId, kind, name)
-  await fs.mkdir(path.dirname(target), { recursive: true })
-  await fs.writeFile(target, data)
+  await getStorage().put(uploadKey(tenantId, kind, name), data, contentTypeFor(name) ?? 'application/octet-stream')
   return uploadUrl(tenantId, kind, name)
 }
 
+export async function readUpload(tenantId: string, kind: UploadKind, name: string): Promise<Buffer | null> {
+  return getStorage().get(uploadKey(tenantId, kind, name))
+}
+
 export async function deleteUpload(tenantId: string, kind: UploadKind, name: string): Promise<void> {
-  await fs.unlink(resolveUploadPath(tenantId, kind, name)).catch(err => {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-  })
+  await getStorage().delete(uploadKey(tenantId, kind, name))
 }
 
 export async function listUploads(tenantId: string, kind: UploadKind): Promise<string[]> {
   if (!isSafeSegment(tenantId)) return []
-  try {
-    return await fs.readdir(path.join(uploadRoot(), tenantId, kind))
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw err
-  }
+  return getStorage().list(`${tenantId}/${kind}`)
 }
 
 const CONTENT_TYPES: Record<string, string> = {

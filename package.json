@@ -24,6 +24,7 @@
     "worker:ml": "tsx src/workers/mlProfileWorker.ts",
     "worker:recurring": "tsx src/workers/recurringMissionsWorker.ts",
     "worker:retention": "tsx src/workers/auditRetentionWorker.ts",
+    "worker:business": "tsx src/workers/businessWorker.ts",
     "dev:fast": "next build && next start",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:seed-massive": "npx tsx --expose-gc prisma/seed-massive.ts",
@@ -34,6 +35,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/auto-instrumentations-node": "^0.79.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
@@ -58,6 +60,7 @@
     "maplibre-gl": "^6.10.0",
     "next": "^15.5.18",
     "next-intl": "^4.8.3",
+    "nodemailer": "^7.0.13",
     "pg": "^8.20.0",
     "qrcode": "^1.5.4",
     "react": "^18",
@@ -92,6 +95,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18",
     "@types/react-dom": "^18",

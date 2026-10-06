@@ -100,7 +100,8 @@ describe('Security: delivery-proof — UUID filenames', () => {
     const mockWriteFile = vi.fn(async () => {})
     const mockMkdir     = vi.fn(async () => {})
 
-    vi.doMock('node:fs/promises', () => ({ default: { writeFile: mockWriteFile, mkdir: mockMkdir } }))
+    void mockMkdir
+    vi.doMock('@/lib/storage', () => ({ getStorage: () => ({ name: 'local', put: mockWriteFile, get: vi.fn(), delete: vi.fn(), list: vi.fn(async () => []) }), localRoot: () => 'data/uploads' }))
     vi.doMock('@/lib/tenantDb', () => ({
       getTenantDb: () => ({
         mission:       { findFirst: vi.fn(async () => ({ id: 'm-1', tenantId: 'tenant-test' })) },
@@ -134,10 +135,8 @@ describe('Security: delivery-proof — UUID filenames', () => {
     expect(mockWriteFile).toHaveBeenCalled()
     const savedPath = (mockWriteFile.mock.calls as unknown as [string, Buffer][])[0][0]
     expect(savedPath).toMatch(/proof-[0-9a-f-]{36}\.jpg$/)
-    // Stored outside public/, under the tenant's own directory.
-    const normalized = savedPath.replace(/\\/g, '/')
-    expect(normalized).toMatch(/data\/uploads\/tenant-test\/proofs\//)
-    expect(normalized).not.toContain('/public/')
+    // Stored under the tenant's own key prefix (storage backend: local disk outside public/, or S3).
+    expect(savedPath).toMatch(/^tenant-test\/proofs\//)
     expect(savedPath).not.toContain('m-1')
   })
 })
