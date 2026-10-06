@@ -17,7 +17,8 @@ import { today } from '@/lib/dateUtils'
 import { SyncBar } from '@/components/driver/SyncBar'
 import { Sheet } from '@/components/driver/Sheet'
 import { SignaturePad } from '@/components/driver/SignaturePad'
-import { IncidentForm, NoteForm, WeightForm } from '@/components/driver/ReportForms'
+import { DefectForm, IncidentForm, NoteForm, WeightForm, type DefectSeverity } from '@/components/driver/ReportForms'
+import { DEFECT_CATEGORIES, DEFECT_CATEGORY_LABEL } from '@/lib/fleet/maintenance'
 import { ScanTicketButton } from '@/components/driver/ScanTicketButton'
 import type { TicketReading } from '@/lib/ocr/ticket'
 import { ContainerScanner } from '@/components/driver/ContainerScanner'
@@ -38,7 +39,7 @@ type DriverPlanResponse = {
   containers?: Record<string, DriverMissionContainers>
 }
 
-type SheetKind = 'signature' | 'incident' | 'note' | 'weight' | 'scan' | 'logout' | null
+type SheetKind = 'signature' | 'incident' | 'note' | 'weight' | 'scan' | 'logout' | 'defect' | null
 
 const BIN_MISSION_TYPES = new Set(['POSER', 'RETIRER', 'ECHANGER', 'ALLER_RETOUR', 'CHARGER_IMMEDIAT', 'DEPLACER'])
 
@@ -331,6 +332,13 @@ export default function DriverPage() {
     }
   }, [record, driverId, tourDate, flash, readings])
 
+  const onDefect = useCallback(async (d: { severity: DefectSeverity; category: string; description: string; mileageKm?: number }) => {
+    setSheet(null)
+    if (await record('/api/vehicle-defects', d, 'Défaut du camion')) {
+      flash(d.severity === 'CRITICAL' ? 'Défaut bloquant signalé : appelez le bureau avant de repartir' : 'Défaut signalé au bureau')
+    }
+  }, [record, flash])
+
   const onContainerScan = useCallback(async (m: PlannedMission, code: string, role: ScanRole, label: string) => {
     setSheet(null)
     setScans(s => ({ ...s, [m.id]: [...(s[m.id] ?? []), label] }))
@@ -402,6 +410,7 @@ export default function DriverPage() {
           <div className="h-full rounded-full bg-[#2FBF71] transition-[width] duration-500" style={{ width: `${progress}%` }} />
         </div>
         {fromCache && <p className="mt-2 text-xs text-[#FFD970]">Tournée affichée depuis la dernière copie enregistrée sur le téléphone.</p>}
+        <button type="button" onClick={() => setSheet('defect')} className="mt-3 text-sm text-white/60 underline underline-offset-4">Signaler un défaut du camion</button>
       </section>
 
       {focused ? (
@@ -613,6 +622,9 @@ export default function DriverPage() {
           </Sheet>
         </>
       )}
+      <Sheet open={sheet === 'defect'} title="Défaut du camion" onClose={() => setSheet(null)}>
+        {sheet === 'defect' && <DefectForm categories={DEFECT_CATEGORIES.map(c => [c, DEFECT_CATEGORY_LABEL[c]])} onSubmit={d => void onDefect(d)} />}
+      </Sheet>
       <Sheet open={sheet === 'logout'} title="Envois en attente" onClose={() => setSheet(null)}>
         <p className="text-white/70">
           {pending} action{pending > 1 ? 's n’ont' : ' n’a'} pas encore été envoyée{pending > 1 ? 's' : ''}. Si vous vous déconnectez maintenant, elle{pending > 1 ? 's seront perdues' : ' sera perdue'}.

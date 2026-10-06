@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { hasPermission } from '@/lib/permissions'
 import { getTenantDb } from '@/lib/tenantDb'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { redisCache } from '@/lib/redisCache'
+import { MaintenanceSchema } from '@/lib/fleet/schemas'
+import { recordMaintenance } from '@/lib/fleet/service'
 
 const log = createLogger('/api/maintenance')
 
@@ -21,16 +22,6 @@ const MAINT_SELECT = {
   createdAt:   true,
 } as const
 
-const MaintenanceSchema = z.object({
-  vehicleId:   z.string().min(1),
-  type:        z.enum(['inspection', 'oil_change', 'repair', 'tire', 'breakdown', 'other']),
-  description: z.string().max(1000).default(''),
-  costEur:     z.number().min(0).optional().nullable(),
-  mileageKm:   z.number().int().min(0).optional().nullable(),
-  doneAt:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  doneBy:      z.string().max(200).default(''),
-  notes:       z.string().max(2000).default(''),
-})
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId  = getTenantId(req)
@@ -74,17 +65,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
 
   try {
-    const db = getTenantDb(tenantId)
-    const vehicle = await db.vehicle.findFirst({
-      where:  { id: parsed.data.vehicleId },
-      select: { id: true },
-    })
-    if (!vehicle) return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
-
-    const record = await db.maintenanceRecord.create({
-      data:   parsed.data as Parameters<typeof db.maintenanceRecord.create>[0]['data'],
-      select: MAINT_SELECT,
-    })
+    // Plan restarts, odometer, repaired defects and legacy CT/insurance dates follow in one go.
+    const created = await recordMaintenance(getTenantDb(tenantId), userId, parsed.data)
+    if (!created) return NextResponse.json({ error: 'Véhicule ou suivi introuvable' }, { status: 404 })
+    const record = Object.fromEntries(Object.keys(MAINT_SELECT).map(k => [k, (created as Record<string, unknown>)[k]]))
     void redisCache.invalidateAll('maintenance', tenantId)
     return NextResponse.json(record, { status: 201 })
   } catch (err) {

@@ -57,7 +57,7 @@ export const TENANT_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'PlanningNote', 'Material', 'VehicleUnavailability', 'ContainerType', 'Container', 'ContainerEvent',
   'ClientContact', 'CustomerNote', 'PriceList', 'PriceRule', 'DocumentSequence', 'Contract', 'Quote', 'QuoteLine',
   'Order', 'OrderLine', 'Invoice', 'InvoiceLine', 'Payment', 'Weighing', 'Document', 'WebhookEndpoint', 'WebhookDelivery',
-  'Notification', 'NotificationPreference', 'PortalUser', 'PortalRequest',
+  'Notification', 'NotificationPreference', 'PortalUser', 'PortalRequest', 'MaintenancePlan', 'VehicleDefect',
 ])
 
 const READ_OR_DELETE_WHERE_OPS = new Set([

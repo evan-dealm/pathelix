@@ -38,6 +38,8 @@ model Tenant {
   integrations           Integration[]
   interventionMetrics    InterventionMetric[]
   maintenanceRecords     MaintenanceRecord[]
+  maintenancePlans       MaintenancePlan[]
+  vehicleDefects         VehicleDefect[]
   missionComments        MissionComment[]
   mlProfiles             TenantMLProfile[]
   missions               Mission[]
@@ -512,6 +514,8 @@ model Vehicle {
   tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   fuelRecords      FuelRecord[]
   maintenanceRecords MaintenanceRecord[]
+  maintenancePlans MaintenancePlan[]
+  defects          VehicleDefect[]
 
   @@unique([tenantId, licensePlate])
   @@index([tenantId])
@@ -529,6 +533,8 @@ model MaintenanceRecord {
   doneAt      String   // YYYY-MM-DD
   doneBy      String   @default("")
   notes       String   @default("")
+  /// The preventive plan this intervention fulfils (its next due date/km restarts from here).
+  planId      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
@@ -536,6 +542,63 @@ model MaintenanceRecord {
 
   @@index([tenantId])
   @@index([vehicleId, doneAt])
+}
+
+/// Preventive or regulatory maintenance of one truck: every N km and/or every N months, or a
+/// fixed due date (insurance). Regulatory kinds (CT, TACHOGRAPH, INSURANCE) immobilise the truck
+/// for planning once overdue.
+model MaintenancePlan {
+  id          String   @id @default(cuid())
+  tenantId    String
+  vehicleId   String
+  /// SERVICE | CT | TACHOGRAPH | INSURANCE | TIRES | EXTINGUISHER | LIFTING | CUSTOM
+  kind        String
+  label       String
+  everyKm     Int?
+  everyMonths Int?
+  lastDoneAt  String?  // YYYY-MM-DD
+  lastDoneKm  Int?
+  /// Explicit next due date (wins over the interval when set).
+  dueDate     String?  // YYYY-MM-DD
+  warnDays    Int      @default(30)
+  warnKm      Int      @default(1500)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, vehicleId])
+}
+
+/// A defect reported on a truck (driver walk-around check or office). A CRITICAL open defect
+/// immobilises the truck until it is fixed or dismissed.
+model VehicleDefect {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  vehicleId           String
+  driverId            String?
+  reportedBy          String
+  /// MINOR | MAJOR | CRITICAL
+  severity            String
+  /// BRAKES | LIGHTS | TYRES | HYDRAULICS | LEAK | BODY | ENGINE | OTHER
+  category            String    @default("OTHER")
+  description         String
+  mileageKm           Int?
+  photoDocumentId     String?
+  /// OPEN | IN_REPAIR | FIXED | DISMISSED
+  status              String    @default("OPEN")
+  resolution          String    @default("")
+  resolvedAt          DateTime?
+  resolvedBy          String?
+  maintenanceRecordId String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  vehicle             Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, vehicleId, status])
+  @@index([tenantId, status])
 }
 
 model FuelRecord {

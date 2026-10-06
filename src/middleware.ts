@@ -105,6 +105,7 @@ const DRIVER_API_ALLOWLIST: RegExp[] = [
   /^\/api\/driver-plan\/[^/]+$/,
   /^\/api\/driver-status(?:\/update)?$/,
   /^\/api\/driver-scan$/,
+  /^\/api\/vehicle-defects$/, // walk-around check: POST only (the GET refuses drivers)
   /^\/api\/driver-position$/,
   /^\/api\/driver-photos$/,
   /^\/api\/delivery-proof$/,

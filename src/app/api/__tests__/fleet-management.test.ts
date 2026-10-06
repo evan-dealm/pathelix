@@ -22,7 +22,17 @@ const mockPrisma = vi.hoisted(() => ({
   },
   vehicle: {
     findFirst: vi.fn(),
+    update:    vi.fn(),
   },
+  maintenancePlan: {
+    findFirst: vi.fn(),
+    update:    vi.fn(),
+  },
+  vehicleDefect: {
+    updateMany: vi.fn(),
+  },
+  // recordMaintenance runs in a transaction: the callback gets the same mock.
+  $transaction: vi.fn(),
   driver: {
     findFirst: vi.fn(),
   },
@@ -34,6 +44,7 @@ const mockPrisma = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: () => mockPrisma }))
+mockPrisma.$transaction.mockImplementation(async (fn: (_tx: typeof mockPrisma) => unknown) => fn(mockPrisma))
 
 vi.mock('@/lib/data/context', () => ({
   getTenantId:       vi.fn(() => 'tenant-test'),
@@ -250,7 +261,7 @@ describe('POST /api/maintenance', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
   it('creates maintenance record (201)', async () => {
-    mockPrisma.vehicle.findFirst.mockResolvedValue({ id: 'v-1' })
+    mockPrisma.vehicle.findFirst.mockResolvedValue({ id: 'v-1', mileageKm: 0 })
     mockPrisma.maintenanceRecord.create.mockResolvedValue({ id: 'mr-1', ...validBody, tenantId: 'tenant-test' })
 
     const res  = await maintenancePOST(makePost('http://localhost:3000/api/maintenance', validBody))

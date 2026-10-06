@@ -9,6 +9,7 @@ import { usePlanningStore } from '@/stores/planningStore'
 import { ImportExportBar } from '../ImportExportBar'
 import { VEHICLE_COLUMNS, parseVehicleRows } from '@/lib/importExportColumns'
 import { VehicleMaintenanceModal } from '../modals/VehicleMaintenanceModal'
+import { MaintenanceBoard } from '../fleet/MaintenanceBoard'
 import { VehicleFuelModal } from '../modals/VehicleFuelModal'
 import { invalidateClientCache } from '@/lib/clientCache'
 
@@ -210,6 +211,7 @@ export function VehiclesTab() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [maintenanceVehicle, setMaintenanceVehicle] = useState<{ id: string; name: string } | null>(null)
   const [fuelVehicle, setFuelVehicle] = useState<{ id: string; name: string } | null>(null)
+  const [view, setView] = useState<'list' | 'maintenance'>('list')
 
   function mapVehicle(v: Record<string, unknown>): Vehicle {
     const wt = (v.weightTon ?? 26) as number
@@ -471,6 +473,22 @@ export function VehiclesTab() {
     })
   }, [vehicles])
 
+  const viewSwitch = (
+    <div role="tablist" aria-label="Affichage" className="inline-flex rounded-lg bg-surface-100 p-0.5 text-xs">
+      {([['list', 'Véhicules'], ['maintenance', 'Entretien et défauts']] as const).map(([id, label]) => (
+        <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)}
+          className={`rounded-md px-2.5 py-1 font-medium ${view === id ? 'bg-white text-surface-900 shadow-sm' : 'text-surface-600 hover:text-surface-900'}`}>{label}</button>
+      ))}
+    </div>
+  )
+
+  if (view === 'maintenance') {return (
+    <div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex items-center gap-3 px-2 md:px-4 py-2.5 border-b border-surface-200 flex-shrink-0">{viewSwitch}</div>
+      <MaintenanceBoard />
+    </div>
+  )}
+
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {maintenanceAlerts.length > 0 && (
@@ -488,6 +506,7 @@ export function VehiclesTab() {
         </div>
       )}
       <div className="flex items-center gap-2 md:gap-3 px-2 md:px-4 py-2.5 border-b border-surface-200 flex-shrink-0 flex-wrap">
+        {viewSwitch}
         <span className="text-xs font-semibold text-surface-500 uppercase tracking-wider">
           {vehicles.length} vehicule{vehicles.length !== 1 ? 's' : ''}
         </span>

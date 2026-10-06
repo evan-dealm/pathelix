@@ -2,6 +2,7 @@ import type { Driver, Mission } from '@/lib/types'
 import { getTenantDb } from '@/lib/tenantDb'
 import { prismaRowToDriver } from '@/lib/prismaMappers'
 import { getAllDrivers } from './drivers'
+import { vehicleBlockers } from '@/lib/fleet/maintenance'
 
 const useMock = process.env.USE_MOCK_DATA !== 'false'
 
@@ -17,19 +18,21 @@ export interface ExcludedDriver {
 const VEHICLE_SELECT = {
   id: true, status: true, archived: true, maxBins: true, weightTon: true, heightM: true, widthM: true,
   lengthM: true, axleCount: true, hazmat: true, tareKg: true, payloadKg: true, licensePlate: true,
+  mileageKm: true, nextInspection: true, insuranceExpiry: true,
 } as const
 
 /**
  * Drivers that can actually work on `date`: not archived, not on leave (DriverUnavailability),
- * and with a truck that is not immobilised (status "active" and no VehicleUnavailability that
- * day). A driver without any truck on record is kept — the tenant may not track vehicles. The
+ * with a valid licence, and with a truck that is not immobilised (status "active", no
+ * VehicleUnavailability that day, no overdue CT / tachograph / insurance, no open critical
+ * defect — see lib/fleet/maintenance). A driver without any truck on record is kept — the tenant may not track vehicles. The
  * truck used is the first available one: its gabarit and weight limits feed the optimiser.
  */
 export async function getPlanningDrivers(tenantId: string, date: string): Promise<{ drivers: Driver[]; excluded: ExcludedDriver[] }> {
   if (useMock) return { drivers: (await getAllDrivers(tenantId)).filter(d => !d.archived), excluded: [] }
 
   const db = getTenantDb(tenantId)
-  const [rows, leaves, vehicleDowns] = await Promise.all([
+  const [rows, leaves, vehicleDowns, plans, defects] = await Promise.all([
     db.driver.findMany({
       where:   { archived: false },
       orderBy: { createdAt: 'asc' },
@@ -49,10 +52,24 @@ export async function getPlanningDrivers(tenantId: string, date: string): Promis
       where:  { startDate: { lte: date }, endDate: { gte: date } },
       select: { vehicleId: true, reason: true },
     }),
+    db.maintenancePlan.findMany({
+      where:  { active: true, kind: { in: ['CT', 'TACHOGRAPH', 'INSURANCE'] } },
+      select: { vehicleId: true, kind: true, label: true, everyKm: true, everyMonths: true, lastDoneAt: true, lastDoneKm: true, dueDate: true, warnDays: true, warnKm: true, active: true },
+    }),
+    db.vehicleDefect.findMany({
+      where:  { severity: 'CRITICAL', status: { in: ['OPEN', 'IN_REPAIR'] } },
+      select: { vehicleId: true, severity: true, status: true, description: true },
+    }),
   ])
 
   const onLeave = new Map(leaves.map(l => [l.driverId, l.reason]))
   const downVehicles = new Map(vehicleDowns.map(v => [v.vehicleId, v.reason]))
+  const plansOf = (id: string) => plans.filter(p => p.vehicleId === id)
+  const defectsOf = (id: string) => defects.filter(d => d.vehicleId === id)
+  for (const v of rows.flatMap(r => r.vehicles)) {
+    const why = vehicleBlockers(v, plansOf(v.id), defectsOf(v.id), date)
+    if (why.length && !downVehicles.has(v.id)) downVehicles.set(v.id, why.join(' ; '))
+  }
   const drivers: Driver[] = []
   const excluded: ExcludedDriver[] = []
 
@@ -61,6 +78,11 @@ export async function getPlanningDrivers(tenantId: string, date: string): Promis
     const leave = onLeave.get(r.id)
     if (leave !== undefined) {
       excluded.push({ driverId: r.id, name, reason: 'DRIVER_UNAVAILABLE', detail: leave || 'indisponible' })
+      continue
+    }
+    const licence = r.licenseExpiry ? r.licenseExpiry.toISOString().slice(0, 10) : null
+    if (licence && licence < date) {
+      excluded.push({ driverId: r.id, name, reason: 'DRIVER_UNAVAILABLE', detail: `permis expiré le ${licence.split('-').reverse().join('/')}` })
       continue
     }
     const vehicles = r.vehicles

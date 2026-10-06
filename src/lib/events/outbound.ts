@@ -16,6 +16,7 @@ export const BUSINESS_EVENTS = [
   'invoice.issued', 'invoice.sent', 'payment.received',
   'route.optimized',
   'portal.request',
+  'vehicle.immobilized',
 ] as const
 export type BusinessEvent = typeof BUSINESS_EVENTS[number]
 

@@ -1,6 +1,7 @@
 import { getTenantDb, unscopedPrisma } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 import { notify } from './index'
+import { fleetOverview } from '@/lib/fleet/service'
 
 const log = createLogger('daily-checks')
 
@@ -48,6 +49,18 @@ export async function checkTenant(tenantId: string, today = isoDay()): Promise<n
 
   const down = await db.vehicleUnavailability.count({ where: { startDate: { lte: today }, endDate: { gte: today } } })
   if (down > 0) n += await notify(tenantId, { kind: 'VEHICLE_DOWN', title: `${plural(down, 'camion immobilisé', 'camions immobilisés')} aujourd'hui`, link: 'vehicles', dedupeKey: `VEHICLE_DOWN${day}` })
+
+  // Maintenance: one line for what is overdue or due within its warning window, one alert for
+  // trucks a regulatory deadline or a critical defect takes off the road.
+  const fleet = await fleetOverview(db, today)
+  const blocked = fleet.filter(v => v.blockers.length > 0)
+  if (blocked.length > 0) {
+    n += await notify(tenantId, { kind: 'VEHICLE_DOWN', title: `${plural(blocked.length, 'camion ne peut pas rouler', 'camions ne peuvent pas rouler')}`, body: blocked.map(v => `${v.licensePlate} : ${v.blockers.join(' ; ')}`).join('\n').slice(0, 1900), link: 'vehicles', dedupeKey: `VEHICLE_BLOCKED${day}` })
+  }
+  const due = fleet.flatMap(v => v.plans.filter(p => p.active && (p.state === 'OVERDUE' || p.state === 'DUE_SOON') && !p.blocking).map(p => `${v.licensePlate} : ${p.message}`))
+  if (due.length > 0) {
+    n += await notify(tenantId, { kind: 'MAINTENANCE_DUE', title: `${plural(due.length, 'entretien à prévoir', 'entretiens à prévoir')}`, body: due.join('\n').slice(0, 1900), link: 'vehicles', dedupeKey: `MAINTENANCE_DUE${day}` })
+  }
 
   const failing = await db.webhookEndpoint.count({ where: { active: true, consecutiveFailures: { gte: 5 } } })
   if (failing > 0) n += await notify(tenantId, { kind: 'WEBHOOK_FAILING', title: `${plural(failing, 'webhook ne répond plus', 'webhooks ne répondent plus')}`, body: 'Les événements sont conservés et renvoyés : vérifiez l\'URL du destinataire.', link: 'settings', dedupeKey: `WEBHOOK_FAILING${day}` })

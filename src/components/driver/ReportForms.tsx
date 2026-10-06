@@ -4,6 +4,53 @@ import { useState } from 'react'
 import { INCIDENT_TYPES, type IncidentType } from './driverUi'
 import type { TicketReading } from '@/lib/ocr/ticket'
 
+export type DefectSeverity = 'MINOR' | 'MAJOR' | 'CRITICAL'
+const SEVERITIES: Array<{ value: DefectSeverity; label: string; hint: string }> = [
+  { value: 'CRITICAL', label: 'Je ne peux pas rouler', hint: 'Freins, direction, fuite, bras hydraulique… le camion est retiré du planning.' },
+  { value: 'MAJOR', label: 'À réparer vite', hint: 'Je peux finir la tournée, l’atelier doit voir le camion.' },
+  { value: 'MINOR', label: 'À surveiller', hint: 'Petit défaut, à corriger au prochain entretien.' },
+]
+
+/** Walk-around check: a defect on the truck assigned to the driver. */
+export function DefectForm({ categories, onSubmit }: { categories: Array<[string, string]>; onSubmit: (_d: { severity: DefectSeverity; category: string; description: string; mileageKm?: number }) => void }) {
+  const [severity, setSeverity] = useState<DefectSeverity | null>(null)
+  const [category, setCategory] = useState('OTHER')
+  const [description, setDescription] = useState('')
+  const [km, setKm] = useState('')
+  const valid = severity !== null && description.trim().length >= 3
+  return (
+    <form onSubmit={e => { e.preventDefault(); if (valid) onSubmit({ severity, category, description: description.trim(), ...(km ? { mileageKm: Number(km) } : {}) }) }} className="space-y-4">
+      <fieldset>
+        <legend className="mb-2 text-sm text-white/60">Gravité</legend>
+        <div className="grid gap-2">
+          {SEVERITIES.map(s => (
+            <label key={s.value} className={`flex min-h-12 cursor-pointer flex-col justify-center rounded-xl border px-3 py-2 ${severity === s.value ? 'border-[#F0483E] bg-[#F0483E]/15' : 'border-white/10 bg-black/20'}`}>
+              <input type="radio" name="defect-severity" value={s.value} className="sr-only" onChange={() => setSeverity(s.value)} />
+              <span className="font-medium">{s.label}</span>
+              <span className="text-xs text-white/60">{s.hint}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <label className="block">
+        <span className="mb-2 block text-sm text-white/60">Partie concernée</span>
+        <select value={category} onChange={e => setCategory(e.target.value)} className="min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-base">
+          {categories.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-2 block text-sm text-white/60">Ce que vous constatez</span>
+        <textarea value={description} onChange={e => setDescription(e.target.value)} maxLength={1000} rows={3} required className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-base focus:border-[#FFC21A] focus:outline-none" />
+      </label>
+      <label className="block">
+        <span className="mb-2 block text-sm text-white/60">Kilométrage au compteur (facultatif)</span>
+        <input inputMode="numeric" value={km} onChange={e => setKm(e.target.value.replace(/\D/g, ''))} className="min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-base tabular-nums" />
+      </label>
+      <button type="submit" disabled={!valid} className="min-h-12 w-full rounded-xl bg-[#F0483E] font-semibold text-white disabled:opacity-40">Signaler le défaut</button>
+    </form>
+  )
+}
+
 export function IncidentForm({ onSubmit }: { onSubmit: (_type: IncidentType, _notes: string) => void }) {
   const [type, setType] = useState<IncidentType | null>(null)
   const [notes, setNotes] = useState('')

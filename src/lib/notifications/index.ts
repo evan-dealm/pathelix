@@ -10,6 +10,7 @@ export const NOTIFICATION_KINDS = {
   UNASSIGNED:          { label: 'Missions non planifiées',          severity: 'warning',  permission: 'optimize' },
   DRIVER_ABSENT:       { label: 'Chauffeur absent',                 severity: 'warning',  permission: 'manage_drivers' },
   VEHICLE_DOWN:        { label: 'Camion immobilisé',                severity: 'warning',  permission: 'manage_vehicles' },
+  MAINTENANCE_DUE:     { label: 'Entretien ou contrôle à prévoir',  severity: 'info',     permission: 'manage_vehicles' },
   CONTAINER_LONG_STAY: { label: 'Bennes longtemps chez un client',  severity: 'info',     permission: 'manage_vehicles' },
   CONTRACT_ENDING:     { label: 'Contrat bientôt échu',             severity: 'info',     permission: 'manage_sales' },
   QUOTE_EXPIRING:      { label: 'Devis bientôt expiré',             severity: 'info',     permission: 'manage_sales' },
