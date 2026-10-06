@@ -65,6 +65,7 @@ const WeeklyPlanTab = dynamic(() => import('@/components/admin/tabs/WeeklyPlanTa
 const ContainersTab = dynamic(() => import('@/components/admin/containers/ContainersTab').then(m => ({ default: m.ContainersTab })), { ssr: false, loading: DynamicLoading })
 const SalesTab      = dynamic(() => import('@/components/admin/commercial/SalesTab').then(m => ({ default: m.SalesTab })), { ssr: false, loading: DynamicLoading })
 const InsightsTab   = dynamic(() => import('@/components/admin/insights/InsightsTab').then(m => ({ default: m.InsightsTab })), { ssr: false, loading: DynamicLoading })
+const AssignmentWhy = dynamic(() => import('@/components/admin/explain/AssignmentWhy').then(m => ({ default: m.AssignmentWhy })), { ssr: false })
 const BillingTab    = dynamic(() => import('@/components/admin/commercial/BillingTab').then(m => ({ default: m.BillingTab })), { ssr: false, loading: DynamicLoading })
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -914,6 +915,7 @@ export default function AdminPage() {
       )}
       {missionModal.kind === 'edit-planned' && (
         <MissionForm title="Modifier la mission planifiée" initial={missionModal.mission}
+          aside={<AssignmentWhy date={missionModal.date} missionId={missionModal.mission.id} />}
           onSave={(data) => {
             updatePlannedMission(missionModal.mission.id, missionModal.driverId, missionModal.date, data)
             setMissionModal({ kind: 'none' })

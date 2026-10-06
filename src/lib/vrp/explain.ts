@@ -257,3 +257,58 @@ export function explainUnassigned(
   }
   return out
 }
+
+export interface AssignmentAlternative {
+  driverId: string
+  /** True for the driver the mission is planned with. */
+  chosen: boolean
+  feasible: boolean
+  /** Extra driving km and working minutes this mission costs in that route (best position). */
+  extraKm: number | null
+  extraMin: number | null
+  /** Why it cannot go there (French), when it cannot. */
+  reason?: string
+}
+
+/**
+ * Why a mission sits with its driver: what it costs in its route (km and minutes it adds there)
+ * against the cheapest feasible place in every other route, or why it cannot go there. Same
+ * simulator as the optimiser; figures are the difference of the simulated route totals.
+ */
+export function explainAssignment(missionId: string, drivers: Driver[], routes: Route[], ctx: CostContext): AssignmentAlternative[] {
+  const home = routes.find(r => r.missions.some(m => m.id === missionId))
+  const m = home?.missions.find(x => x.id === missionId)
+  if (!home || !m) return []
+  const totals = (driverId: string, missions: Mission[]) => simulateRouteTrace({ driverId, missions }, ctx, drivers)
+  const out: AssignmentAlternative[] = []
+  for (const d of drivers) {
+    const route = routes.find(r => r.driverId === d.id) ?? { driverId: d.id, missions: [] }
+    const without = route.missions.filter(x => x.id !== missionId)
+    const base = totals(d.id, without)
+    if (!base) continue
+    if (!isHfvrpCompatible(m, d)) { out.push({ driverId: d.id, chosen: false, feasible: false, extraKm: null, extraMin: null, reason: reasonMessage('BIN_SIZE', m, ctx) }); continue }
+    const li = loadIssueAlone(m, d)
+    if (li) { out.push({ driverId: d.id, chosen: false, feasible: false, extraKm: null, extraMin: null, reason: reasonMessage(li, m, ctx) }); continue }
+    if (m.requiredSkills?.some(sk => !(d.skills ?? []).includes(sk))) { out.push({ driverId: d.id, chosen: false, feasible: false, extraKm: null, extraMin: null, reason: reasonMessage('SKILL', m, ctx) }); continue }
+    const chosen = d.id === home.driverId
+    // The chosen route is measured as planned; the others at their cheapest feasible position.
+    const positions = chosen ? [route.missions.findIndex(x => x.id === missionId)] : Array.from({ length: without.length + 1 }, (_, i) => i)
+    let best: { km: number; min: number; codes: SimViolationCode[] } | null = null
+    for (const pos of positions) {
+      const t = totals(d.id, [...without.slice(0, pos), m, ...without.slice(pos)])
+      if (!t) continue
+      const codes = t.violations.filter(v => v.missionId === m.id || ROUTE_HARD.has(v.code)).map(v => v.code)
+      const cand = { km: t.totals.distanceKm - base.totals.distanceKm, min: (t.totals.workMin + t.totals.waitMin) - (base.totals.workMin + base.totals.waitMin), codes }
+      const better = !best || (cand.codes.length === 0 && best.codes.length > 0) || (cand.codes.length === best.codes.length && cand.min < best.min)
+      if (better) best = cand
+    }
+    if (!best) continue
+    const feasible = best.codes.length === 0
+    out.push({
+      driverId: d.id, chosen, feasible,
+      extraKm: Math.round(best.km * 10) / 10, extraMin: Math.round(best.min),
+      ...(feasible ? {} : { reason: reasonMessage(toReason(best.codes[0]), m, ctx) }),
+    })
+  }
+  return out.sort((a, b) => Number(b.chosen) - Number(a.chosen) || Number(b.feasible) - Number(a.feasible) || (a.extraMin ?? 1e9) - (b.extraMin ?? 1e9))
+}

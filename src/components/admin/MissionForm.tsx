@@ -11,11 +11,13 @@ import { JargonTip } from '@/components/ui/Tooltip'
 
 const SKILL_OPTIONS = ['permis_C', 'permis_CE', 'CACES', 'grue', 'HAZMAT', 'ADR']
 
-export function MissionForm({ initial, onSave, onClose, title }: {
+export function MissionForm({ initial, onSave, onClose, title, aside }: {
   initial: Omit<Mission, 'id'>
   onSave: (_d: Omit<Mission, 'id'>) => void
   onClose: () => void
   title: string
+  /** Shown above the form (e.g. why a planned mission is with its driver). */
+  aside?: React.ReactNode
 }) {
   const { missionLabel, missionIcon, enabledTypes, vocab } = useTrade()
   const typeOpts = enabledTypes.map(t => ({ value: t, label: `${missionIcon(t)} ${missionLabel(t)}` }))
@@ -158,7 +160,7 @@ export function MissionForm({ initial, onSave, onClose, title }: {
 
   return (
     <Modal title={title} onClose={onClose}>
-      {}
+      {aside}
       <div className="flex bg-surface-100 rounded-lg p-0.5 gap-0.5 mb-2">
         <button type="button" onClick={() => setMode('catalogue')}
           className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${mode === 'catalogue' ? 'bg-white text-surface-900 shadow-soft' : 'text-surface-500 hover:text-surface-700'}`}>
