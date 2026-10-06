@@ -309,6 +309,20 @@ export function MissionForm({ initial, onSave, onClose, title }: {
               <Input value={form.accessNotes || ''} onChange={set('accessNotes')} placeholder="Code portail..." />
             </Field>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={form.weightSource === 'WEIGHED' ? 'Poids pesé (kg)' : 'Poids déclaré (kg)'}>
+              <Input type="number" step="10" min="0" value={form.weightKg !== undefined && form.weightKg !== null ? String(form.weightKg) : ''}
+                onChange={v => setForm(p => ({
+                  ...p,
+                  weightKg: v ? Math.max(0, parseFloat(v)) : undefined,
+                  weightSource: v ? (p.weightSource === 'WEIGHED' ? 'WEIGHED' : 'DECLARED') : undefined,
+                  weightUncertaintyKg: undefined,
+                }))} />
+            </Field>
+            <p className="text-[11px] text-surface-500 self-end pb-1">
+              Laissé vide, le poids est estimé à partir de la densité de la matière (si elle est renseignée) — jamais inventé.
+            </p>
+          </div>
         </>
       )}
 

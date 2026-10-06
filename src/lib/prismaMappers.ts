@@ -87,6 +87,11 @@ export function prismaRowToMission(row: Record<string, unknown>): Mission {
     requiredSkills:       Array.isArray(r.requiredSkills) ? r.requiredSkills as string[] : undefined,
     externalRef:          (r.externalRef as string) || undefined,
     needsGeocode:         (r.needsGeocode as boolean) ?? false,
+    weightKg:             (r.weightKg as number | null) ?? undefined,
+    weightSource:         (['WEIGHED', 'DECLARED', 'ESTIMATED'] as const).find(v => v === r.weightSource),
+    weightUncertaintyKg:  (r.weightUncertaintyKg as number | null) ?? undefined,
+    binTareKg:            (r.binTareKg as number | null) ?? undefined,
+    materialId:           (r.materialId as string) || undefined,
 
     actualDurationMin:    (r.actualDurationMin as number) ?? undefined,
     actualDistanceKm:     (r.actualDistanceKm as number) ?? undefined,
@@ -115,6 +120,12 @@ export function prismaRowToDriver(row: Record<string, unknown>): Driver {
     maxBinSizeM3:    (r.maxBinSizeM3 as number) ?? undefined,
     vehicleCapacity: vc !== null ? Math.round(vc) : (v?.maxBins !== null && v?.maxBins !== undefined ? Math.round(v.maxBins as number) : undefined),
     archived:        (r.archived as boolean) ?? false,
+    vehicleId:       v ? (v.id as string | undefined) : undefined,
+    payload:         v && (typeof v.tareKg === 'number' || typeof v.payloadKg === 'number') ? {
+      gvwKg:        typeof v.weightTon === 'number' ? Math.round((v.weightTon as number) * 1000) : undefined,
+      tareKg:       (v.tareKg as number | null) ?? undefined,
+      maxPayloadKg: (v.payloadKg as number | null) ?? undefined,
+    } : undefined,
     vehicleDimensions: v ? {
       weightTon: (v.weightTon as number) ?? 26,
       heightM:   (v.heightM as number)   ?? 4.0,

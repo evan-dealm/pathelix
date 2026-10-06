@@ -62,6 +62,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
             defaultSpeedKmh: 50, defaultStartTime: '07:00',
             maxWorkDayMin: 600, pauseAfterMin: 270, pauseDurationMin: 45,
+            lunchBreakEnabled: true, lunchBreakStart: '12:00', lunchBreakEnd: '13:30', lunchBreakDurationMin: 30,
+            breakDuringWait: true,
             costPerKm: 0.35, fuelCostPerLiter: 1.65, consumptionLPer100: 30,
 
             primaryColor: '#0055A4', logoUrl: '', companyDisplayName: '',

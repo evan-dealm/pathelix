@@ -23,7 +23,7 @@ const DRIVER_SELECT = {
   vehicles: {
     where: { archived: false },
     take: 1,
-    select: { maxBins: true, weightTon: true, heightM: true, widthM: true, lengthM: true, axleCount: true, hazmat: true },
+    select: { id: true, maxBins: true, weightTon: true, heightM: true, widthM: true, lengthM: true, axleCount: true, hazmat: true, tareKg: true, payloadKg: true },
   },
 
   // startingExutoireId (scalar, above) is what the mapper reads — this joined object was never

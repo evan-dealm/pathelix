@@ -48,13 +48,13 @@ export { unscopedPrisma }
 // Every Prisma model that has its own `tenantId` column. Kept as an explicit list (not derived
 // from `Prisma.dmmf` at runtime) so adding a new model to schema.prisma without adding it here
 // is a visible, reviewable diff rather than an implicit behavior change.
-const TENANT_SCOPED_MODELS = new Set([
+export const TENANT_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'User', 'Driver', 'Client', 'Site', 'SiteProduct', 'Mission', 'MissionComment', 'Exutoire',
   'Plan', 'TourHistory', 'Vehicle', 'MaintenanceRecord', 'FuelRecord', 'DriverPosition',
   'AuditLog', 'Holiday', 'TenantSettings', 'DriverUnavailability', 'UserPermission', 'ApiKey',
   'WeeklyPlan', 'Integration', 'InterventionMetric', 'TenantMLProfile', 'MissionTemplate',
   'DeliveryProof', 'PushSubscription', 'AiJob', 'TrackdechetsAccount', 'Bsd', 'IdempotencyKey',
-  'PlanningNote',
+  'PlanningNote', 'Material', 'VehicleUnavailability',
 ])
 
 const READ_OR_DELETE_WHERE_OPS = new Set([

@@ -69,6 +69,15 @@ vi.mock('@/lib/data/exutoires', () => ({
   getAllExutoires: vi.fn().mockResolvedValue([]),
 }))
 
+vi.mock('@/lib/data/planning', () => ({
+  getPlanningDrivers: vi.fn(async () => ({
+    drivers: [{ id: 'd-1', firstName: 'Bob', lastName: 'D', sector: 'S1', depotName: 'Depot', depotLat: 45.0, depotLng: 5.0, archived: false }],
+    excluded: [],
+  })),
+  exclusionMessage: () => '',
+  withEstimatedWeights: async (_t: string, m: unknown[]) => m,
+}))
+
 vi.mock('@/lib/vrp/index', () => ({
   runVRP: vi.fn().mockResolvedValue({
     routes: [], unassigned: [], stats: { totalDistance: 0 },

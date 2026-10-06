@@ -71,6 +71,8 @@ interface Vehicle {
   lengthM: number
   axleCount: number
   hazmat: boolean
+  tareKg: number | ''
+  payloadKg: number | ''
 
   fuelType: string
   year: number | ''
@@ -110,6 +112,8 @@ const BLANK_FORM: VehicleForm = {
   lengthM: 12.0,
   axleCount: 3,
   hazmat: false,
+  tareKg: '',
+  payloadKg: '',
   fuelType: '',
   year: '',
   vin: '',
@@ -238,6 +242,8 @@ export function VehiclesTab() {
       lengthM: lm,
       axleCount: ac,
       hazmat: hz,
+      tareKg: (v.tareKg ?? '') as number | '',
+      payloadKg: (v.payloadKg ?? '') as number | '',
       fuelType: (v.fuelType ?? '') as string,
       year: (v.year ?? '') as number | '',
       vin: (v.vin ?? '') as string,
@@ -289,6 +295,8 @@ export function VehiclesTab() {
       lengthM: v.lengthM,
       axleCount: v.axleCount,
       hazmat: v.hazmat,
+      tareKg: v.tareKg,
+      payloadKg: v.payloadKg,
       fuelType: v.fuelType,
       year: v.year,
       vin: v.vin,
@@ -355,6 +363,8 @@ export function VehiclesTab() {
         lengthM: form.lengthM,
         axleCount: form.axleCount,
         hazmat: form.hazmat,
+        tareKg: form.tareKg !== '' ? form.tareKg : null,
+        payloadKg: form.payloadKg !== '' ? form.payloadKg : null,
         fuelType: form.fuelType || '',
         year: form.year !== '' ? form.year : null,
         vin: form.vin || null,
@@ -772,7 +782,26 @@ export function VehiclesTab() {
               </div>
             </div>
 
-            {}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Poids à vide équipé (kg)">
+                <Input value={String(form.tareKg)} onChange={v => setForm(f => ({ ...f, tareKg: v === '' ? '' : Math.max(0, parseInt(v) || 0) }))} type="number" min="500" max="60000" step="100" />
+              </Field>
+              <Field label="Charge utile (kg)">
+                <Input value={String(form.payloadKg)} onChange={v => setForm(f => ({ ...f, payloadKg: v === '' ? '' : Math.max(0, parseInt(v) || 0) }))} type="number" min="100" max="60000" step="100" />
+              </Field>
+            </div>
+            <p className="text-[11px] text-surface-500 -mt-1">
+              {(() => {
+                const ptac = Math.round(form.weightTon * 1000)
+                const byTare = form.tareKg !== '' && form.tareKg > 0 && ptac > form.tareKg ? ptac - form.tareKg : null
+                const byPayload = form.payloadKg !== '' && form.payloadKg > 0 ? form.payloadKg : null
+                const max = byTare !== null && byPayload !== null ? Math.min(byTare, byPayload) : (byTare ?? byPayload)
+                return max !== null
+                  ? `L'optimiseur ne chargera jamais plus de ${max.toLocaleString('fr-FR')} kg (PTAC ${form.weightTon} t).`
+                  : 'Sans poids à vide ni charge utile, aucune limite de poids n\'est appliquée à ce camion.'
+              })()}
+            </p>
+
             {isCustomProfile && (
               <div className="border border-dashed border-surface-300 rounded-lg p-3 space-y-3 bg-surface-50/50">
                 <p className="text-[10px] text-surface-500 font-semibold uppercase tracking-wider">Dimensions personnalisees</p>

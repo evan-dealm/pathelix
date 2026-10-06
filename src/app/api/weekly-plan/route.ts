@@ -4,11 +4,13 @@ import { getTenantDb } from '@/lib/tenantDb'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { getAllDrivers } from '@/lib/data/drivers'
+import { getMissionsByDate } from '@/lib/data/missions'
+import { getPlanningDrivers, exclusionMessage, withEstimatedWeights } from '@/lib/data/planning'
+import { planningOptionsFromSettings } from '@/lib/vrp/tenantOptions'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { runVRP } from '@/lib/vrp/index'
 import { lockedSteps, mergeLockedAndOptimized, parsePlanMissions } from '@/lib/vrp/livePlan'
 import { hasPermission } from '@/lib/permissions'
-import type { Mission } from '@/lib/types'
 
 const log = createLogger('/api/weekly-plan')
 
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       update: { status: 'optimizing', settings: settings ?? {} },
     })
 
+    // Every active driver's plan is rewritten each day; only those available that day get work.
     const drivers = (await getAllDrivers(tenantId)).filter(d => !d.archived)
     const exutoires = await getAllExutoires(tenantId)
     const tenantSettings = await db.tenantSettings.findUnique({ where: { tenantId } })
@@ -86,40 +89,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     for (let d = 0; d < 5; d++) {
       const date = addDays(weekStart, d)
 
-      const missionRows = await db.mission.findMany({
-        where: { date, archived: false, needsGeocode: false },
-      })
-
-      const missions: Mission[] = missionRows.map(m => ({
-        id: m.id,
-        type: m.type as Mission['type'],
-        date: m.date,
-        address: m.address,
-        latitude: m.latitude,
-        longitude: m.longitude,
-        estimatedDurationMin: m.estimatedDurationMin,
-        maneuverTimeMin: m.maneuverTimeMin,
-        clientName: m.clientName ?? undefined,
-        wasteTypeLabel: m.wasteTypeLabel ?? undefined,
-        priority: m.priority as Mission['priority'],
-        linkedExutoireId: m.linkedExutoireId ?? undefined,
-        accessNotes: m.accessNotes ?? undefined,
-        binSize: m.binSize ?? undefined,
-        binSizeM3: m.binSizeM3 ?? undefined,
-      }))
+      // Same mission loading as the daily optimisation: time windows, skills, dependencies and
+      // weights were dropped by the hand-written mapping this replaces.
+      const missions = await withEstimatedWeights(tenantId, (await getMissionsByDate(tenantId, date)).filter(m => !m.needsGeocode))
+      const dayDrivers = await getPlanningDrivers(tenantId, date)
 
       if (missions.length === 0) {
         weekResult[date] = { day: dayNames[d], missions: 0, skipped: true }
         continue
       }
 
-      const result = await runVRP(missions, drivers, exutoires, date, {
+      const result = await runVRP(missions, dayDrivers.drivers, exutoires, date, {
         timeBudgetMs: timeBudgetPerDay,
         weights: settings?.weights,
         defaultStartTime: startTime,
         defaultSpeedKmh:  speedKmh,
         valhallaFactor:   tenantSettings?.valhallaFactor ?? 1.60,
         tenantId,
+        ...planningOptionsFromSettings(tenantSettings),
+        extraWarnings: dayDrivers.excluded.map(e => ({ driverId: e.driverId, message: exclusionMessage(e), severity: 'warning' as const })),
       })
 
       // The whole day is replanned: every active driver's plan is rewritten (a driver left

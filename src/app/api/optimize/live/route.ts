@@ -3,7 +3,9 @@ import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
-import { getAllDrivers } from '@/lib/data/drivers'
+import { getPlanningDrivers, exclusionMessage, withEstimatedWeights } from '@/lib/data/planning'
+import { planningOptionsFromSettings } from '@/lib/vrp/tenantOptions'
+import type { DriverStartOverride } from '@/lib/vrp/types'
 import { getMissionsByDate } from '@/lib/data/missions'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { runVRP } from '@/lib/vrp/index'
@@ -15,7 +17,7 @@ import { getRedisClient } from '@/lib/redisClient'
 import { hasPermission } from '@/lib/permissions'
 import { unscopedPrisma } from '@/lib/tenantDb'
 import {
-  isLocked, lockedSteps, mergeLockedAndOptimized, minutesToHHMM, nowMinutesInTimeZone, parsePlanMissions,
+  isLocked, liveStartState, lockedSteps, mergeLockedAndOptimized, minutesToHHMM, nowMinutesInTimeZone, parsePlanMissions,
 } from '@/lib/vrp/livePlan'
 
 const log = createLogger('/api/optimize/live')
@@ -95,8 +97,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const startTs = Date.now()
 
     const db = getTenantDb(tenantId)
-    const [allDrivers, allMissions, allExutoires, tenantSettings, tenant] = await Promise.all([
-      getAllDrivers(tenantId),
+    const [planning, allMissions, allExutoires, tenantSettings, tenant] = await Promise.all([
+      getPlanningDrivers(tenantId, date),
       getMissionsByDate(tenantId, date),
       getAllExutoires(tenantId),
       db.tenantSettings.findUnique({ where: { tenantId } }),
@@ -104,9 +106,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ])
 
     const drivers = (requestedDriverIds
-      ? allDrivers.filter(d => requestedDriverIds.includes(d.id))
-      : allDrivers
+      ? planning.drivers.filter(d => requestedDriverIds.includes(d.id))
+      : planning.drivers
     ).filter(d => !d.archived)
+    const excluded = requestedDriverIds ? planning.excluded.filter(e => requestedDriverIds.includes(e.driverId)) : planning.excluded
 
     if (drivers.length === 0) {
       return NextResponse.json({ error: 'Aucun chauffeur disponible' }, { status: 422 })
@@ -129,7 +132,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       for (const m of parsePlanMissions(p.missions)) heldElsewhere.add(m.id)
     }
 
-    const driverStartOverrides = new Map<string, { lat: number; lng: number; timeMin: number }>()
+    const driverStartOverrides = new Map<string, DriverStartOverride>()
+    const planningOpts = planningOptionsFromSettings(tenantSettings)
+    const timeZone = tenant?.timezone ?? 'Europe/Paris'
     const lockedMissionIds = new Set<string>()
     const lockedByDriver = new Map<string, ReturnType<typeof lockedSteps>>()
 
@@ -140,7 +145,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const plan = planMap.get(driver.id)
       if (!plan?.statuses || typeof plan.statuses !== 'object') continue
 
-      lockedByDriver.set(driver.id, lockedSteps(parsePlanMissions(plan.missions), plan.statuses as Record<string, unknown>))
+      const locked = lockedSteps(parsePlanMissions(plan.missions), plan.statuses as Record<string, unknown>)
+      lockedByDriver.set(driver.id, locked)
 
       const statuses = plan.statuses as Record<string, {
         status?: string
@@ -175,18 +181,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
       }
 
-      if (lastLat && lastLng && (Date.now() - lastTimestamp) < 2 * 60 * 60 * 1000) {
+      // The day has started for this driver: resume from where they are (last GPS fix, else the
+      // last step reached, else the depot) with the driving/working-time counters and the load
+      // rebuilt from the field statuses — never a fresh 4 h 30 at 3 pm.
+      if (locked.length > 0) {
+        const recentFix = lastLat && lastLng && (Date.now() - lastTimestamp) < 2 * 60 * 60 * 1000
+        const lastStep = [...locked].reverse().find(m => m.type !== 'PAUSE' && (m.latitude !== 0 || m.longitude !== 0))
+        const dayStart = (() => { const [h, m] = (plan.startTime ?? '07:00').split(':').map(Number); return (h || 0) * 60 + (m || 0) })()
+        const state = liveStartState(locked, plan.statuses as Record<string, unknown>, dayStart, currentTimeMin, timeZone, planningOpts.costConfig.lunchBreakEndMin)
         driverStartOverrides.set(driver.id, {
-          lat: lastLat,
-          lng: lastLng,
+          lat: recentFix ? lastLat! : lastStep?.latitude ?? driver.depotLat,
+          lng: recentFix ? lastLng! : lastStep?.longitude ?? driver.depotLng,
           timeMin: currentTimeMin,
+          clock: state.clock,
+          lunchTaken: state.lunchTaken,
+          load: state.load,
         })
       }
     }
 
-    const activeMissions: Mission[] = allMissions.filter(m =>
+    const activeMissions: Mission[] = await withEstimatedWeights(tenantId, allMissions.filter(m =>
       !m.archived && !m.needsGeocode && !lockedMissionIds.has(m.id) && !heldElsewhere.has(m.id),
-    )
+    ))
 
     if (activeMissions.length === 0) {
       return NextResponse.json({
@@ -225,9 +241,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         stability: options?.weights?.stability ?? 0.5,
       },
       tenantId,
-
-      _driverStartOverrides: driverStartOverrides,
-    } as Parameters<typeof runVRP>[4] & { _driverStartOverrides: typeof driverStartOverrides })
+      driverStartOverrides,
+      ...planningOpts,
+      extraWarnings: excluded.map(e => ({ driverId: e.driverId, message: exclusionMessage(e), severity: 'warning' as const })),
+    })
 
     // Every driver in scope gets its plan rewritten — even with nothing new (otherwise it kept
     // missions the optimiser just gave to someone else) — locked steps first, in one transaction.

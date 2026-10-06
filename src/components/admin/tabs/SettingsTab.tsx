@@ -19,6 +19,11 @@ interface OptimizationSettings {
   maxDayDurationMin: number
   breakAfterMin: number
   breakDurationMin: number
+  lunchBreakEnabled: boolean
+  lunchBreakStart: string
+  lunchBreakEnd: string
+  lunchBreakDurationMin: number
+  breakDuringWait: boolean
   costPerKm: number
   fuelCostPerL: number
   consumptionLPer100Km: number
@@ -66,6 +71,11 @@ const DEFAULT_OPTIM: OptimizationSettings = {
   maxDayDurationMin: 600,
   breakAfterMin: 270,
   breakDurationMin: 45,
+  lunchBreakEnabled: true,
+  lunchBreakStart: '12:00',
+  lunchBreakEnd: '13:30',
+  lunchBreakDurationMin: 30,
+  breakDuringWait: true,
   costPerKm: 0.35,
   fuelCostPerL: 1.65,
   consumptionLPer100Km: 30,
@@ -183,6 +193,11 @@ export function SettingsTab() {
           maxDayDurationMin:    data.maxWorkDayMin         ?? 600,
           breakAfterMin:        data.pauseAfterMin         ?? 270,
           breakDurationMin:     data.pauseDurationMin      ?? 45,
+          lunchBreakEnabled:    data.lunchBreakEnabled     ?? true,
+          lunchBreakStart:      data.lunchBreakStart       ?? '12:00',
+          lunchBreakEnd:        data.lunchBreakEnd         ?? '13:30',
+          lunchBreakDurationMin: data.lunchBreakDurationMin ?? 30,
+          breakDuringWait:      data.breakDuringWait       ?? true,
           costPerKm:            data.costPerKm             ?? 0.35,
           fuelCostPerL:         data.fuelCostPerLiter      ?? 1.65,
           consumptionLPer100Km: data.consumptionLPer100    ?? 30,
@@ -342,6 +357,11 @@ export function SettingsTab() {
       maxWorkDayMin:      optim.maxDayDurationMin,
       pauseAfterMin:      optim.breakAfterMin,
       pauseDurationMin:   optim.breakDurationMin,
+      lunchBreakEnabled:     optim.lunchBreakEnabled,
+      lunchBreakStart:       optim.lunchBreakStart,
+      lunchBreakEnd:         optim.lunchBreakEnd,
+      lunchBreakDurationMin: optim.lunchBreakDurationMin,
+      breakDuringWait:       optim.breakDuringWait,
       costPerKm:          optim.costPerKm,
       fuelCostPerLiter:   optim.fuelCostPerL,
       consumptionLPer100: optim.consumptionLPer100Km,
@@ -555,25 +575,56 @@ export function SettingsTab() {
                   className={inp} />
               </div>
               <div>
-                <label className={lbl}>Durée max journée (min)</label>
-                <input type="number" value={optim.maxDayDurationMin} min={60} max={1440}
-                  title="Durée maximale de la journée en minutes"
+                <label className={lbl}>Travail max par jour (min)</label>
+                <input type="number" value={optim.maxDayDurationMin} min={60} max={720}
+                  title="Temps de travail maximal par jour, pauses exclues"
                   onChange={e => setOptim(p => ({ ...p, maxDayDurationMin: parseInt(e.target.value) || 600 }))}
                   className={inp} />
               </div>
               <div>
-                <label className={lbl}>Pause après (min)</label>
-                <input type="number" value={optim.breakAfterMin} min={60} max={600}
-                  title="Durée de conduite avant pause obligatoire en minutes"
-                  onChange={e => setOptim(p => ({ ...p, breakAfterMin: parseInt(e.target.value) || 270 }))}
+                <label className={lbl}>Conduite avant pause (min)</label>
+                <input type="number" value={optim.breakAfterMin} min={60} max={270}
+                  title="Conduite continue avant la pause obligatoire — 270 min (4 h 30) au plus, CE 561/2006"
+                  onChange={e => setOptim(p => ({ ...p, breakAfterMin: Math.min(270, parseInt(e.target.value) || 270) }))}
                   className={inp} />
               </div>
               <div>
                 <label className={lbl}>Durée pause (min)</label>
-                <input type="number" value={optim.breakDurationMin} min={15} max={120}
-                  title="Durée de la pause en minutes"
-                  onChange={e => setOptim(p => ({ ...p, breakDurationMin: parseInt(e.target.value) || 45 }))}
+                <input type="number" value={optim.breakDurationMin} min={45} max={180}
+                  title="Pause réglementaire — 45 min au moins (ou 15 + 30 min, planifiée automatiquement)"
+                  onChange={e => setOptim(p => ({ ...p, breakDurationMin: Math.max(45, parseInt(e.target.value) || 45) }))}
                   className={inp} />
+              </div>
+              <div className="col-span-2 flex items-center gap-2 pt-1">
+                <input id="lunch-enabled" type="checkbox" checked={optim.lunchBreakEnabled}
+                  onChange={e => setOptim(p => ({ ...p, lunchBreakEnabled: e.target.checked }))} />
+                <label htmlFor="lunch-enabled" className="text-xs text-surface-700">Pause déjeuner planifiée</label>
+              </div>
+              {optim.lunchBreakEnabled && (
+                <>
+                  <div>
+                    <label className={lbl} htmlFor="lunch-start">Déjeuner entre</label>
+                    <input id="lunch-start" type="time" value={optim.lunchBreakStart}
+                      onChange={e => setOptim(p => ({ ...p, lunchBreakStart: e.target.value }))} className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl} htmlFor="lunch-end">et</label>
+                    <input id="lunch-end" type="time" value={optim.lunchBreakEnd}
+                      onChange={e => setOptim(p => ({ ...p, lunchBreakEnd: e.target.value }))} className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl} htmlFor="lunch-dur">Durée déjeuner (min)</label>
+                    <input id="lunch-dur" type="number" min={0} max={120} value={optim.lunchBreakDurationMin}
+                      onChange={e => setOptim(p => ({ ...p, lunchBreakDurationMin: Math.max(0, Math.min(120, parseInt(e.target.value) || 0)) }))} className={inp} />
+                  </div>
+                </>
+              )}
+              <div className="col-span-2 flex items-center gap-2">
+                <input id="break-wait" type="checkbox" checked={optim.breakDuringWait}
+                  onChange={e => setOptim(p => ({ ...p, breakDuringWait: e.target.checked }))} />
+                <label htmlFor="break-wait" className="text-xs text-surface-700">
+                  Utiliser les attentes de 15 min et plus (créneau client, ouverture d&apos;exutoire) comme pause
+                </label>
               </div>
               <div>
                 <label className={lbl}>Coût au km (€)</label>

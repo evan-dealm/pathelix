@@ -58,6 +58,8 @@ model Tenant {
   bsds                   Bsd[]
   idempotencyKeys        IdempotencyKey[]
   userPermissions        UserPermission[]
+  materials              Material[]
+  vehicleUnavailabilities VehicleUnavailability[]
 }
 
 model User {
@@ -282,6 +284,15 @@ model Mission {
   incidentAt           DateTime?       // signalement incident
   incidentType         String?         // 'accident'|'panne'|'refus'|'acces'|'autre'
   incidentNotes        String          @default("")
+  // ─── Poids (PTAC / charge utile) ─────────────────────────────────────────
+  // Content weight of the bin, in kg — never invented: null = unknown. weightSource says where it
+  // comes from; estimates (density × volume) carry their uncertainty, which planning adds on top.
+  weightKg             Float?
+  weightSource         String?         // 'WEIGHED' | 'DECLARED' | 'ESTIMATED'
+  weightUncertaintyKg  Float?
+  binTareKg            Float?          // empty bin weight, when known
+  materialId           String?
+  material             Material?       @relation(fields: [materialId], references: [id], onDelete: SetNull)
   dependsOn            Mission?        @relation("MissionDependency", fields: [dependsOnId], references: [id], onDelete: SetNull)
   dependents           Mission[]       @relation("MissionDependency")
   client               Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -305,6 +316,7 @@ model Mission {
   @@index([tenantId, date, archived, priority])
   @@index([dependsOnId])
   @@index([generatedFromTemplateId])
+  @@index([materialId])
 }
 
 model MissionComment {
@@ -436,6 +448,12 @@ model Vehicle {
   tollClass        Int                 @default(3)     // Classe péage (2, 3, 4)
   telepayBadge     String              @default("")    // Badge télépéage (tis_pl, axxes, eurotoll...)
   telepayDiscount  Float               @default(0)     // Réduction badge (%)
+  // ─── Poids (contrainte PTAC de l'optimiseur) ─────────────────────────────
+  // weightTon above is the PTAC (gross vehicle weight rating). Max load = min(payloadKg,
+  // PTAC − tareKg); without tareKg nor payloadKg the truck has no weight limit in planning.
+  tareKg           Int?                               // poids à vide équipé (kg)
+  payloadKg        Int?                               // charge utile déclarée (kg)
+  unavailabilities VehicleUnavailability[]
   assignedDriver   Driver?             @relation(fields: [assignedDriverId], references: [id], onDelete: SetNull)
   tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   fuelRecords      FuelRecord[]
@@ -578,6 +596,14 @@ model TenantSettings {
   /// congestion ni arrêts aux intersections. Calibré automatiquement via ML.
   /// Valeur initiale 1.28 ≈ 47km/h réel / 60km/h Valhalla.
   valhallaFactor        Float    @default(1.60)
+  // ─── Pauses (CE 561/2006 + temps de travail) ─────────────────────────────
+  // pauseAfterMin / pauseDurationMin / maxWorkDayMin above may only make the regulation stricter.
+  lunchBreakEnabled     Boolean  @default(true)
+  lunchBreakStart       String   @default("12:00")
+  lunchBreakEnd         String   @default("13:30")
+  lunchBreakDurationMin Int      @default(30)
+  /// A wait of 15 min or more before a time window may be planned as a break (shown as such).
+  breakDuringWait       Boolean  @default(true)
   tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
@@ -594,6 +620,49 @@ model DriverUnavailability {
 
   @@index([tenantId, driverId])
   @@index([tenantId, startDate, endDate])
+}
+
+/// Planned or ongoing immobilisation of a truck (maintenance, inspection, breakdown). The
+/// optimiser never plans a driver on a day where all their trucks are unavailable.
+model VehicleUnavailability {
+  id        String   @id @default(cuid())
+  tenantId  String
+  vehicleId String
+  startDate String   // YYYY-MM-DD inclusive
+  endDate   String   // YYYY-MM-DD inclusive
+  reason    String   // 'maintenance' | 'inspection' | 'breakdown' | 'other'
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startDate, endDate])
+  @@index([vehicleId])
+}
+
+/// A waste material (matière) — what is collected, its density for weight estimates and its
+/// regulatory code. Mission.wasteTypeLabel keeps the free label; materialId links it when known.
+model Material {
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  /// European waste code (code déchet, e.g. "17 01 07"), used on BSDs.
+  wasteCode      String    @default("")
+  /// Bulk density (kg/m³) for weight estimates; null = no estimate is made.
+  densityKgM3    Float?
+  /// Typical fill ratio of a bin (0–1).
+  fillFactor     Float     @default(0.8)
+  /// Relative uncertainty of an estimate (0.25 = ±25 %), added to the planned weight.
+  uncertaintyPct Float     @default(0.25)
+  hazardous      Boolean   @default(false)
+  archived       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  missions       Mission[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, archived])
 }
 
 model UserPermission {

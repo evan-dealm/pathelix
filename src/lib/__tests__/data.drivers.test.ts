@@ -95,8 +95,8 @@ describe('getAllDrivers (DB path)', () => {
     await getAllDrivers('t-1')
     const call = mockPrisma.driver.findMany.mock.calls[0][0]
     expect(call.select.vehicles.select).toEqual({
-      maxBins: true, weightTon: true, heightM: true, widthM: true,
-      lengthM: true, axleCount: true, hazmat: true,
+      id: true, maxBins: true, weightTon: true, heightM: true, widthM: true,
+      lengthM: true, axleCount: true, hazmat: true, tareKg: true, payloadKg: true,
     })
   })
 })

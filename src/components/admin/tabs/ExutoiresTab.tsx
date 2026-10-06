@@ -8,6 +8,7 @@ import { minToHHMM, logErr, useDebounce, sleep } from '../hooks'
 import { useToast } from '@/components/ui/Toast'
 import { ExutoireForm } from '../ExutoireForm'
 import { ImportExportBar } from '../ImportExportBar'
+import { MaterialsPanel } from '../MaterialsPanel'
 import { EXUTOIRE_COLUMNS, parseExutoireRows } from '@/lib/importExportColumns'
 import { cachedFetch, invalidateClientCache } from '@/lib/clientCache'
 
@@ -248,6 +249,7 @@ export function ExutoiresTab() {
           </>
         )}
       </div>
+      <MaterialsPanel />
       {modal?.kind === 'new' && (
         <ExutoireForm title="Nouvel exutoire" initial={BLANK_EXUTOIRE}
           onSave={(data) => handleSave(data).catch(logErr('api'))}

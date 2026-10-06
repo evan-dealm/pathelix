@@ -5,7 +5,8 @@ import { createRateLimiter, createTenantRateLimiter, getTenantPlanLimit, getClie
 import { getRequestContext }             from '@/lib/data/context'
 import { hasPermission }                from '@/lib/permissions'
 import { getTenantDb, type TenantDb }   from '@/lib/tenantDb'
-import { getAllDrivers }                from '@/lib/data/drivers'
+import { getPlanningDrivers, exclusionMessage, withEstimatedWeights } from '@/lib/data/planning'
+import { planningOptionsFromSettings }  from '@/lib/vrp/tenantOptions'
 import { getMissionsByDate }            from '@/lib/data/missions'
 import { getAllExutoires }              from '@/lib/data/exutoires'
 import { drainByDate }                  from '@/lib/missionQueue'
@@ -105,17 +106,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { date, driverIds, existingPlans, options } = parsed.data
 
     const db = getTenantDb(tenantId)
-    const [allDrivers, allMissions, allExutoires, tenantSettings] = await Promise.all([
-      getAllDrivers(tenantId),
+    const [planning, allMissions, allExutoires, tenantSettings] = await Promise.all([
+      getPlanningDrivers(tenantId, date),
       getMissionsByDate(tenantId, date),
       getAllExutoires(tenantId),
       db.tenantSettings.findUnique({ where: { tenantId } }),
     ])
 
     const drivers = (driverIds
-      ? allDrivers.filter(d => driverIds.includes(d.id))
-      : allDrivers
+      ? planning.drivers.filter(d => driverIds.includes(d.id))
+      : planning.drivers
     ).filter(d => !d.archived)
+    const excluded = driverIds ? planning.excluded.filter(e => driverIds.includes(e.driverId)) : planning.excluded
 
     if (driverIds && drivers.length < driverIds.length) {
       log.warn('Some requested drivers not found', { requested: driverIds.length, found: drivers.length })
@@ -123,7 +125,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (drivers.length === 0) {
       return NextResponse.json(
-        { error: 'Aucun chauffeur disponible pour cette date' },
+        { error: excluded.length > 0
+          ? `Aucun chauffeur disponible pour cette date — ${excluded.map(exclusionMessage).join(' ; ')}`
+          : 'Aucun chauffeur disponible pour cette date' },
         { status: 422 },
       )
     }
@@ -133,10 +137,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       id: `nessy-${crypto.randomUUID()}`,
     }))
 
-    const missions: Mission[] = [
+    const missions: Mission[] = await withEstimatedWeights(tenantId, [
       ...allMissions.filter(m => !m.archived && !m.needsGeocode),
       ...nessyMissions,
-    ]
+    ])
 
     const instanceMin = missions.length < 20  ? 2_000
                       : missions.length < 50  ? 5_000
@@ -168,6 +172,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       weights:          options?.weights ?? undefined,
       usePareto:        options?.usePareto ?? false,
       tenantId,
+      ...planningOptionsFromSettings(tenantSettings),
+      extraWarnings:    excluded.map(e => ({ driverId: e.driverId, message: exclusionMessage(e), severity: 'warning' as const })),
     }
 
     try {

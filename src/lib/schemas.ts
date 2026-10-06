@@ -51,6 +51,14 @@ const MissionObjectSchema = z.object({
   voucherDelivered:  z.boolean().optional(),
   requiredSkills:    z.array(z.string()).optional(),
   externalRef:       z.string().optional(),
+
+  // Weight of the bin's content (kg). A weighed or declared value; estimates are computed by the
+  // planning from the material density, never sent as if measured.
+  weightKg:            z.number().min(0).max(100_000).optional(),
+  weightSource:        z.enum(['WEIGHED', 'DECLARED', 'ESTIMATED']).optional(),
+  weightUncertaintyKg: z.number().min(0).max(100_000).optional(),
+  binTareKg:           z.number().min(0).max(20_000).optional(),
+  materialId:          z.string().optional(),
 })
 
 const NOT_USER_CREATABLE_TYPES = new Set(['VIDER', 'PAUSE'])
@@ -237,6 +245,9 @@ export const VehicleSchema = z.object({
   lengthM:         z.number().min(2).max(30).optional(),
   axleCount:       z.number().int().min(2).max(10).optional(),
   hazmat:          z.boolean().optional(),
+  // Weight limits used by the optimiser (PTAC = weightTon). Null clears them.
+  tareKg:          z.number().int().min(500).max(60_000).nullable().optional(),
+  payloadKg:       z.number().int().min(100).max(60_000).nullable().optional(),
 
   fuelType:        z.enum(['diesel', 'essence', 'electrique', 'hybride', 'gpl', '']).optional(),
   year:            z.number().int().min(1900).max(2100).nullable().optional(),
@@ -266,9 +277,16 @@ export const TenantSettingsSchema = z.object({
 
   defaultSpeedKmh:    z.number().positive().optional(),
   defaultStartTime:   z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  maxWorkDayMin:      z.number().int().positive().optional(),
-  pauseAfterMin:      z.number().int().positive().optional(),
-  pauseDurationMin:   z.number().int().positive().optional(),
+  // Regulation (CE 561/2006): settings may only be stricter — 4 h 30 of driving at most before
+  // a break, 45 min of break at least. Work per day: breaks excluded.
+  maxWorkDayMin:      z.number().int().min(60).max(720).optional(),
+  pauseAfterMin:      z.number().int().min(60).max(270).optional(),
+  pauseDurationMin:   z.number().int().min(45).max(180).optional(),
+  lunchBreakEnabled:     z.boolean().optional(),
+  lunchBreakStart:       z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  lunchBreakEnd:         z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  lunchBreakDurationMin: z.number().int().min(0).max(120).optional(),
+  breakDuringWait:       z.boolean().optional(),
   costPerKm:          z.number().min(0).optional(),
   fuelCostPerLiter:   z.number().min(0).optional(),
   consumptionLPer100: z.number().min(0).optional(),
@@ -308,3 +326,12 @@ export const DriverUnavailabilitySchema = z.object({
 )
 
 export type DriverUnavailabilityInput = z.infer<typeof DriverUnavailabilitySchema>
+
+export const MaterialSchema = z.object({
+  name:           z.string().trim().min(1).max(120),
+  wasteCode:      z.string().trim().max(20).optional(),
+  densityKgM3:    z.number().min(1).max(5000).nullable().optional(),
+  fillFactor:     z.number().min(0.05).max(1).optional(),
+  uncertaintyPct: z.number().min(0).max(1).optional(),
+  hazardous:      z.boolean().optional(),
+})

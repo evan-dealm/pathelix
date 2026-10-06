@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiErrorMessage, apiRequest } from '@/lib/apiClient'
 import { Modal, Btn, Field, Input, SelectInput } from '../ui'
+import { VehicleDowntimes } from './VehicleDowntimes'
 
 interface MaintenanceRecord {
   id: string
@@ -109,6 +110,7 @@ export function VehicleMaintenanceModal({ vehicleId, vehicleName, onClose }: {
 
   return (
     <Modal title={`Entretien — ${vehicleName}`} onClose={onClose} size="lg">
+      <VehicleDowntimes vehicleId={vehicleId} />
       <div className="flex items-center justify-between">
         <span className="text-surface-500 text-xs">{records.length} enregistrement{records.length !== 1 ? 's' : ''}</span>
         <Btn onClick={() => { setShowForm(v => !v); setError('') }} variant="primary" size="sm">

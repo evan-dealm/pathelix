@@ -47,6 +47,15 @@ vi.mock('@/lib/data/exutoires', () => ({
   getAllExutoires: vi.fn(() => Promise.resolve([])),
 }))
 
+vi.mock('@/lib/data/planning', () => ({
+  getPlanningDrivers: vi.fn(async () => ({
+    drivers: [{ id: 'd-1', firstName: 'Bob', lastName: 'D', sector: 'S1', depotName: 'Depot', depotLat: 45.0, depotLng: 5.0, archived: false }],
+    excluded: [],
+  })),
+  exclusionMessage: () => '',
+  withEstimatedWeights: async (_t: string, m: unknown[]) => m,
+}))
+
 vi.mock('@/lib/vrp/index', () => ({ runVRP: mockRunVRP }))
 
 import { POST, GET } from '@/app/api/weekly-plan/route'
@@ -174,10 +183,10 @@ describe('POST /api/weekly-plan — result contract for WeeklyPlanTab', () => {
     expect(res.status).toBe(422)
   })
 
-  it('missions query filters needsGeocode=false', async () => {
-    mockPrisma.mission.findMany.mockResolvedValue([MISSION_ROW])
+  it('missions not geolocated are left out of the optimisation', async () => {
+    mockPrisma.mission.findMany.mockResolvedValue([MISSION_ROW, { ...MISSION_ROW, id: 'm-2', needsGeocode: true }])
     await POST(makePost({ weekStart: '2026-01-05' }))
-    const callArgs = mockPrisma.mission.findMany.mock.calls[0][0]
-    expect(callArgs.where.needsGeocode).toBe(false)
+    const missions = mockRunVRP.mock.calls[0][0] as Array<{ id: string }>
+    expect(missions.map(m => m.id)).toEqual(['m-1'])
   })
 })

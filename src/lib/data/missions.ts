@@ -67,24 +67,27 @@ const MISSION_SELECT = {
   equipmentType: true, accessNotes: true, voucherDelivered: true,
   notes: true, tags: true, requiredSkills: true, externalRef: true,
   needsGeocode: true,
+  weightKg: true, weightSource: true, weightUncertaintyKg: true, binTareKg: true, materialId: true,
 
   actualDurationMin: true, actualDistanceKm: true,
   completedAt: true, cancelledAt: true, cancelReason: true,
   driverComment: true, signatureUrl: true,
 } as const
 
-// List view: omits detail-only fields (actualDurationMin, signatureUrl, dependsOnId)
+// List view: omits detail-only fields (actualDurationMin, signatureUrl). dependsOnId stays: the
+// optimiser loads its missions through this list and enforces the dependencies.
 const MISSION_LIST_SELECT = {
   id: true, type: true, date: true, address: true,
   latitude: true, longitude: true, estimatedDurationMin: true, maneuverTimeMin: true,
   clientName: true, outletName: true, wasteTypeLabel: true,
   binSize: true, binSizeM3: true, priority: true,
   timeWindowOpenMin: true, timeWindowCloseMin: true,
-  linkedExutoireId: true, archived: true,
+  linkedExutoireId: true, archived: true, dependsOnId: true,
   clientId: true, siteId: true, productId: true,
   equipmentType: true, accessNotes: true, voucherDelivered: true,
   notes: true, tags: true, requiredSkills: true, externalRef: true,
   needsGeocode: true,
+  weightKg: true, weightSource: true, weightUncertaintyKg: true, binTareKg: true, materialId: true,
   actualDistanceKm: true,
   completedAt: true, cancelledAt: true, cancelReason: true,
   driverComment: true,
