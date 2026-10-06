@@ -266,3 +266,27 @@ describe('Solution integrity', () => {
     expect(cost).toBeGreaterThan(0)
   })
 })
+
+describe('V9 — cost evaluation does not feed exutoire congestion', () => {
+  it('evaluating the same route repeatedly gives the same cost and records no visit', () => {
+    const drivers = [makeDriver('d1', 45.76, 6.05)]
+    const congestion = new Map<string, number>()
+    const exutoires: Exutoire[] = [defaultExutoire, { ...defaultExutoire, id: 'exu2', lat: 45.74, lng: 6.00 }]
+    const ctx = makeCtx(drivers, { congestionMap: congestion, exutoires })
+    const route = {
+      driverId: 'd1',
+      missions: Array.from({ length: 6 }, (_, i) => makeMission(`r${i}`, 45.77 + i * 0.005, 6.06, 'RETIRER')),
+    }
+    const first = computeRouteCost(route, ctx, drivers)
+    for (let i = 0; i < 200; i++) computeRouteCost(route, ctx, drivers)
+    expect(computeRouteCost(route, ctx, drivers)).toBe(first)
+    expect(congestion.size).toBe(0)
+    expect(getCongestionMap().size).toBe(0)
+  })
+
+  it('findBestExutoire(record=false) leaves the map untouched', () => {
+    const map = new Map<string, number>()
+    findBestExutoire(45.80, 6.10, undefined, undefined, [defaultExutoire], 1, undefined, map, false)
+    expect(map.size).toBe(0)
+  })
+})

@@ -46,6 +46,12 @@ function estimateQueueDelay(n: number, serviceTimeMin: number, c: number = 1): n
   return Math.min(waitMin, serviceTimeMin * 3)
 }
 
+/**
+ * Picks the exutoire for a dump trip. `record` adds the visit to the congestion count: only the
+ * final plan formatting should do that — cost evaluation calls this thousands of times per run,
+ * and recording there made the count grow with the number of evaluations, so the same route's
+ * cost drifted over the search and every exutoire ended up looking saturated.
+ */
 export function findBestExutoire(
   missionLat: number,
   missionLng: number,
@@ -55,6 +61,7 @@ export function findBestExutoire(
   dow: number,
   currentMin?: number,
   congestionMap?: Map<string, number>,
+  record = true,
 ): Exutoire | undefined {
   const congestion = congestionMap ?? _congestionCount
   const wasteNorm = wasteTypeLabel ? wasteTypeLabel.toLowerCase().trim() : undefined
@@ -115,6 +122,6 @@ export function findBestExutoire(
     }
   }
 
-  if (best) recordExutoireVisit(best.id, congestion)
+  if (best && record) recordExutoireVisit(best.id, congestion)
   return best
 }

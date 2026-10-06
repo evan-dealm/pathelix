@@ -393,6 +393,7 @@ export function computeRouteCost(
           mission.wasteTypeLabel,
           exutoires,
           dow,
+          undefined, undefined, false,
         )
 
         if (ex) {
@@ -453,6 +454,7 @@ export function computeRouteCost(
         mission.wasteTypeLabel,
         exutoires,
         dow,
+        undefined, undefined, false,
       )
 
       if (ex) {
@@ -866,7 +868,7 @@ export function computeInsertionDelta(
         (emptyBins <= 0 && nextNeedsEmpty && echangersPending > 0)
 
       if (needsExutoire) {
-        const ex = findBestExutoire(m.latitude, m.longitude, m.linkedExutoireId, m.wasteTypeLabel, exutoires, dow, currentMin, ctx.congestionMap)
+        const ex = findBestExutoire(m.latitude, m.longitude, m.linkedExutoireId, m.wasteTypeLabel, exutoires, dow, currentMin, ctx.congestionMap, false)
         if (ex) {
           const exId = `exu:${ex.id}`
           const exTravel = realDurationMin(ctx, currentId, currentLat, currentLng, exId, ex.lat, ex.lng, currentMin)
@@ -1052,7 +1054,7 @@ export function computeRemovalDelta(
       const needsExutoire = binsUsed >= capacity || si >= suffixLastBinIdx
 
       if (needsExutoire) {
-        const ex = findBestExutoire(m.latitude, m.longitude, m.linkedExutoireId, m.wasteTypeLabel, exutoires, dow, currentMin, ctx.congestionMap)
+        const ex = findBestExutoire(m.latitude, m.longitude, m.linkedExutoireId, m.wasteTypeLabel, exutoires, dow, currentMin, ctx.congestionMap, false)
         if (ex) {
           const exId = `exu:${ex.id}`
           const exTravel = realDurationMin(ctx, currentId, currentLat, currentLng, exId, ex.lat, ex.lng, currentMin)
@@ -1216,6 +1218,7 @@ export function computeRouteCostDetailed(
           mission.wasteTypeLabel,
           exutoires,
           dowDetailed,
+          undefined, undefined, false,
         )
         if (ex) {
           const exTravel = travelTimeMin(
