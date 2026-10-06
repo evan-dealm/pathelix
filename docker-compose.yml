@@ -1,3 +1,31 @@
+x-worker-env: &worker-env
+  NODE_ENV: production
+  USE_MOCK_DATA: "false"
+  DATABASE_URL: postgresql://pathelix:${DB_PASSWORD}@postgres:5432/pathelix_fleet
+  SESSION_SECRET: ${SESSION_SECRET}
+  REDIS_URL: redis://redis:6379
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  VALHALLA_URL: http://valhalla:8002
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  ROUTING_API_TYPE: ${ROUTING_API_TYPE:-}
+  ROUTING_API_KEY: ${ROUTING_API_KEY:-}
+  ROUTING_API_URL: ${ROUTING_API_URL:-}
+
+x-worker-base: &worker-base
+  build:
+    context: .
+    dockerfile: Dockerfile.worker
+  image: pathelix-worker
+  environment:
+    <<: *worker-env
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
 services:
 
   postgres:
@@ -30,7 +58,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # noeviction: BullMQ stores jobs in Redis — an LRU policy silently drops queued optimisations
+    # under memory pressure. When full, writes fail instead; rate limiting falls back in-process.
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - '6379:6379'
     volumes:
@@ -68,17 +98,15 @@ services:
         limits:
           memory: 4G
 
+  # ── Background workers ────────────────────────────────────────────────────
+  # All five share one image (Dockerfile.worker) and the environment below. Every worker calls
+  # validateEnv() at startup and refuses to run in production without SESSION_SECRET and
+  # USE_MOCK_DATA=false — so they must get the same core variables as the app.
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
+    <<: *worker-base
+    command: ['tsx', 'src/workers/vrpWorker.ts']
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://pathelix:${DB_PASSWORD}@postgres:5432/pathelix_fleet
-      REDIS_URL: redis://redis:6379
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      VALHALLA_URL: http://valhalla:8002
+      <<: *worker-env
       VRP_CONCURRENCY: "1"
     depends_on:
       postgres:
@@ -87,11 +115,68 @@ services:
         condition: service_healthy
       valhalla:
         condition: service_healthy
-    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pgrep -f vrpWorker > /dev/null || exit 1']
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
     deploy:
       resources:
         limits:
           memory: 4G
+
+  # Renders tour sheets and monthly reports (/api/tours/pdf, /api/reports/pdf answer 503 without it).
+  worker-pdf:
+    <<: *worker-base
+    command: ['node', 'dist/workers/pdfWorker.mjs']
+    healthcheck:
+      test: ['CMD-SHELL', 'pgrep -f pdfWorker > /dev/null || exit 1']
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # Nightly ML coefficient recalculation (VRP travel/service-time calibration).
+  worker-ml:
+    <<: *worker-base
+    command: ['tsx', 'src/workers/mlProfileWorker.ts']
+    healthcheck:
+      test: ['CMD-SHELL', 'pgrep -f mlProfileWorker > /dev/null || exit 1']
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  # Generates missions from recurring templates.
+  worker-recurring:
+    <<: *worker-base
+    command: ['tsx', 'src/workers/recurringMissionsWorker.ts']
+    healthcheck:
+      test: ['CMD-SHELL', 'pgrep -f recurringMissionsWorker > /dev/null || exit 1']
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  # Daily purge: audit log, GPS positions, idempotency keys (retention windows in env).
+  worker-retention:
+    <<: *worker-base
+    command: ['tsx', 'src/workers/auditRetentionWorker.ts']
+    environment:
+      <<: *worker-env
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-365}
+      POSITION_RETENTION_DAYS: ${POSITION_RETENTION_DAYS:-30}
+    healthcheck:
+      test: ['CMD-SHELL', 'pgrep -f auditRetentionWorker > /dev/null || exit 1']
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
 
   app:
     build: .

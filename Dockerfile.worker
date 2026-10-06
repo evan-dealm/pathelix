@@ -1,13 +1,14 @@
-# ─── Dockerfile.worker — Worker BullMQ (VRP + ML) ────────────────────────────
+# ─── Dockerfile.worker — Workers BullMQ (VRP, PDF, ML, récurrences, rétention) ──
 #
-# Image legere : uniquement le runtime Node.js + le code source TS.
-# Pas de build Next.js (pas de frontend).
-# Utilise tsx pour executer directement le TypeScript.
+# Image légère : runtime Node.js + code source TS exécuté par tsx (pas de build Next.js).
+# Une seule image pour les cinq workers ; docker-compose.yml choisit le process par service.
 
 # Stage 1: Dependencies
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+# postinstall (scripts/sync-maplibre-worker.js) must exist before `npm ci`.
+COPY scripts ./scripts
 RUN npm ci
 
 # Stage 2: Build Prisma client
@@ -25,27 +26,25 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Copier les dependances et le client Prisma
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/prisma ./prisma
 
-# Copier le code source (tsx l'execute directement)
+# Code source (tsx l'exécute directement)
 COPY src ./src
+COPY scripts ./scripts
 COPY tsconfig.json ./
 COPY package.json ./
 
-# Installer tsx globalement pour executer le TS
 RUN npm install -g tsx
 
-# Creer un user non-root
+# Le worker PDF tourne en bundle ESM (cf. pdfWorker.ts : @react-pdf chargé deux fois sinon).
+RUN npm run build:worker:pdf
+
 RUN addgroup --system --gid 1001 worker && \
     adduser --system --uid 1001 --ingroup worker worker
 USER worker
 
-# Healthcheck: verify the worker process is alive
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD pgrep -f "vrpWorker" > /dev/null || exit 1
-
-# Le worker VRP est le process par defaut
+# Healthcheck défini par service dans docker-compose.yml (un process différent par worker).
+# Process par défaut : le worker VRP.
 CMD ["tsx", "src/workers/vrpWorker.ts"]

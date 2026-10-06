@@ -15,11 +15,7 @@ const spec = {
         type: 'apiKey',
         in:   'header',
         name: 'X-API-Key',
-      },
-      BearerAuth: {
-        type:         'http',
-        scheme:       'bearer',
-        bearerFormat: 'JWT',
+        description: 'Clé créée dans Admin → Paramètres → Accès API (format ef_live_…). Une clé agit comme un exploitant de son organisation, limitée à ses opérations : missions:read|write, drivers:read|write, vehicles:read|write, clients:read|write, sites:read|write, plans:read|write (GET = read, POST/PUT/PATCH/DELETE = write), optimize, reports:read. Toute autre route répond 403.',
       },
     },
     schemas: {

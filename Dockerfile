@@ -1,6 +1,8 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+# postinstall (scripts/sync-maplibre-worker.js) must exist before npm ci
+COPY scripts ./scripts
 RUN npm ci
 
 FROM node:20-alpine AS builder
@@ -15,6 +17,7 @@ RUN npm run build
 FROM node:20-alpine AS proddeps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY scripts ./scripts
 RUN npm ci --omit=dev
 
 FROM node:20-alpine AS runner

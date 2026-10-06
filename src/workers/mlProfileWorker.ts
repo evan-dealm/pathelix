@@ -1,9 +1,17 @@
 import 'dotenv/config'
 import { validateEnv } from '@/lib/env'
-validateEnv()
+import { Queue, Worker } from 'bullmq'
 import { PrismaClient } from '@/generated/prisma'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { createLogger } from '@/lib/logger'
+import { workerConnectionOptions } from '@/lib/queue/connection'
+import { installWorkerLifecycle } from './lifecycle'
+
+// The helpers below are importable (tests) — the worker only starts when this file is the entry.
+const isMainEntry = process.argv[1]
+  ? /mlProfileWorker\.(ts|js|mjs)$/.test(process.argv[1].replace(/\\/g, '/'))
+  : false
+if (isMainEntry) validateEnv()
 
 const log = createLogger('mlProfileWorker')
 
@@ -221,12 +229,43 @@ async function computeProfilesWithRetry(maxAttempts = 3, delayMs = 5000): Promis
   }
 }
 
-computeProfilesWithRetry()
-  .then(() => {
+const QUEUE_NAME = 'ml-profiles'
+
+/**
+ * Long-running mode (default, what docker-compose runs): a BullMQ repeatable job recomputes the
+ * coefficients every night at 03:00. The process used to compute once and exit — under a
+ * `restart: unless-stopped` policy that meant recomputing in a tight loop all day.
+ * `--once` keeps the one-shot behaviour for an external cron or a manual run.
+ */
+async function main(): Promise<void> {
+  if (process.argv.includes('--once')) {
+    await computeProfilesWithRetry()
     log.info('ML profile worker finished successfully')
     process.exit(0)
+  }
+
+  const connection = workerConnectionOptions()
+  const queue = new Queue(QUEUE_NAME, { connection })
+  queue.on('error', err => log.warn('Queue error', { err: err.message }))
+  await queue.add('compute', {}, {
+    repeat:           { pattern: process.env.ML_PROFILE_CRON ?? '0 3 * * *' },
+    jobId:            'ml-profiles-nightly',
+    removeOnComplete: 7,
+    removeOnFail:     3,
   })
-  .catch(err => {
-    log.error('ML profile worker failed after all retries', { err: err instanceof Error ? err.message : String(err) })
+
+  const worker = new Worker(QUEUE_NAME, () => computeProfilesWithRetry(), { connection, concurrency: 1 })
+  worker.on('completed', job => log.info('ML profiles computed', { id: job.id }))
+  worker.on('failed',    (job, err) => log.error('ML profile computation failed', { id: job?.id, err: err.message }))
+  worker.on('error',     err => log.error('Worker error', { err: err.message }))
+
+  installWorkerLifecycle(log, [() => worker.close(), () => queue.close()])
+  log.info('ML profile worker started', { cron: process.env.ML_PROFILE_CRON ?? '0 3 * * *' })
+}
+
+if (isMainEntry) {
+  main().catch(err => {
+    log.error('ML profile worker failed', { err: err instanceof Error ? err.message : String(err) })
     process.exit(1)
   })
+}
