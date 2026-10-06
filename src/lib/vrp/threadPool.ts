@@ -1,4 +1,5 @@
 import type { SectorWorkerInput } from './sectorWorker'
+import { serializeSubMatrix } from './osrmMatrix'
 import type { VRPSolution } from './types'
 import { createLogger } from '@/lib/logger'
 
@@ -9,57 +10,75 @@ const USE_THREADS = process.env.VRP_USE_THREADS !== 'false'
   ? process.env.VRP_USE_THREADS === 'true'
   : false
 
+/**
+ * Solves every sector and returns one solution per task, in task order. A sector never comes
+ * back empty-handed: a failed thread is re-run in-process, a failed search falls back to the
+ * sector's initial construction, and as a last resort its drivers get empty routes (their
+ * missions are then reported unassigned by runVRP's conservation check, not lost).
+ */
 export async function runSectorsInParallel(
   tasks: SectorWorkerInput[],
 ): Promise<VRPSolution[]> {
   if (tasks.length === 0) return []
 
+  let results: Array<VRPSolution | null> = tasks.map(() => null)
   if (USE_THREADS && tasks.length > 1) {
     try {
-      return await runSectorsWithThreads(tasks)
+      results = await runSectorsWithThreads(tasks)
     } catch (err) {
       log.warn('worker_threads failed, falling back to sequential', { err: err instanceof Error ? err.message : String(err) })
     }
   }
 
-  return runSectorsSequential(tasks)
-}
-
-async function runSectorsSequential(
-  tasks: SectorWorkerInput[],
-): Promise<VRPSolution[]> {
-  const { buildInitialSolution } = await import('./formatSolution')
-  const { computeSolutionCost } = await import('./routeCost')
-  const { runMvAlns } = await import('./mvAlns')
   const { resetExutoireCongestion } = await import('./exutoireSearch')
-
-  const results: VRPSolution[] = []
-
+  const out: VRPSolution[] = []
   for (let i = 0; i < tasks.length; i++) {
-    const task = tasks[i]
+    const done = results[i]
+    if (done) { out.push(done); continue }
     resetExutoireCongestion()
-    const { missions, drivers, ctx, params, existingPlans } = task
-
-    const initial = buildInitialSolution(missions, drivers, ctx, existingPlans)
-    initial.cost = computeSolutionCost(initial.routes, ctx, drivers)
-
-    const optimized = missions.length > 0 && params.timeBudgetMs >= 200
-      ? runMvAlns(initial, ctx, drivers, params)
-      : initial
-
-    results.push(optimized)
-
+    out.push(await solveSectorSafely(tasks[i]))
     if (tasks.length > 10 && (i + 1) % 10 === 0) {
       log.info('VRP sectors progress', { completed: i + 1, total: tasks.length })
     }
   }
+  return out
+}
 
-  return results
+async function solveSectorSafely(task: SectorWorkerInput): Promise<VRPSolution> {
+  const { solveSector } = await import('./sectorWorker')
+  try {
+    return solveSector(task)
+  } catch (err) {
+    log.error('VRP sector search failed — keeping its initial construction', { sector: task.sectorIndex, err: err instanceof Error ? err.message : String(err) })
+  }
+  try {
+    const { buildInitialSolution } = await import('./formatSolution')
+    const { computeSolutionCost } = await import('./routeCost')
+    const initial = buildInitialSolution(task.missions, task.drivers, task.ctx, task.existingPlans)
+    initial.cost = computeSolutionCost(initial.routes, task.ctx, task.drivers)
+    return initial
+  } catch (err) {
+    log.error('VRP sector construction failed — its missions stay unassigned', { sector: task.sectorIndex, err: err instanceof Error ? err.message : String(err) })
+    return { routes: task.drivers.map(d => ({ driverId: d.id, missions: [] })), cost: 0 }
+  }
+}
+
+/** Replaces the (non-cloneable) matrix closure with a plain sub-matrix restricted to the sector. */
+function toCloneable(task: SectorWorkerInput): SectorWorkerInput {
+  const matrix = task.ctx.osrmMatrix
+  if (!matrix) return task
+  const ids = [
+    ...task.missions.map(m => m.id),
+    ...task.drivers.map(d => `depot:${d.id}`),
+    ...task.ctx.exutoires.map(e => `exu:${e.id}`),
+  ]
+  const { osrmMatrix: _omit, ...ctx } = task.ctx
+  return { ...task, ctx, serializedMatrix: serializeSubMatrix(matrix, ids) }
 }
 
 async function runSectorsWithThreads(
   tasks: SectorWorkerInput[],
-): Promise<VRPSolution[]> {
+): Promise<Array<VRPSolution | null>> {
 
   const { Worker } = await import('worker_threads')
   const { availableParallelism } = await import('os')
@@ -80,8 +99,8 @@ async function runSectorsWithThreads(
     throw new Error(`Worker file not found: ${jsPath} nor ${tsPath}`)
   }
 
-  const EMPTY_SOL: VRPSolution = { routes: [], cost: Infinity }
-  const results: VRPSolution[] = tasks.map(() => EMPTY_SOL)
+  // null = this sector failed in its thread; the caller re-runs it in-process.
+  const results: Array<VRPSolution | null> = tasks.map(() => null)
 
   return new Promise((resolveAll, _rejectAll) => {
     let completedCount = 0
@@ -112,7 +131,7 @@ async function runSectorsWithThreads(
 
         try {
           worker = new Worker(workerPath, {
-            workerData: task,
+            workerData: toCloneable(task),
             resourceLimits: { maxOldGenerationSizeMb: 512 },
             ...(workerPath.endsWith('.ts') ? { execArgv: ['--import', 'tsx'] } : {}),
           })
@@ -138,7 +157,7 @@ async function runSectorsWithThreads(
           settled = true
           clearTimeout(timer)
           if (output.error) errors.push(`Sector ${idx}: ${output.error}`)
-          if (output.solution?.routes) results[idx] = output.solution
+          if (!output.error && output.solution?.routes) results[idx] = output.solution
           activeCount--
           worker.terminate().catch(() => {})
           onComplete()

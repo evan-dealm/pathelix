@@ -490,3 +490,49 @@ function buildHaversineMatrix(
     source: 'haversine',
   }
 }
+
+/** Plain-data form of an {@link OsrmMatrix} — structured-cloneable, so it can cross a worker_threads boundary. */
+export interface SerializedMatrix {
+  ids:    string[]
+  dist:   Float64Array
+  dur:    Float64Array
+  source: OsrmMatrix['source']
+}
+
+/**
+ * Copies the rows/columns of `ids` (those present in the matrix) into a dense plain-data matrix.
+ * A sector only needs its own missions, depots and the exutoires, so the copy stays small.
+ */
+export function serializeSubMatrix(matrix: OsrmMatrix, ids: string[]): SerializedMatrix {
+  const kept: string[] = []
+  const src: number[] = []
+  for (const id of ids) {
+    const i = matrix.indexOf(id)
+    if (i >= 0) { kept.push(id); src.push(i) }
+  }
+  const n = kept.length
+  const dist = new Float64Array(n * n)
+  const dur  = new Float64Array(n * n)
+  for (let a = 0; a < n; a++) {
+    for (let b = 0; b < n; b++) {
+      if (a === b) continue
+      dist[a * n + b] = matrix.distance(src[a], src[b])
+      dur[a * n + b]  = matrix.duration(src[a], src[b])
+    }
+  }
+  return { ids: kept, dist, dur, source: matrix.source }
+}
+
+/** Rebuilds a usable {@link OsrmMatrix} from {@link serializeSubMatrix} output. */
+export function deserializeMatrix(s: SerializedMatrix): OsrmMatrix {
+  const n = s.ids.length
+  const idIndex = new Map<string, number>()
+  for (let i = 0; i < n; i++) idIndex.set(s.ids[i], i)
+  return {
+    distance: (i, j) => s.dist[i * n + j],
+    duration: (i, j) => s.dur[i * n + j],
+    size:     n,
+    indexOf:  id => idIndex.get(id) ?? -1,
+    source:   s.source,
+  }
+}

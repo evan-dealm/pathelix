@@ -845,6 +845,8 @@ async function runVRPWithSectors(
   )
 
   const sectorTasks: SectorWorkerInput[] = []
+  // sectors[] index of each task — sectors without drivers get no task, so the two diverge.
+  const taskSector: number[] = []
 
   for (let si = 0; si < nSectors; si++) {
     const sector = sectors[si]
@@ -884,13 +886,12 @@ async function runVRPWithSectors(
       existingPlans: sectorPlans,
       sectorIndex:   sectorTasks.length,
     })
+    taskSector.push(si)
   }
 
-  const rawSectorSolutions = await runSectorsInParallel(sectorTasks)
-
-  const sectorSolutions = rawSectorSolutions.filter(
-    (s): s is VRPSolution => s !== null && Array.isArray(s.routes),
-  )
+  // One solution per task, in task order (see runSectorsInParallel) — never filtered, so a
+  // task's routes stay aligned with its sector below.
+  const sectorSolutions = await runSectorsInParallel(sectorTasks)
 
   const merged: VRPSolution = {
     routes: sectorSolutions.flatMap(s => s.routes),
@@ -912,11 +913,12 @@ async function runVRPWithSectors(
       const K_NEIGHBORS = 3
       const neighborRouteIndices = new Set<number>()
       let routeOffset = 0
-      const sectorRouteRanges: Array<{ start: number; end: number }> = []
+      const sectorRouteRanges: Array<{ start: number; end: number } | undefined> = sectors.map(() => undefined)
 
-      for (const sol of sectorSolutions) {
-        sectorRouteRanges.push({ start: routeOffset, end: routeOffset + sol.routes.length })
-        routeOffset += sol.routes.length
+      for (let ti = 0; ti < sectorSolutions.length; ti++) {
+        const n = sectorSolutions[ti].routes.length
+        sectorRouteRanges[taskSector[ti]] = { start: routeOffset, end: routeOffset + n }
+        routeOffset += n
       }
 
       for (let si = 0; si < centroids.length; si++) {
