@@ -24,9 +24,12 @@ vi.mock('@/lib/rateLimit', () => ({
   getClientIp: vi.fn(() => '127.0.0.1'),
 }))
 
-vi.mock('@/lib/missionQueue', () => ({
-  enqueueMission: vi.fn(),
-}))
+
+// Missions are recorded straight away (no in-memory queue any more).
+const createMission = vi.hoisted(() => vi.fn(async () => ({ id: 'm-new' })))
+const missionFindFirst = vi.hoisted(() => vi.fn(async () => null as null | { id: string }))
+vi.mock('@/lib/data/missions', () => ({ createMission }))
+vi.mock('@/lib/tenantDb', () => ({ getTenantDb: () => ({ mission: { findFirst: missionFindFirst } }) }))
 
 vi.mock('@/services/nessy', () => ({
   verifyNessySignature:  vi.fn(async () => true),
@@ -36,6 +39,7 @@ vi.mock('@/services/nessy', () => ({
 const mockRedisCache = vi.hoisted(() => ({
   get: vi.fn(async () => null),
   set: vi.fn(async () => {}),
+  invalidateAll: vi.fn(async () => {}),
 }))
 vi.mock('@/lib/redisCache', () => ({ redisCache: mockRedisCache }))
 
@@ -125,8 +129,7 @@ describe('POST /api/webhooks/nessy', () => {
     const res  = await nessyPOST(makeNessyPost({ missions: [{ type: 'POSER', address: '1 rue Test' }], sentAt: now }))
     expect(res.status).toBe(200)
 
-    const { enqueueMission } = await import('@/lib/missionQueue')
-    expect(vi.mocked(enqueueMission)).toHaveBeenCalledWith(expect.anything(), 'tenant-b')
+    expect(createMission).toHaveBeenCalledWith('tenant-b', expect.anything())
   })
 
   it('skips a tenant whose config fails to decrypt and still matches a later valid integration', async () => {
@@ -210,20 +213,30 @@ describe('POST /api/webhooks/nessy', () => {
 
   it('[SEC-M2] replayed webhook returns deduplicated response without re-enqueueing', async () => {
     vi.mocked(verifyNessySignature).mockResolvedValue(true)
-    const { enqueueMission } = await import('@/lib/missionQueue')
     const now = new Date(Date.now() - 30_000).toISOString()
     const payload = { missions: [{ type: 'POSER', address: '10 rue Test' }], sentAt: now }
 
     mockRedisCache.get.mockResolvedValue(null)
     const res1 = await nessyPOST(makeNessyPost(payload))
     expect(res1.status).toBe(200)
-    const callCountAfterFirst = vi.mocked(enqueueMission).mock.calls.length
+    const callCountAfterFirst = createMission.mock.calls.length
 
     mockRedisCache.get.mockResolvedValue('1' as unknown as null)
     const res2 = await nessyPOST(makeNessyPost(payload))
     const json2 = await res2.json()
     expect(res2.status).toBe(200)
     expect(json2.deduplicated).toBe(true)
-    expect(vi.mocked(enqueueMission).mock.calls.length).toBe(callCountAfterFirst)
+    expect(createMission.mock.calls.length).toBe(callCountAfterFirst)
+  })
+
+  it('records a re-sent mission only once (same Nessy id)', async () => {
+    vi.mocked(verifyNessySignature).mockResolvedValue(true)
+    mockRedisCache.get.mockResolvedValue(null)
+    const now = new Date(Date.now() - 30_000).toISOString()
+    createMission.mockClear()
+    missionFindFirst.mockResolvedValueOnce({ id: 'already' })
+    const res = await nessyPOST(makeNessyPost({ missions: [{ id: 'N-1', type: 'POSER', address: '3 rue Test' }], sentAt: now }))
+    expect(await res.json()).toMatchObject({ received: 0, duplicates: 1 })
+    expect(createMission).not.toHaveBeenCalled()
   })
 })

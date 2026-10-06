@@ -65,9 +65,6 @@ vi.mock('@/lib/data/missions', () => {
   }
 })
 
-vi.mock('@/lib/missionQueue', () => ({
-  peekQueue: vi.fn(() => []),
-}))
 
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { GET as getDrivers, POST as postDriver } from '@/app/api/drivers/route'

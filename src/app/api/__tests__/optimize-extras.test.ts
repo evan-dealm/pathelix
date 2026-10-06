@@ -48,9 +48,6 @@ vi.mock('@/lib/rateLimit', () => ({
   getClientIp: vi.fn(() => '127.0.0.1'),
 }))
 
-vi.mock('@/lib/missionQueue', () => ({
-  peekQueue: vi.fn(() => []),
-}))
 
 vi.mock('@/lib/data/drivers', () => ({
   getDriver: vi.fn(),
@@ -81,11 +78,9 @@ import { GET as jobGet }               from '@/app/api/optimize/[jobId]/route'
 import { POST as resequencePost }       from '@/app/api/optimize/resequence/route'
 import { GET as p1RiskGet }            from '@/app/api/plans/p1-risk/route'
 import { POST as parseNaturalPost }    from '@/app/api/missions/parse-natural/route'
-import { GET as missionQueueGet }      from '@/app/api/missions/queue/route'
 import { getVrpJobStatus }             from '@/lib/queue/vrpQueue'
 import { getRequestContext, getTenantId } from '@/lib/data/context'
 import { getDriver }                   from '@/lib/data/drivers'
-import { peekQueue }                   from '@/lib/missionQueue'
 
 function makeGet(url: string): NextRequest { return new NextRequest(url) }
 function makePost(url: string, body: unknown): NextRequest {
@@ -292,31 +287,3 @@ describe('POST /api/missions/parse-natural', () => {
   })
 })
 
-// ── GET /api/missions/queue ───────────────────────────────────────────────────
-
-describe('GET /api/missions/queue', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('returns queued missions for tenant (200)', async () => {
-    vi.mocked(peekQueue).mockReturnValue([{ id: 'm-1', type: 'POSER' }] as never)
-    const res  = await missionQueueGet(makeGet('http://localhost/api/missions/queue'))
-    const json = await res.json()
-    expect(res.status).toBe(200)
-    expect(Array.isArray(json)).toBe(true)
-    expect(json[0].id).toBe('m-1')
-  })
-
-  it('returns empty array when queue empty', async () => {
-    vi.mocked(peekQueue).mockReturnValue([])
-    const res  = await missionQueueGet(makeGet('http://localhost/api/missions/queue'))
-    const json = await res.json()
-    expect(res.status).toBe(200)
-    expect(json).toHaveLength(0)
-  })
-
-  it('returns 500 on error', async () => {
-    vi.mocked(peekQueue).mockImplementation(() => { throw new Error('Queue error') })
-    const res = await missionQueueGet(makeGet('http://localhost/api/missions/queue'))
-    expect(res.status).toBe(500)
-  })
-})

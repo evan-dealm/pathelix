@@ -52,9 +52,6 @@ vi.mock('@/lib/data/missions', () => ({
   createMission:    vi.fn(),
 }))
 
-vi.mock('@/lib/missionQueue', () => ({
-  peekQueue: vi.fn(() => []),
-}))
 
 vi.mock('@/lib/redisCache', () => ({
   redisCache: {

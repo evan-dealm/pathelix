@@ -9,7 +9,6 @@ import { getPlanningDrivers, exclusionMessage, withEstimatedWeights } from '@/li
 import { planningOptionsFromSettings }  from '@/lib/vrp/tenantOptions'
 import { getMissionsByDate }            from '@/lib/data/missions'
 import { getAllExutoires }              from '@/lib/data/exutoires'
-import { drainByDate }                  from '@/lib/missionQueue'
 import { loadShedder, shedResponse }   from '@/lib/loadShedder'
 import { metrics, METRIC }             from '@/lib/metrics'
 import { enqueueVrpJob, hasActiveVrpWorker } from '@/lib/queue/vrpQueue'
@@ -132,15 +131,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       )
     }
 
-    const nessyMissions: Mission[] = drainByDate(date, tenantId).map((q, _i) => ({
-      ...q,
-      id: `nessy-${crypto.randomUUID()}`,
-    }))
-
-    const missions: Mission[] = await withEstimatedWeights(tenantId, [
-      ...allMissions.filter(m => !m.archived && !m.needsGeocode),
-      ...nessyMissions,
-    ])
+    // Nessy missions are recorded by their webhook and come with the day's missions.
+    const missions: Mission[] = await withEstimatedWeights(tenantId, allMissions.filter(m => !m.archived && !m.needsGeocode))
 
     const instanceMin = missions.length < 20  ? 2_000
                       : missions.length < 50  ? 5_000

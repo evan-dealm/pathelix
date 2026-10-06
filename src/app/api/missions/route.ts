@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse }     from 'next/server'
 import { MissionSchema }                  from '@/lib/schemas'
-import { peekQueue }                      from '@/lib/missionQueue'
 import { createLogger }                   from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getAllMissions, getMissionsByDate, createMission } from '@/lib/data/missions'
@@ -36,17 +35,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       cacheQualifier,
     )
 
-    const queued = peekQueue(tenantId)
-      .filter(q => !(q.latitude === 0 && q.longitude === 0) &&
-                   Number.isFinite(q.latitude) && Number.isFinite(q.longitude) &&
-                   Math.abs(q.latitude) <= 90 && Math.abs(q.longitude) <= 180)
-      .map(q => ({
-        ...q,
-        id:     `nessy-preview-${q.date}-${q.type}-${q.address.slice(0, 15).replace(/\W+/g, '-')}-${Math.round(q.latitude * 1000)}_${Math.round(q.longitude * 1000)}`,
-        _nessy: true,
-      }))
-
-    const all   = [...missions, ...queued]
+    const all   = missions
     const start = (page - 1) * limit
     const paged = all.slice(start, start + limit)
 

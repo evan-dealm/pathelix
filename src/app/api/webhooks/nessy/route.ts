@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
-import { enqueueMission } from '@/lib/missionQueue'
+import { getTenantDb } from '@/lib/tenantDb'
+import { createMission } from '@/lib/data/missions'
+
 import { verifyNessySignature, nessyPayloadToMission } from '@/services/nessy'
 import type { NessyWebhookBody } from '@/services/nessy'
 import { createLogger } from '@/lib/logger'
@@ -12,7 +14,7 @@ import prisma from '@/lib/db'
 const DEDUP_TTL_MS = 10 * 60 * 1000
 
 const log = createLogger('/api/webhooks/nessy')
-const _nessyRl = createRateLimiter(200, 60_000)
+const _nessyRl = createRateLimiter(200, 60_000, { redis: true, prefix: 'rl:nessy' })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
 
@@ -95,18 +97,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ received: 0, deduplicated: true })
   }
 
+  // Missions are recorded at once (they used to wait in a per-process memory queue: lost on
+  // restart, invisible to another instance, and planned under ids that never reached the
+  // database). A re-sent mission is recognised by its Nessy id, else by day + address + client.
+  const db = getTenantDb(tenantId)
   let received = 0
+  let duplicates = 0
   for (const payload of body.missions) {
     try {
       const mission = nessyPayloadToMission(payload)
-      enqueueMission(mission, tenantId)
+      const externalRef = payload.id ? `nessy:${String(payload.id).slice(0, 120)}` : undefined
+      const existing = await db.mission.findFirst({
+        where: externalRef
+          ? { externalRef }
+          : { date: mission.date, address: mission.address, clientName: mission.clientName ?? null, archived: false },
+        select: { id: true },
+      })
+      if (existing) { duplicates++; continue }
+      await createMission(tenantId, { ...mission, ...(externalRef ? { externalRef } : {}) } as Parameters<typeof createMission>[1])
       received++
     } catch (err) {
       log.error('Mission invalide', { payload, err: err instanceof Error ? err.message : String(err) })
     }
   }
+  if (received > 0) void redisCache.invalidateAll('missions', tenantId)
 
   await redisCache.set('nessy:dedup', tenantId, '1', DEDUP_TTL_MS, payloadHash)
 
-  return NextResponse.json({ received })
+  return NextResponse.json({ received, duplicates })
 }

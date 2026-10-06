@@ -23,9 +23,6 @@ vi.mock('@/lib/data/exutoires', () => ({
   getAllExutoires: vi.fn(),
 }))
 
-vi.mock('@/lib/missionQueue', () => ({
-  drainByDate: vi.fn(() => []),
-}))
 
 vi.mock('@/lib/loadShedder', () => ({
   loadShedder: {

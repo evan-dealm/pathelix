@@ -95,22 +95,17 @@ vi.mock('@/lib/vrp/index', () => ({
     warnings: [],
   })),
 }))
-vi.mock('@/lib/missionQueue', () => ({
-  peekQueue: vi.fn(() => []),
-}))
 vi.mock('@/lib/webPush', () => ({
   broadcastToTenant: vi.fn(),
 }))
 
 import { GET as holidaysGet, POST as holidaysPost } from '@/app/api/holidays/route'
 import { DELETE as holidayDel }                     from '@/app/api/holidays/[id]/route'
-import { GET as queueGet }                          from '@/app/api/missions/queue/route'
 import { POST as livePost }                         from '@/app/api/optimize/live/route'
 import { POST as resequencePost }                   from '@/app/api/optimize/resequence/route'
 import { getRequestContext }                        from '@/lib/data/context'
 import { getMissionsByDate }                        from '@/lib/data/missions'
 import { getAllDrivers }                            from '@/lib/data/drivers'
-import { peekQueue }                               from '@/lib/missionQueue'
 
 function makeGet(url: string): NextRequest { return new NextRequest(url) }
 function makePost(url: string, body: unknown): NextRequest {
@@ -205,27 +200,6 @@ describe('DELETE /api/holidays/[id]', () => {
   })
 })
 
-// ─── /api/missions/queue ─────────────────────────────────────────────
-
-describe('GET /api/missions/queue', () => {
-  it('returns empty queue', async () => {
-    vi.mocked(peekQueue).mockReturnValueOnce([])
-    const res = await queueGet(makeGet('http://x/api/missions/queue'))
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(Array.isArray(body)).toBe(true)
-    expect(body).toHaveLength(0)
-  })
-
-  it('returns queued missions', async () => {
-    const queue = [{ id: 'm-1', type: 'POSER', date: '2025-06-15' }]
-    vi.mocked(peekQueue).mockReturnValueOnce(queue as unknown as ReturnType<typeof peekQueue>)
-    const res = await queueGet(makeGet('http://x/api/missions/queue'))
-    expect(res.status).toBe(200)
-    const body = await res.json() as unknown[]
-    expect(body).toHaveLength(1)
-  })
-})
 
 // ─── /api/optimize/live ──────────────────────────────────────────────
 

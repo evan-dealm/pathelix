@@ -29,7 +29,6 @@ vi.mock('@/lib/audit', () => ({ auditAsync: vi.fn() }))
 vi.mock('@/lib/rateLimit', () => ({
   createTenantRateLimiter: () => ({ check: vi.fn(async () => true) }),
 }))
-vi.mock('@/lib/missionQueue', () => ({ peekQueue: vi.fn(() => []) }))
 
 // ─── Context mock (shared) ────────────────────────────────────────────────────
 
