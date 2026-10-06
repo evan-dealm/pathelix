@@ -45,7 +45,7 @@ vi.mock('@/lib/rateLimit', () => ({
 
 const mockRedisLpush = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/redisClient', () => ({
-  getRedisClient: vi.fn(() => Promise.resolve({ lpush: mockRedisLpush })),
+  getRedisClient: vi.fn(() => Promise.resolve({ lpush: mockRedisLpush, llen: vi.fn(() => Promise.resolve(0)) })),
 }))
 
 import { POST as ocrPOST } from '@/app/api/ai/ocr/route'

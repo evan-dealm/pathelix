@@ -12,6 +12,10 @@ const _ocrRl = createTenantRateLimiter(10, 3_600_000, 'ai-ocr')
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 
+const OCR_QUEUE = 'ai:ocr:queue'
+// Each entry holds a base64 image (up to ~7 MB): cap the backlog when the AI engine is down.
+const OCR_QUEUE_MAX = 200
+
 // Magic bytes for JPEG, PNG, WebP
 const ALLOWED_MAGIC: Array<{ bytes: number[]; mask?: number[] }> = [
   { bytes: [0xFF, 0xD8, 0xFF] },                         // JPEG
@@ -84,9 +88,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // The job is only accepted once it is actually queued: without Redis (or with the queue full —
+  // each entry carries the image) it used to be answered 202 and then stay "pending" forever.
+  const redis = await getRedisClient()
+  if (!redis) {
+    return NextResponse.json({ error: 'Service OCR indisponible, réessayez plus tard' }, { status: 503 })
+  }
   try {
-    const redis = await getRedisClient()
+    if (await redis.llen(OCR_QUEUE) >= OCR_QUEUE_MAX) {
+      log.warn('OCR queue full', { tenantId })
+      return NextResponse.json({ error: 'Service OCR saturé, réessayez dans quelques minutes' }, { status: 503 })
+    }
+  } catch (err) {
+    log.warn('OCR queue unreachable', { err: String(err) })
+    return NextResponse.json({ error: 'Service OCR indisponible, réessayez plus tard' }, { status: 503 })
+  }
 
+  try {
     const job = await db.aiJob.create({
       data: {
         type: 'ocr',
@@ -102,18 +120,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       } as Parameters<typeof db.aiJob.create>[0]['data'],
     })
 
-    // Push to AI engine queue via Redis LPUSH
-    if (redis) {
-      const fileBase64 = Buffer.from(buf).toString('base64')
-      await redis.lpush('ai:ocr:queue', JSON.stringify({
+    try {
+      await redis.lpush(OCR_QUEUE, JSON.stringify({
         jobId:    job.id,
         tenantId,
         missionId: missionId ?? null,
-        file:     fileBase64,
+        file:     Buffer.from(buf).toString('base64'),
         filename: file.name,
-      })).catch((err: unknown) => {
-        log.warn('Failed to push OCR job to Redis queue', { jobId: job.id, err: String(err) })
-      })
+      }))
+    } catch (err) {
+      log.warn('Failed to push OCR job to Redis queue', { jobId: job.id, err: String(err) })
+      await db.aiJob.update({ where: { id: job.id }, data: { status: 'failed', errorMsg: 'queue_unavailable' } }).catch(() => {})
+      return NextResponse.json({ error: 'Service OCR indisponible, réessayez plus tard' }, { status: 503 })
     }
 
     log.info('OCR job created', { tenantId, jobId: job.id, missionId, size: file.size })

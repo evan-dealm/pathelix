@@ -18,10 +18,11 @@ vi.mock('@/lib/data/context', () => ({
 
 const mockMissionFindFirst = vi.hoisted(() => vi.fn())
 const mockAiJobCreate      = vi.hoisted(() => vi.fn())
+const mockAiJobUpdate      = vi.hoisted(() => vi.fn(() => Promise.resolve({})))
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
     mission: { findFirst: mockMissionFindFirst },
-    aiJob:   { create: mockAiJobCreate },
+    aiJob:   { create: mockAiJobCreate, update: mockAiJobUpdate },
   }),
 }))
 
@@ -53,7 +54,7 @@ beforeEach(() => {
   mockOcrCheck.mockResolvedValue(true)
   mockMissionFindFirst.mockResolvedValue({ id: 'm1' })
   mockAiJobCreate.mockResolvedValue({ id: 'job-1', tenantId: 't1' })
-  mockGetRedis.mockResolvedValue(null)
+  mockGetRedis.mockResolvedValue({ llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockResolvedValue(1) })
 })
 
 describe('POST /api/ai/ocr', () => {
@@ -106,7 +107,26 @@ describe('POST /api/ai/ocr', () => {
     expect(res.status).toBe(404)
   })
 
-  it('returns 202 with job created (no redis)', async () => {
+  it('503 without Redis — never accepted as a job that can only stay pending', async () => {
+    mockGetRedis.mockResolvedValueOnce(null)
+    const res = await POST(makeOCRReq())
+    expect(res.status).toBe(503)
+    expect(mockAiJobCreate).not.toHaveBeenCalled()
+  })
+
+  it('503 when the queue is full (AI engine down)', async () => {
+    mockGetRedis.mockResolvedValueOnce({ llen: vi.fn().mockResolvedValue(200), lpush: vi.fn() })
+    expect((await POST(makeOCRReq())).status).toBe(503)
+    expect(mockAiJobCreate).not.toHaveBeenCalled()
+  })
+
+  it('marks the job failed and answers 503 when the push fails', async () => {
+    mockGetRedis.mockResolvedValueOnce({ llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockRejectedValue(new Error('READONLY')) })
+    expect((await POST(makeOCRReq())).status).toBe(503)
+    expect(mockAiJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'failed', errorMsg: 'queue_unavailable' } })
+  })
+
+  it('returns 202 with job created', async () => {
     const res = await POST(makeOCRReq())
     expect(res.status).toBe(202)
     const body = await res.json()
@@ -119,7 +139,7 @@ describe('POST /api/ai/ocr', () => {
   })
 
   it('returns 202 with PNG file and missionId, pushes to Redis', async () => {
-    const mockRedis = { lpush: vi.fn().mockResolvedValue(1) }
+    const mockRedis = { llen: vi.fn().mockResolvedValue(0), lpush: vi.fn().mockResolvedValue(1) }
     mockGetRedis.mockResolvedValueOnce(mockRedis)
     const res = await POST(makeOCRReq(new Blob([PNG_BYTES], { type: 'image/png' }), 'm1'))
     expect(res.status).toBe(202)
