@@ -31,15 +31,25 @@ function accountLocked(email: string): boolean {
   return e.count >= ACCOUNT_MAX_FAILURES
 }
 
-function recordAccountFailure(email: string): void {
+/**
+ * Counts an attempt BEFORE the password check (so parallel guesses cannot all slip past the
+ * lock); a successful login then clears the entry. At capacity, only expired or still-unlocked
+ * entries are evicted — a flood of junk e-mails can never flush an active lockout.
+ */
+function reserveAccountAttempt(email: string): void {
   const now = Date.now()
   const e = _accountFailures.get(email)
-  if (!e || now > e.resetAt) {
-    if (_accountFailures.size >= 10_000) _accountFailures.clear()
-    _accountFailures.set(email, { count: 1, resetAt: now + ACCOUNT_WINDOW_MS })
-  } else {
-    e.count++
+  if (e && now <= e.resetAt) { e.count++; return }
+  if (_accountFailures.size >= 10_000) {
+    for (const [k, v] of _accountFailures) if (now > v.resetAt) _accountFailures.delete(k)
+    if (_accountFailures.size >= 10_000) {
+      let toDrop = 1_000
+      for (const [k, v] of _accountFailures) {
+        if (v.count < ACCOUNT_MAX_FAILURES) { _accountFailures.delete(k); if (--toDrop <= 0) break }
+      }
+    }
   }
+  _accountFailures.set(email, { count: 1, resetAt: now + ACCOUNT_WINDOW_MS })
 }
 
 // bcrypt hash of a random string — compared against when the email is unknown, so a miss costs
@@ -95,6 +105,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 429, headers: { 'Retry-After': String(ACCOUNT_WINDOW_MS / 1000) } },
       )
     }
+    reserveAccountAttempt(normalizedEmail)
 
     try {
       const { prisma } = await import('@/lib/db')
@@ -105,10 +116,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const { compare } = await import('bcryptjs')
       const ok = await compare(password, user?.passwordHash ?? DUMMY_HASH)
-      if (!user || !ok) {
-        recordAccountFailure(normalizedEmail)
-        return deny('Identifiants incorrects')
-      }
+      if (!user || !ok) return deny('Identifiants incorrects')
       _accountFailures.delete(normalizedEmail)
 
       if (user.tenant?.suspendedAt && user.role !== 'SUPERADMIN') {
