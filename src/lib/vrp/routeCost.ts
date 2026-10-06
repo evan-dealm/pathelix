@@ -562,8 +562,11 @@ function dumpLoad(s: RoutePrefixState, env: SimEnv, lat: number, lng: number, li
     s.loadKg = 0
     s.loadM3 = 0
   }
+  // Every bin just emptied stays on the truck as an empty one (a collected skip is put down
+  // again at the next delivery) — not only those taken in an exchange. The truck never carries
+  // more bins than it holds.
+  s.emptyBins         = Math.min(env.capacity, s.emptyBins + s.binsUsed)
   s.binsUsed          = 0
-  s.emptyBins        += s.echangersPending
   s.echangersPending  = 0
 }
 
@@ -703,7 +706,7 @@ function stepMission(
     const nextM = missions[i + 1]
     const nextNeedsEmpty = nextM && (nextM.type === 'POSER' || nextM.type === 'ECHANGER')
     const needsExutoire = s.binsUsed >= env.capacity || i >= lastBinIdx ||
-      (s.emptyBins <= 0 && nextNeedsEmpty && s.echangersPending > 0)
+      (s.emptyBins <= 0 && nextNeedsEmpty && s.binsUsed > 0)
 
     if (needsExutoire) {
       dumpLoad(s, env, mission.latitude, mission.longitude, mission.linkedExutoireId, mission.wasteTypeLabel, mission.id, tr)

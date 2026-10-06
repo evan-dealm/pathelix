@@ -525,14 +525,18 @@ export function calcTour(
     })
   }
 
-  if (totalDurationMin > MAX_WORK_MIN) {
+  // Working time excludes breaks (Directive 2002/15, Code des transports): the day's amplitude
+  // (breaks included) used to be compared with the 10 h work limit — a false alarm on every
+  // long but legal day.
+  const workMin = totalDurationMin - audit.clock.breakTotal
+  if (workMin > MAX_WORK_MIN) {
     warnings.push({
-      message:  `Durée de travail totale (${formatDuration(totalDurationMin)}) dépasse le maximum légal de ${formatDuration(MAX_WORK_MIN)} (CE 561/2006)`,
+      message:  `Temps de travail (${formatDuration(workMin)}, pauses déduites) dépasse le maximum de ${formatDuration(MAX_WORK_MIN)} (temps de travail — Directive 2002/15)`,
       severity: 'error',
     })
-  } else if (totalDurationMin > WARN_WORK_TOTAL_MIN) {
+  } else if (workMin > WARN_WORK_TOTAL_MIN) {
     warnings.push({
-      message:  `Durée de travail (${formatDuration(totalDurationMin)}) approche du maximum légal de ${formatDuration(MAX_WORK_MIN)} — vérifiez la charge`,
+      message:  `Temps de travail (${formatDuration(workMin)}, pauses déduites) approche du maximum de ${formatDuration(MAX_WORK_MIN)} — vérifiez la charge`,
       severity: 'warning',
     })
   }

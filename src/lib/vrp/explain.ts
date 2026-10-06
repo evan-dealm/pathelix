@@ -60,14 +60,23 @@ function toReason(code: SimViolationCode): UnassignedReasonCode {
   }
 }
 
+/**
+ * Lateness past a customer's window that a plan may keep (min). Beyond it the window is broken:
+ * the mission leaves the plan (except an emergency) and the office is told why, instead of the
+ * customer finding out from a truck hours late.
+ */
+export const LATE_TOLERANCE_MIN = 30
+
 /** Hard problems of a route, ignoring missions locked by an earlier plan step (none here). */
-function hardProblems(route: Route, ctx: CostContext, drivers: Driver[]): { missionLevel: SimViolation[]; routeLevel: SimViolation[] } {
+function hardProblems(route: Route, ctx: CostContext, drivers: Driver[]): { missionLevel: SimViolation[]; routeLevel: SimViolation[]; late: SimViolation[] } {
   const trace = simulateRouteTrace(route, ctx, drivers)
-  if (!trace) return { missionLevel: [], routeLevel: [] }
+  if (!trace) return { missionLevel: [], routeLevel: [], late: [] }
   const missionLevel = trace.violations.filter(v => MISSION_HARD.has(v.code) && v.missionId)
   // Overtime is only "hard" when the day is illegal; WORK_TIME is recorded only above the limit.
   const routeLevel = trace.violations.filter(v => ROUTE_HARD.has(v.code))
-  return { missionLevel, routeLevel }
+  const p1 = new Set(route.missions.filter(m => m.priority === 1).map(m => m.id))
+  const late = trace.violations.filter(v => v.code === 'TIME_WINDOW' && v.missionId && !p1.has(v.missionId) && (v.amount ?? 0) > LATE_TOLERANCE_MIN)
+  return { missionLevel, routeLevel, late }
 }
 
 function priorityRank(m: Mission): number {
@@ -120,6 +129,17 @@ export function validateAndRepair(
       const [m] = route.missions.splice(bestIdx, 1)
       removed.set(m.id, { mission: m, code })
     }
+    // 2b. Broken customer windows: take out the latest visit first — the ones after it often
+    //     arrive in time once it is gone.
+    for (let guard = 0; guard < route.missions.length + 1; guard++) {
+      const { late } = hardProblems(route, ctx, drivers)
+      if (late.length === 0) break
+      const worst = late.reduce((a, b) => ((b.amount ?? 0) > (a.amount ?? 0) ? b : a))
+      const idx = route.missions.findIndex(m => m.id === worst.missionId)
+      if (idx < 0) break
+      const [m] = route.missions.splice(idx, 1)
+      removed.set(m.id, { mission: m, code: 'TIME_WINDOW' })
+    }
   }
 
   // 3. Re-insert where another truck can take the mission without any hard problem.
@@ -139,8 +159,8 @@ export function validateAndRepair(
         const delta = computeInsertionDelta(route, mission, pos, prefix, base, ctx, drivers)
         if (best && delta >= best.delta) continue
         const trial: Route = { driverId: route.driverId, missions: [...route.missions.slice(0, pos), mission, ...route.missions.slice(pos)] }
-        const { missionLevel, routeLevel } = hardProblems(trial, ctx, drivers)
-        if (missionLevel.length > 0 || routeLevel.length > 0) continue
+        const { missionLevel, routeLevel, late } = hardProblems(trial, ctx, drivers)
+        if (missionLevel.length > 0 || routeLevel.length > 0 || late.length > 0) continue
         best = { route, pos, delta }
       }
     }

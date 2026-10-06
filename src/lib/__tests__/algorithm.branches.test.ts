@@ -163,7 +163,7 @@ describe('calcTour — total work time warnings', () => {
       mission(`m-${i}`, { precomputedTravelMin: 20, estimatedDurationMin: 90, maneuverTimeMin: 0 }),
     )
     const result = calcTour(missions, DEPOT_LAT, DEPOT_LNG, '07:00', 50)
-    const w = result.warnings.find(w => w.message.includes('approche du maximum légal'))
+    const w = result.warnings.find(w => w.message.includes('approche du maximum'))
     expect(w).toBeDefined()
     expect(w!.severity).toBe('warning')
   })
@@ -176,7 +176,17 @@ describe('calcTour — total work time warnings', () => {
       mission(`m-${i}`, { precomputedTravelMin: 20, estimatedDurationMin: 90, maneuverTimeMin: 0 }),
     )
     const result = calcTour(missions, DEPOT_LAT, DEPOT_LNG, '07:00', 50)
-    const w = result.warnings.find(w => w.message.includes('Durée de travail totale') && w.severity === 'error')
+    const w = result.warnings.find(w => w.message.includes('Temps de travail') && w.severity === 'error')
     expect(w).toBeDefined()
+  })
+
+  // Changed on purpose: the 10 h limit is on working time, breaks excluded — the day's
+  // amplitude (breaks included) used to be compared with it.
+  it('does not count breaks as working time', () => {
+    const work = Array.from({ length: 5 }, (_, i) => mission(`m-${i}`, { precomputedTravelMin: 20, estimatedDurationMin: 90, maneuverTimeMin: 0 }))
+    const pause = mission('_pause_1', { type: 'PAUSE' as never, precomputedTravelMin: 0, estimatedDurationMin: 60, maneuverTimeMin: 0, breakKind: 'FULL' })
+    const result = calcTour([...work.slice(0, 3), pause, ...work.slice(3)], DEPOT_LAT, DEPOT_LNG, '07:00', 50)
+    expect(result.totalDurationMin).toBeGreaterThan(600)
+    expect(result.warnings.some(w => w.message.includes('Temps de travail') && w.severity === 'error')).toBe(false)
   })
 })
