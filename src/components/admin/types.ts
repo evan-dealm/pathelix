@@ -4,7 +4,7 @@ import {
 } from '@/lib/types'
 
 export type ViewMode = 'day' | 'week' | 'month'
-export type AppTab   = 'dashboard' | 'drivers' | 'missions' | 'tours' | 'exutoires' | 'stats' | 'templates' | 'history' | 'vehicles' | 'users' | 'audit' | 'settings' | 'telematics' | 'catalogue' | 'weekly-plan' | 'containers' | 'sales' | 'billing'
+export type AppTab   = 'dashboard' | 'drivers' | 'missions' | 'tours' | 'exutoires' | 'stats' | 'templates' | 'history' | 'vehicles' | 'users' | 'audit' | 'settings' | 'telematics' | 'catalogue' | 'weekly-plan' | 'containers' | 'sales' | 'billing' | 'insights'
 
 export type MissionModalState =
   | { kind: 'none' }

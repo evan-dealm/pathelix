@@ -6,9 +6,11 @@ import { getTenantDb }                from '@/lib/tenantDb'
 
 const log = createLogger('/api/kpi-history')
 
-const FUEL_COST_PER_KM = 0.35
-const AVG_SPEED_KMH    = 45
-
+/**
+ * Daily history for the dashboard sparklines: missions on the books, and the kilometres, fuel
+ * and working time of the saved tours (measured when the tour has GPS figures, otherwise the
+ * plan's estimate). Days without a tour show 0 — nothing is extrapolated.
+ */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const tenantId = getTenantId(req)
@@ -30,32 +32,32 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }
 
         const db = getTenantDb(tenantId)
-        const [missionCounts, planCounts] = await Promise.all([
+        const [missionCounts, plans, settings] = await Promise.all([
           db.mission.groupBy({
             by:     ['date'],
             where:  { date: { in: dates }, archived: false },
             _count: { id: true },
           }),
-          db.plan.groupBy({
-            by:     ['date'],
+          db.plan.findMany({
             where:  { date: { in: dates } },
-            _count: { id: true },
+            select: { date: true, estimatedDistanceKm: true, actualDistanceKm: true, estimatedDurationMin: true, actualDurationMin: true },
           }),
+          db.tenantSettings.findUnique({ where: { tenantId }, select: { fuelCostPerLiter: true, consumptionLPer100: true } }),
         ])
-
+        const fuelPerKm = (settings?.fuelCostPerLiter ?? 1.8) * (settings?.consumptionLPer100 ?? 30) / 100
         const missionByDate = Object.fromEntries(missionCounts.map(r => [r.date, r._count.id]))
-        const planByDate    = Object.fromEntries(planCounts.map(r => [r.date, r._count.id]))
 
         return dates.map(date => {
-          const poolTotal   = missionByDate[date] ?? 0
-          const driverCount = planByDate[date]    ?? 0
-          const estimatedKm = driverCount * 80
-          const totalKm     = poolTotal > 0 ? estimatedKm : 0
-          const totalFuelEur = Math.round(totalKm * FUEL_COST_PER_KM * 10) / 10
-          const avgWorkMin   = poolTotal > 0 && driverCount > 0
-            ? Math.round((poolTotal * 30 + totalKm / AVG_SPEED_KMH * 60) / driverCount)
-            : 0
-          return { date, poolTotal, totalKm, totalFuelEur, avgWorkMin }
+          const day = plans.filter(p => p.date === date)
+          const totalKm = Math.round(day.reduce((a, p) => a + (p.actualDistanceKm ?? p.estimatedDistanceKm ?? 0), 0) * 10) / 10
+          const workMin = day.reduce((a, p) => a + (p.actualDurationMin ?? p.estimatedDurationMin ?? 0), 0)
+          return {
+            date,
+            poolTotal:    missionByDate[date] ?? 0,
+            totalKm,
+            totalFuelEur: Math.round(totalKm * fuelPerKm * 10) / 10,
+            avgWorkMin:   day.length > 0 ? Math.round(workMin / day.length) : 0,
+          }
         })
       },
       300_000,

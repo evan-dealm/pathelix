@@ -304,8 +304,8 @@ describe('GET /api/kpi-history', () => {
   it('returns history array with default 7 days (200)', async () => {
     mockPrisma.mission.groupBy.mockResolvedValue([])
 
-    const planGroupBy = vi.fn().mockResolvedValue([])
-    ;(mockPrisma as Record<string, unknown>).plan = { groupBy: planGroupBy }
+    ;(mockPrisma as Record<string, unknown>).plan = { findMany: vi.fn().mockResolvedValue([]) }
+    ;(mockPrisma as Record<string, unknown>).tenantSettings = { findUnique: vi.fn().mockResolvedValue(null) }
 
     const res  = await kpiGET(makeGet('http://localhost:3000/api/kpi-history'))
     const json = await res.json()
@@ -316,7 +316,8 @@ describe('GET /api/kpi-history', () => {
 
   it('respects days param', async () => {
     mockPrisma.mission.groupBy.mockResolvedValue([])
-    ;(mockPrisma as Record<string, unknown>).plan = { groupBy: vi.fn().mockResolvedValue([]) }
+    ;(mockPrisma as Record<string, unknown>).plan = { findMany: vi.fn().mockResolvedValue([]) }
+    ;(mockPrisma as Record<string, unknown>).tenantSettings = { findUnique: vi.fn().mockResolvedValue(null) }
 
     const res  = await kpiGET(makeGet('http://localhost:3000/api/kpi-history?days=3'))
     const json = await res.json()
@@ -327,13 +328,25 @@ describe('GET /api/kpi-history', () => {
 
   it('clamps days to max 30', async () => {
     mockPrisma.mission.groupBy.mockResolvedValue([])
-    ;(mockPrisma as Record<string, unknown>).plan = { groupBy: vi.fn().mockResolvedValue([]) }
+    ;(mockPrisma as Record<string, unknown>).plan = { findMany: vi.fn().mockResolvedValue([]) }
+    ;(mockPrisma as Record<string, unknown>).tenantSettings = { findUnique: vi.fn().mockResolvedValue(null) }
 
     const res  = await kpiGET(makeGet('http://localhost:3000/api/kpi-history?days=999'))
     const json = await res.json()
 
     expect(res.status).toBe(200)
     expect(json.history).toHaveLength(30)
+  })
+
+  it('reports the saved tours (measured km first), not an extrapolation', async () => {
+    mockPrisma.mission.groupBy.mockResolvedValue([{ date: '2026-10-05', _count: { id: 9 } }])
+    ;(mockPrisma as Record<string, unknown>).plan = { findMany: vi.fn().mockResolvedValue([
+      { date: '2026-10-05', estimatedDistanceKm: 100, actualDistanceKm: 120, estimatedDurationMin: 480, actualDurationMin: null },
+      { date: '2026-10-05', estimatedDistanceKm: 80, actualDistanceKm: null, estimatedDurationMin: 400, actualDurationMin: 420 },
+    ]) }
+    ;(mockPrisma as Record<string, unknown>).tenantSettings = { findUnique: vi.fn().mockResolvedValue({ fuelCostPerLiter: 2, consumptionLPer100: 30 }) }
+    const json = await (await kpiGET(makeGet('http://localhost:3000/api/kpi-history?days=1&date=2026-10-05'))).json()
+    expect(json.history[0]).toEqual({ date: '2026-10-05', poolTotal: 9, totalKm: 200, totalFuelEur: 120, avgWorkMin: 450 })
   })
 
   it('returns 500 on DB error', async () => {

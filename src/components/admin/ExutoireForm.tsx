@@ -125,6 +125,10 @@ export function ExutoireForm({ initial, onSave, onClose, title }: {
         <Input type="number" min="5" max="120" value={String(form.serviceTimeMin)}
           onChange={v => setForm(p => ({ ...p, serviceTimeMin: parseInt(v) || 20 }))} />
       </Field>
+      <Field label="Prix de traitement (€ HT / tonne, facultatif)">
+        <Input type="number" min="0" step="0.5" value={form.feePerTonneEur === null || form.feePerTonneEur === undefined ? '' : String(form.feePerTonneEur)}
+          onChange={v => setForm(p => ({ ...p, feePerTonneEur: v.trim() === '' ? null : Math.max(0, Number(v) || 0) }))} />
+      </Field>
       {Object.keys(fieldErrors).length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-0.5">
           {Object.entries(fieldErrors).map(([k, v]) => (

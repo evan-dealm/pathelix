@@ -271,7 +271,12 @@ export async function createCreditNote(db: TenantDb, tenantId: string, userId: s
     data: {
       kind: 'CREDIT_NOTE', creditedInvoiceId: inv.id, clientId: inv.clientId, orderId: inv.orderId, contractId: inv.contractId, status: 'DRAFT',
       notes: `Avoir sur la facture ${inv.number}`, totalHT: built.totals.totalHT, totalVAT: built.totals.totalVAT, totalTTC: built.totals.totalTTC, createdBy: userId,
-      lines: { create: built.lines.map(l => ({ position: l.position, label: l.label, description: l.description, quantity: l.quantity, unit: l.unit, unitPrice: l.unitPrice, discountPct: l.discountPct, vatRate: l.vatRate, amountHT: l.amountHT, explanation: l.explanation, tenantId })) },
+      // A full credit keeps each line's mission / bin / weighing, so per-mission revenue
+      // (profitability) is net of what was credited.
+      lines: { create: built.lines.map((l, i) => ({
+        position: l.position, label: l.label, description: l.description, quantity: l.quantity, unit: l.unit, unitPrice: l.unitPrice, discountPct: l.discountPct, vatRate: l.vatRate, amountHT: l.amountHT, explanation: l.explanation, tenantId,
+        ...(lines ? {} : { missionId: inv.lines[i]?.missionId ?? null, containerId: inv.lines[i]?.containerId ?? null, weighingId: inv.lines[i]?.weighingId ?? null }),
+      })) },
     } as Parameters<typeof db.invoice.create>[0]['data'],
   })
 }

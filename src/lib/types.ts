@@ -198,6 +198,8 @@ export interface Exutoire {
   closedDays:          number[]
   acceptedWasteTypes:  string[]
   serviceTimeMin:      number
+  /** What the outlet charges per tonne (€ HT) — profitability only. */
+  feePerTonneEur?:     number | null
 }
 
 export interface Vehicle {
@@ -271,6 +273,7 @@ export interface SettingsApiResponse {
   lunchBreakDurationMin?:  number
   breakDuringWait?:        boolean
   costPerKm?:              number
+  driverHourlyCostEur?:    number | null
   fuelCostPerLiter?:       number
   consumptionLPer100?:     number
   valhallaFactor?:         number

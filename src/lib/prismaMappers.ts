@@ -171,5 +171,6 @@ export function prismaRowToExutoire(row: Record<string, unknown>): Exutoire {
     closedDays,
     acceptedWasteTypes,
     serviceTimeMin:     requireNumber(row.serviceTimeMin, 'serviceTimeMin'),
+    feePerTonneEur:     typeof row.feePerTonneEur === 'number' ? row.feePerTonneEur : null,
   }
 }

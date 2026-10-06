@@ -6,6 +6,7 @@ import { PlanSchema }                from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getTenantDb }                from '@/lib/tenantDb'
+import { refreshPlanEstimates } from '@/lib/data/planEstimates'
 import { emitEvent }                 from '@/lib/integrationEvents'
 import { redisCache }                from '@/lib/redisCache'
 
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         })
       }
     }, { timeout: 30_000 })
+    await refreshPlanEstimates(db, tenantId, plans.map(p => ({ driverId: p.driverId, date: p.date })))
 
     const affectedDates = new Set(plans.map(p => p.date))
     for (const d of affectedDates) void redisCache.invalidate('plans', tenantId, d)

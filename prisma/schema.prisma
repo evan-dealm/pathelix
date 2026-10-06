@@ -403,6 +403,8 @@ model Exutoire {
   closedDays         Json          @default("[]")
   acceptedWasteTypes Json          @default("[]")
   serviceTimeMin     Int
+  /// What the outlet charges per tonne dumped (€ HT) — a cost in profitability.
+  feePerTonneEur     Float?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -684,6 +686,9 @@ model TenantSettings {
   costPerKm             Float    @default(0.35)
   fuelCostPerLiter      Float    @default(1.80)
   consumptionLPer100    Float    @default(30)
+  /// Loaded hourly cost of a driver (wages + charges), € — null: labour is left out of
+  /// profitability and the report says so.
+  driverHourlyCostEur   Float?
   primaryColor          String   @default("#0055A4")
   logoUrl               String   @default("")
   companyDisplayName    String   @default("")

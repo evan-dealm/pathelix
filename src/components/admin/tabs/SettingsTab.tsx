@@ -29,6 +29,8 @@ interface OptimizationSettings {
   fuelCostPerL: number
   consumptionLPer100Km: number
   valhallaFactor: number
+  /** Empty = unknown (labour left out of profitability). */
+  driverHourlyCost: string
 }
 
 interface BrandingSettings {
@@ -81,6 +83,7 @@ const DEFAULT_OPTIM: OptimizationSettings = {
   fuelCostPerL: 1.65,
   consumptionLPer100Km: 30,
   valhallaFactor: 1.60,
+  driverHourlyCost: '',
 }
 
 const DEFAULT_BRANDING: BrandingSettings = {
@@ -203,6 +206,7 @@ export function SettingsTab() {
           fuelCostPerL:         data.fuelCostPerLiter      ?? 1.65,
           consumptionLPer100Km: data.consumptionLPer100    ?? 30,
           valhallaFactor:       data.valhallaFactor        ?? 1.60,
+          driverHourlyCost:     data.driverHourlyCostEur !== null && data.driverHourlyCostEur !== undefined ? String(data.driverHourlyCostEur) : '',
         })
         setBranding({
           primaryColor:       data.primaryColor       ?? '#0055A4',
@@ -367,6 +371,7 @@ export function SettingsTab() {
       fuelCostPerLiter:   optim.fuelCostPerL,
       consumptionLPer100: optim.consumptionLPer100Km,
       valhallaFactor:     optim.valhallaFactor,
+      driverHourlyCostEur: optim.driverHourlyCost.trim() ? Number(optim.driverHourlyCost.replace(',', '.')) : null,
     }, setOptimStatus)
   }
 
@@ -633,6 +638,13 @@ export function SettingsTab() {
                 <input type="number" value={optim.costPerKm} min={0} step="0.01"
                   title="Coût par kilomètre en euros"
                   onChange={e => setOptim(p => ({ ...p, costPerKm: parseFloat(e.target.value) || 0 }))}
+                  className={inp} />
+              </div>
+              <div>
+                <label className={lbl} htmlFor="driver-hourly">Coût horaire chauffeur (€, chargé)</label>
+                <input id="driver-hourly" inputMode="decimal" value={optim.driverHourlyCost} placeholder="ex. 32"
+                  title="Salaire et charges par heure travaillée — sert au calcul de rentabilité"
+                  onChange={e => setOptim(p => ({ ...p, driverHourlyCost: e.target.value.replace(/[^\d.,]/g, '') }))}
                   className={inp} />
               </div>
               <div>

@@ -64,7 +64,9 @@ export async function customerOverview(db: TenantDb, clientId: string, opts: { w
 
   const finance = opts.withFinance ? (() => {
     const issued = invoices.filter(i => i.status !== 'DRAFT' && i.status !== 'CANCELLED')
-    const revenue12m = issued.filter(i => i.issueDate && new Date(i.issueDate) >= yearAgo).reduce((a, i) => a + i.totalHT, 0)
+    // Revenue: every numbered document — a fully credited invoice is CANCELLED but its credit
+    // note is not, and leaving the invoice out would make the credit note count alone.
+    const revenue12m = invoices.filter(i => i.number && i.issueDate && new Date(i.issueDate) >= yearAgo).reduce((a, i) => a + i.totalHT, 0)
     const open = issued.filter(i => i.kind === 'INVOICE' && ['ISSUED', 'SENT', 'PARTIALLY_PAID'].includes(i.status))
     const today = new Date().toISOString().slice(0, 10)
     return {

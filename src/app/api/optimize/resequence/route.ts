@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
+import { refreshPlanEstimates } from '@/lib/data/planEstimates'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { getDriver } from '@/lib/data/drivers'
 import { runMvAlns } from '@/lib/vrp/mvAlns'
@@ -129,6 +130,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         missions: driverPlan as unknown as Parameters<typeof db.plan.update>[0]['data']['missions'],
       },
     })
+    await refreshPlanEstimates(db, tenantId, [{ driverId, date }])
 
     log.info('Resequence completed', {
       driverId,

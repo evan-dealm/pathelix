@@ -124,6 +124,7 @@ export const ExutoireSchema = z.object({
   closedDays:         z.array(z.number().int().min(0).max(6)),
   acceptedWasteTypes: z.array(z.string()),
   serviceTimeMin:     z.number().int().min(0),
+  feePerTonneEur:     z.number().min(0).max(10_000).nullable().optional(),
 })
 
 export type ExutoireInput = z.infer<typeof ExutoireSchema>
@@ -294,6 +295,7 @@ export const TenantSettingsSchema = z.object({
   costPerKm:          z.number().min(0).optional(),
   fuelCostPerLiter:   z.number().min(0).optional(),
   consumptionLPer100: z.number().min(0).optional(),
+  driverHourlyCostEur: z.number().min(0).max(500).nullable().optional(),
 
   primaryColor:       z.string().optional(),
   logoUrl:            z.string().optional(),

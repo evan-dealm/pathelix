@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
+import { refreshPlanEstimates } from '@/lib/data/planEstimates'
 import { getPlanningDrivers, exclusionMessage, withEstimatedWeights } from '@/lib/data/planning'
 import { planningOptionsFromSettings } from '@/lib/vrp/tenantOptions'
 import type { DriverStartOverride } from '@/lib/vrp/types'
@@ -265,6 +266,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         })
       }
     }, { timeout: 30_000 })
+    await refreshPlanEstimates(db, tenantId, drivers.map(d => ({ driverId: d.id, date })))
 
     metrics.increment(METRIC.VRP_ENQUEUED, { tenantId, type: 'live' })
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getTenantDb } from '@/lib/tenantDb'
+import { refreshPlanEstimates } from '@/lib/data/planEstimates'
 import { getRequestContext } from '@/lib/data/context'
 import { createLogger } from '@/lib/logger'
 import { getAllDrivers } from '@/lib/data/drivers'
@@ -130,6 +131,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           })
         }
       }, { timeout: 30_000 })
+      await refreshPlanEstimates(db, tenantId, drivers.map(d => ({ driverId: d.id, date })))
 
       weekResult[date] = {
         day: dayNames[d],
