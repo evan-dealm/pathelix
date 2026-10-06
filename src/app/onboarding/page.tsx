@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import Image from 'next/image'
+import { BRAND_LOGO_SRC } from '@/lib/branding'
 import { TRADES, type TradeId, TRADE_IDS } from '@/lib/trades'
 
 interface WizardState {
@@ -86,6 +88,7 @@ export default function OnboardingPage() {
         {step === 1 && (
           <div>
             <div className="text-center mb-8">
+              <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={64} height={64} className="mx-auto mb-4 rounded-2xl" />
               <h1 className="text-3xl font-black tracking-tight">Bienvenue sur Pathélix</h1>
               <p className="text-gray-400 mt-2 text-lg">Quel est votre secteur d&apos;activité ?</p>
               <p className="text-gray-500 text-sm mt-1">

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { BRAND_LOGO_SRC } from '@/lib/branding'
 import { RouteSketch } from './RouteSketch'
 
 const CAPABILITIES = [
@@ -34,7 +35,7 @@ export function Landing() {
       <header className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
         <Link href="/" className="flex items-center gap-2.5 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0055A4]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo%20seul.svg" alt="" width={28} height={28} />
+          <img src={BRAND_LOGO_SRC} alt="" width={28} height={28} className="rounded-md" />
           <span className="font-display text-lg font-semibold tracking-tight">Pathélix</span>
         </Link>
         <Link

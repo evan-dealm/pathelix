@@ -1,5 +1,7 @@
 'use client'
 
+import { BRAND_LOGO_SRC } from '@/lib/branding'
+
 import { useState, useMemo, useRef, useEffect, useCallback, useTransition } from 'react'
 import Image from 'next/image'
 import { usePlanningStore } from '@/stores/planningStore'
@@ -567,7 +569,7 @@ export default function AdminPage() {
       <aside className="sidebar flex-shrink-0 h-screen bg-white border-r border-surface-200 flex flex-col z-30 shadow-sidebar overflow-hidden">
         {}
         <div className="h-14 flex items-center gap-3 px-4 flex-shrink-0 border-b border-surface-100">
-          <Image src="/logo%20seul.svg" alt="PATHÉLIX" width={32} height={32} className="w-8 h-8 object-contain flex-shrink-0" />
+          <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={32} height={32} className="w-8 h-8 rounded-lg object-contain flex-shrink-0" />
           <span className="nav-label font-semibold text-surface-900 text-sm tracking-tight font-display">PATHÉLIX</span>
         </div>
 

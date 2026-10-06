@@ -3,6 +3,7 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { BRAND_LOGO_SRC } from '@/lib/branding'
 
 export default function LoginPage() {
   const router    = useRouter()
@@ -46,7 +47,7 @@ export default function LoginPage() {
       <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-50">
         <div className="flex flex-col items-center gap-5">
           <div className="w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-black/10">
-            <Image src="/logo%20seul.svg" alt="PATHÉLIX" width={56} height={56} className="w-full h-full object-cover" />
+            <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={56} height={56} className="w-full h-full object-contain" />
           </div>
           <div className="flex flex-col items-center gap-1.5">
             <span className="text-surface-900 text-base font-semibold tracking-tight font-display">PATHÉLIX</span>
@@ -73,7 +74,7 @@ export default function LoginPage() {
         <div className="flex flex-col items-center gap-4 text-center">
           <div className="w-[80px] h-[80px] rounded-[20px] overflow-hidden ring-1 ring-black/10 shadow-elevated">
             <Image
-              src="/logo%20seul.svg"
+              src={BRAND_LOGO_SRC}
               alt="PATHÉLIX"
               width={80}
               height={80}

@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
+import { BRAND_LOGO_SRC } from '@/lib/branding'
 import type { QueuedAction } from '@/lib/syncQueue'
 import { Sheet } from './Sheet'
 
@@ -38,6 +40,7 @@ export function SyncBar({
   return (
     <>
       <header className={`sticky top-0 z-40 flex min-h-12 items-center gap-3 border-b border-white/5 px-4 pt-[env(safe-area-inset-top)] ${tone}`}>
+        <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={28} height={28} className="shrink-0 rounded-md" />
         <span
           className={`h-2.5 w-2.5 shrink-0 rounded-full ${online ? (pending > 0 ? 'bg-[#FFC21A]' : 'bg-[#2FBF71]') : 'bg-[#F0483E]'}`}
           aria-hidden

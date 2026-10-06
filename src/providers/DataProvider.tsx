@@ -1,5 +1,7 @@
 'use client'
 
+import { BRAND_LOGO_SRC } from '@/lib/branding'
+
 import { useState, useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
@@ -111,7 +113,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-50">
         <div className="flex flex-col items-center gap-5">
           <div className="w-[72px] h-[72px] rounded-[18px] overflow-hidden ring-1 ring-black/10 shadow-elevated">
-            <Image src="/logo%20seul.svg" alt="PATHÉLIX" width={72} height={72} className="w-full h-full object-cover" priority />
+            <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={72} height={72} className="w-full h-full object-contain" priority />
           </div>
           <div className="flex flex-col items-center gap-1.5">
             <span className="text-surface-900 text-base font-bold tracking-tight font-display">PATHÉLIX</span>
@@ -136,7 +138,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
           {}
           <div className="w-[72px] h-[72px] rounded-[18px] overflow-hidden ring-1 ring-black/10 shadow-elevated">
-            <Image src="/logo%20seul.svg" alt="PATHÉLIX" width={72} height={72} className="w-full h-full object-cover" priority />
+            <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={72} height={72} className="w-full h-full object-contain" priority />
           </div>
 
           {}

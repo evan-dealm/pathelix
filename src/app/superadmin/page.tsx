@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
+import Image from 'next/image'
+import { BRAND_LOGO_SRC } from '@/lib/branding'
 import { TRADES, TRADE_IDS } from '@/lib/trades'
 import { usePlanningStore } from '@/stores/planningStore'
 
@@ -1489,7 +1491,7 @@ export default function SuperAdminPage() {
       <header className="bg-zinc-900 border-b border-zinc-800 px-6 py-3">
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-sm font-black">SA</div>
+            <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={32} height={32} className="w-8 h-8 rounded-lg object-contain" />
             <div>
               <h1 className="text-sm font-bold tracking-tight">PATHÉLIX <span className="text-red-500">Platform</span></h1>
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Super Admin Console</p>

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { BRAND_ICON_VERSION } from '@/lib/branding'
 import { Inter, Geist } from 'next/font/google'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
@@ -26,8 +27,11 @@ const geist = Geist({
 export const metadata: Metadata = {
   title: 'PATHÉLIX — Gestion de Tournées',
   description: 'Plateforme SaaS d\'optimisation logistique pour la gestion de tournées de collecte',
-  icons: { icon: '/favicon.svg' },
-  manifest: '/manifest.json',
+  icons: {
+    icon: { url: `/favicon.png?v=${BRAND_ICON_VERSION}`, type: 'image/png', sizes: '48x48' },
+    apple: { url: `/apple-touch-icon.png?v=${BRAND_ICON_VERSION}`, sizes: '180x180' },
+  },
+  manifest: `/manifest.json?v=${BRAND_ICON_VERSION}`,
   robots: { index: false, follow: false },
   openGraph: {
     title: 'PATHÉLIX',

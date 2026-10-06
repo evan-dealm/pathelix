@@ -105,5 +105,11 @@
       }
     ]
   },
-  "enabledPlugins": {}
+  "enabledPlugins": {
+    "feature-dev@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "supabase@claude-plugins-official": true
+  }
 }
