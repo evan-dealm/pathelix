@@ -62,6 +62,27 @@ function nearestRoutesByStops(
   return out
 }
 
+/**
+ * Routes a mission may be inserted into: the nearby ones whose truck can carry its bin and whose
+ * ALLER_RETOUR exclusivity allows it — widened to every route when none of the nearby ones fits.
+ */
+function candidateRoutes(
+  mission: Mission,
+  near: number[],
+  all: number[],
+  routes: VRPSolution['routes'],
+  driverById: Map<string, Driver>,
+): number[] {
+  const fits = (ri: number) => {
+    const d = driverById.get(routes[ri].driverId)
+    return (!d || isHfvrpCompatible(mission, d)) && isAllerRetourCompatible(routes[ri].missions, mission.type)
+  }
+  const nearFit = near.filter(fits)
+  if (nearFit.length > 0) return nearFit
+  const allFit = all.filter(fits)
+  return allFit.length > 0 ? allFit : near
+}
+
 export function destroyRandom(
   solution: VRPSolution,
   k: number,
@@ -161,6 +182,7 @@ function repairRegretK(
     ? nearestRoutesByStops(removed, solution.routes, drivers, maxRoutes)
     : undefined
   const allRoutes = solution.routes.map((_, i) => i)
+  const driverById = new Map(drivers.map(d => [d.id, d]))
 
   // Per-route evaluation state, valid until that route changes. computeRouteCost and the prefix
   // states depend only on the route, so they are computed once per route version instead of once
@@ -195,10 +217,7 @@ function repairRegretK(
     for (let ui = 0; ui < uninserted.length; ui++) {
       const mission = uninserted[ui]
 
-      const near = nearest?.get(mission.id) ?? allRoutes
-      const routeIndices = near.some(ri => isAllerRetourCompatible(solution.routes[ri].missions, mission.type))
-        ? near
-        : allRoutes
+      const routeIndices = candidateRoutes(mission, nearest?.get(mission.id) ?? allRoutes, allRoutes, solution.routes, driverById)
 
       // Best insertion per route: regret-k compares the k best ROUTES (the cost of not putting
       // the mission in its best route), not k positions that may all belong to one route.
@@ -294,6 +313,7 @@ export function repairGreedy(
     ? nearestRoutesByStops(removed, solution.routes, drivers, maxRoutes)
     : undefined
   const allRoutes = solution.routes.map((_, i) => i)
+  const driverById = new Map(drivers.map(d => [d.id, d]))
 
   const sortedRemoved = [...removed].sort((a, b) => {
 
@@ -311,10 +331,7 @@ export function repairGreedy(
     let bestRouteIdx  = -1
     let bestPos       = 0
 
-    const near = nearest?.get(mission.id) ?? allRoutes
-    const routeIndices = near.some(ri => isAllerRetourCompatible(solution.routes[ri].missions, mission.type))
-      ? near
-      : allRoutes
+    const routeIndices = candidateRoutes(mission, nearest?.get(mission.id) ?? allRoutes, allRoutes, solution.routes, driverById)
 
     for (const ri of routeIndices) {
       const route = solution.routes[ri]

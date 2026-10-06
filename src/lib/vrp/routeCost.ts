@@ -13,6 +13,7 @@ import type { Driver, Mission, Exutoire } from '@/lib/types'
 import type { Route, RouteCache, CostContext } from './types'
 import { findBestExutoire } from './exutoireSearch'
 import { cachedDist } from './distanceCache'
+import { isHfvrpCompatible } from './hfvrp'
 
 function effectiveCapacity(driver: Driver): number {
   const dims = driver.capacityDimensions
@@ -284,9 +285,10 @@ function initialState(env: SimEnv): RoutePrefixState {
   }
 }
 
+/** Per-mission penalties that do not depend on the position in the route: missing skills, a bin the truck cannot carry. */
 function skillPenalty(env: SimEnv, m: Mission): number {
-  if (!m.requiredSkills || m.requiredSkills.length === 0) return 0
-  let p = 0
+  let p = isHfvrpCompatible(m, env.driver) ? 0 : 50_000
+  if (!m.requiredSkills || m.requiredSkills.length === 0) return p
   for (const skill of m.requiredSkills) if (!env.driverSkills.has(skill)) p += 10_000 * env.skillWeight
   return p
 }

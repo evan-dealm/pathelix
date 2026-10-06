@@ -3,6 +3,9 @@ import { describe, it, expect, vi } from 'vitest'
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }))
 
 import { enforceMissionConservation, runVRP } from '../index'
+import { buildInitialSolution } from '../formatSolution'
+import { computeRouteCost } from '../routeCost'
+import type { CostContext } from '../types'
 import type { Mission, OptimizationResult, PlannedMission, Driver } from '@/lib/types'
 
 const m = (id: string, lat = 45.75, lng = 4.85): Mission => ({
@@ -51,5 +54,34 @@ describe('runVRP end to end — every mission accounted for exactly once', () =>
     expect(all).toEqual([...new Set(missions.map(x => x.id))].sort())
     expect(out.stats.totalMissions).toBe(25)
     expect(out.warnings.some(w => /en double/.test(w.message))).toBe(true)
+  })
+})
+
+describe('HFVRP — a bin never ends up on a truck that cannot carry it', () => {
+  const small: Driver = { id: 'small', firstName: 'S', lastName: 'S', sector: 'S', depotName: 'Dépôt', depotLat: 45.75, depotLng: 4.85, maxBinSizeM3: 10 }
+  const big: Driver   = { id: 'big', firstName: 'B', lastName: 'B', sector: 'S', depotName: 'Dépôt', depotLat: 45.75, depotLng: 4.85, maxBinSizeM3: 30 }
+
+  it('the warm start does not seed a 30 m³ bin onto a 10 m³ truck', () => {
+    const missions = [{ ...m('huge', 45.76, 4.86), binSizeM3: 30 }, m('a', 45.74, 4.84)]
+    const ctx: CostContext = { depotLat: 45.75, depotLng: 4.85, startTimeMin: 420, speedKmh: 50, exutoires: [], date: '2026-10-05' }
+    const init = buildInitialSolution(missions, [small, big], ctx, { small: ['huge', 'a'] })
+    expect(init.routes.find(r => r.driverId === 'small')!.missions.map(x => x.id)).toEqual(['a'])
+    expect(init.routes.find(r => r.driverId === 'big')!.missions.map(x => x.id)).toEqual(['huge'])
+  })
+
+  it('the route cost prices an incompatible bin like a capacity violation', () => {
+    const ctx: CostContext = { depotLat: 45.75, depotLng: 4.85, startTimeMin: 420, speedKmh: 50, exutoires: [], date: '2026-10-05' }
+    const huge = { ...m('huge', 45.76, 4.86), binSizeM3: 30 }
+    const onSmall = computeRouteCost({ driverId: 'small', missions: [huge] }, ctx, [small, big])
+    const onBig   = computeRouteCost({ driverId: 'big', missions: [huge] }, ctx, [small, big])
+    expect(onSmall - onBig).toBeGreaterThanOrEqual(50_000)
+  })
+
+  it('the output guard unassigns an incompatible placement with an error warning', () => {
+    const r = result({ small: [{ ...pm('huge', 0), binSizeM3: 30 }] })
+    enforceMissionConservation(r, [{ ...m('huge'), binSizeM3: 30 }], [], [small])
+    expect(r.assignments.small).toEqual([])
+    expect(r.unassignedMissions.map(x => x.id)).toEqual(['huge'])
+    expect(r.warnings.some(w => w.severity === 'error' && /trop grande/.test(w.message))).toBe(true)
   })
 })

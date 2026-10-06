@@ -407,7 +407,7 @@ export async function runVRP(
 
   result.unassignedMissions.push(...unassignableByCapacity)
   result.warnings.push(...hfvrpWarnings)
-  enforceMissionConservation(result, calibratedMissions, duplicateIds)
+  enforceMissionConservation(result, calibratedMissions, duplicateIds, drivers)
   result.stats.timeTakenMs = Date.now() - startTs
   result.stats.routingSource = ctx.osrmMatrix?.source ?? 'haversine'
 
@@ -420,16 +420,24 @@ export async function runVRP(
  * mission shared by two routes after a cross-sector move), nothing is silently lost or
  * planned twice; anything corrected is reported as a warning.
  */
-export function enforceMissionConservation(result: OptimizationResult, inputMissions: Mission[], duplicateIds: string[] = []): void {
+export function enforceMissionConservation(result: OptimizationResult, inputMissions: Mission[], duplicateIds: string[] = [], drivers: Driver[] = []): void {
   const seen = new Set<string>()
   let removedDuplicates = 0
+  // A bin the truck physically cannot carry is never shipped in a plan, whatever the search did.
+  const driverById = new Map(drivers.map(d => [d.id, d]))
+  const tooBig: Mission[] = []
   for (const driverId of Object.keys(result.assignments)) {
+    const driver = driverById.get(driverId)
     result.assignments[driverId] = result.assignments[driverId].filter(m => {
       if (m.isSynthetic) return true
       if (seen.has(m.id)) { removedDuplicates++; return false }
+      if (driver && !isHfvrpCompatible(m, driver)) { tooBig.push(m); return false }
       seen.add(m.id)
       return true
     })
+  }
+  for (const m of tooBig) {
+    result.warnings.push({ driverId: '', message: `Mission ${m.id} (${m.address}) : benne ${m.binSizeM3} m³ trop grande pour le véhicule — à replanifier`, severity: 'error' })
   }
   const unassignedIds = new Set(result.unassignedMissions.map(m => m.id))
   result.unassignedMissions = result.unassignedMissions.filter(m => !seen.has(m.id))

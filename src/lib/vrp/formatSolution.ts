@@ -163,6 +163,7 @@ export function buildInitialSolution(
         const m = missions.find(x => x.id === mId)
         if (!m || assignedIds.has(m.id)) continue
 
+        if (!isHfvrpCompatible(m, drivers[routeIdx])) continue
         if (!isAllerRetourCompatible(routes[routeIdx].missions, m.type)) continue
         routes[routeIdx].missions.push(m)
         assignedIds.add(m.id)
