@@ -43,6 +43,7 @@ function globalRlCheck(ip: string): boolean {
 }
 
 const PUBLIC_PATHS: Array<string | RegExp> = [
+  /^\/$/,  // public landing page (signed-in users are redirected by the page itself)
   '/login',
   /^\/api\/auth\/(?!me)/,
   '/api/health',

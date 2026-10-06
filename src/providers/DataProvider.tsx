@@ -11,7 +11,10 @@ import { fetchAllPages } from '@/lib/apiClient'
 import type { SettingsApiResponse } from '@/lib/types'
 import type { TradeConfig } from '@/lib/trades'
 
-const PUBLIC_PATH_PREFIXES = ['/login', '/driver']
+// Pages that must render without loading the tenant's planning data: the public ones (landing,
+// customer tracking, status, help, API docs) and the driver app, which loads its own plan.
+const PUBLIC_PATH_PREFIXES = ['/login', '/driver', '/track', '/status', '/help', '/api-docs']
+const isPublicPath = (p: string | null) => p === '/' || PUBLIC_PATH_PREFIXES.some(prefix => p?.startsWith(prefix))
 
 
 // UTC-based to match src/lib/dateUtils.ts's today() (used for mission creation, driver pages,
@@ -26,7 +29,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const setInitialData = usePlanningStore(s => s.setInitialData)
   const mergePlansFromDB = usePlanningStore(s => s.mergePlansFromDB)
   const pathname = usePathname()
-  const isPublic = PUBLIC_PATH_PREFIXES.some(p => pathname?.startsWith(p))
+  const isPublic = isPublicPath(pathname)
 
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
