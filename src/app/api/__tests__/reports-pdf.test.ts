@@ -10,6 +10,9 @@ vi.mock('@/lib/data/context', () => ({
 }))
 
 const mockGeneratePdf = vi.hoisted(() => vi.fn(async (_job: PdfJobData) => Buffer.from('%PDF-1.4 fake-pdf-content')))
+const mockHasPermission = vi.hoisted(() => vi.fn(async () => true))
+vi.mock('@/lib/permissions', () => ({ hasPermission: mockHasPermission }))
+
 vi.mock('@/lib/queue/pdfQueue', () => ({
   generatePdfViaWorker: mockGeneratePdf,
 }))
@@ -56,6 +59,12 @@ describe('GET /api/reports/pdf', () => {
     mockGetCtx.mockReturnValue({ tenantId: 't1', userId: 'u1', role: 'driver', requestId: 'req-123', trade: null })
     const res = await GET(makeReq({ month: '2026-06' }))
     expect(res.status).toBe(403)
+  })
+
+  it('403 without the view_reports permission', async () => {
+    mockGetCtx.mockReturnValue({ tenantId: 't1', userId: 'u1', role: 'dispatcher', requestId: 'req-123', trade: null })
+    mockHasPermission.mockResolvedValueOnce(false)
+    expect((await GET(makeReq({ month: '2026-06' }))).status).toBe(403)
   })
 
   it('allows dispatcher role', async () => {

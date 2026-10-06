@@ -4,13 +4,14 @@ import { getRequestContext }                   from '@/lib/data/context'
 import type { MonthlyReportData }              from '@/lib/pdfReport'
 import { generatePdfViaWorker }                from '@/lib/queue/pdfQueue'
 import { createLogger }                        from '@/lib/logger'
+import { hasPermission }                       from '@/lib/permissions'
 
 const log = createLogger('/api/reports/pdf')
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin' && role !== 'dispatcher' && role !== 'superadmin') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  if (role === 'driver' || !(await hasPermission(userId, role, 'view_reports'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
 
   const monthParam = req.nextUrl.searchParams.get('month')

@@ -65,6 +65,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
   const { success: toastSuccess, error: toastError } = useToast()
   const { permissions } = usePermissions()
   const canOptimize = hasPerm(permissions, 'optimize')
+  const canViewCosts = hasPerm(permissions, 'view_costs')
   const storeDrivers = usePlanningStore(s => s.drivers)
   const storePlans = usePlanningStore(s => s.plans)
   const storeStartTimes = usePlanningStore(s => s.startTimes)
@@ -899,7 +900,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
                   <div className="flex items-center gap-3 text-[11px] flex-shrink-0">
                     <span className="text-surface-900 font-bold">{formatDuration(result.totalDurationMin)}</span>
                     <span className="text-[#0055A4]">{Math.round(result.totalRoadDistKm * 10) / 10} km</span>
-                    <span className="text-amber-500 font-semibold">{costDisplay.toFixed(0)}€</span>
+                    {canViewCosts && <span className="text-amber-500 font-semibold">{costDisplay.toFixed(0)}€</span>}
                     <span className="text-green-400">{result.finishStr}</span>
                     <span className="text-surface-400">{plan.filter(m => !m.isSynthetic).length} {plan.filter(m => !m.isSynthetic).length === 1 ? 'mission' : 'missions'}</span>
                     {etaDelay !== null && (
@@ -934,10 +935,12 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
                     <div className="flex items-center gap-4 px-4 py-2 border-t border-surface-100 text-xs">
                       <div className="text-center"><div className="text-yellow-400 font-bold">{formatDuration(result.totalDrivingMin)}</div><div className="text-surface-400">Conduite</div></div>
                       <div className="text-center"><div className="text-surface-900 font-bold">{formatDuration(result.totalOnSiteMin)}</div><div className="text-surface-400">Sur site</div></div>
+                      {canViewCosts && <>
                       <div className="text-center"><div className="text-amber-500 font-bold">{cb.fuelCost.toFixed(1)}€</div><div className="text-surface-400">Carburant</div></div>
                       <div className="text-center"><div className="text-purple-400 font-bold">{cb.tollCost.toFixed(1)}€</div><div className="text-surface-400">Peages</div></div>
                       <div className="text-center"><div className="text-surface-600 font-bold">{cb.wearCost.toFixed(1)}€</div><div className="text-surface-400">Usure</div></div>
                       <div className="text-center border-l border-surface-200 pl-3"><div className="text-amber-500 font-bold">{(showTTC ? cb.totalTTC : cb.totalHT).toFixed(1)}€</div><div className="text-surface-400">{showTTC ? 'Total TTC' : 'Total HT'}</div></div>
+                      </>}
                       <div className="flex-1" />
                       <div className="space-y-1 min-w-[150px]">
                         <LegalBar valueMin={result.totalDrivingMin} maxMin={LEGAL_MAX_DRIVING_MIN} label="Conduite (9h max)" />

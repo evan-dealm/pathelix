@@ -10,6 +10,7 @@ import { SYNTHETIC_TYPES } from '../types'
 import { today, addDays, displayShort, getWeekDays, useDebounce } from '../hooks'
 import { loadAllMissionsIntoStore } from '@/lib/loadAllMissions'
 import { loadPlansForDate } from '@/lib/loadPlansForDate'
+import { ReportsPanel } from '../ReportsPanel'
 
 function MiniBarChart({ data, barClass = 'bg-[#0055A4]/70' }: {
   data: { label: string; value: number; max: number; barClass?: string }[]
@@ -245,6 +246,7 @@ export function StatsTab() {
         </div>
       </div>
     <div className="flex-1 overflow-auto px-3 md:px-6 py-4 md:py-6 space-y-6 md:space-y-8">
+      <ReportsPanel />
 
       {}
       <div>

@@ -7,6 +7,7 @@ import { useMemo, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import type { KpiDrilldownMetric } from './KpiDrilldown'
 import { cachedFetch } from '@/lib/clientCache'
+import { usePermissions, hasPerm } from '@/hooks/usePermissions'
 
 // recharts (~120 kB gzip) ne se charge qu'au clic sur un KPI
 const KpiDrilldown = dynamic(
@@ -71,7 +72,11 @@ export function DashboardKPIBar({ poolTotal, poolToday, driversWithPlan, totalDr
     drillKey?:  KpiDrilldownMetric
   }
 
-  const kpis: KpiDef[] = [
+  // Costs are shown only with the "Voir les coûts" permission (dispatchers have it by default).
+  const { permissions } = usePermissions()
+  const canViewCosts = hasPerm(permissions, 'view_costs')
+
+  const allKpis: KpiDef[] = [
     { label: 'Pool total',           value: poolTotal,        color: 'text-brand-500',   sub: poolTotal === 1 ? 'mission en attente' : 'missions en attente', spark: sparkData.pool, sparkColor: '#0055A4', drillKey: 'missions' },
     { label: 'Aujourd\'hui',         value: poolToday,        color: 'text-surface-900', sub: displayShort(date) },
     { label: 'Chauffeurs planifiés', value: `${driversWithPlan}/${totalDrivers}`, color: driversWithPlan > 0 ? 'text-emerald-600' : 'text-surface-400', sub: 'avec des missions' },
@@ -81,6 +86,7 @@ export function DashboardKPIBar({ poolTotal, poolToday, driversWithPlan, totalDr
     { label: 'Temps moy.',           value: avgWorkMin > 0 ? formatDuration(avgWorkMin) : '—', color: 'text-surface-600', sub: 'par chauffeur', spark: sparkData.work, sparkColor: '#6b7280', drillKey: 'work' },
     { label: 'Non assignées',        value: unassignedCount,  color: unassignedCount > 0 ? 'text-orange-500' : 'text-surface-300', sub: unassignedCount > 0 ? 'à réassigner' : 'tout assigné' },
   ]
+  const kpis = canViewCosts ? allKpis : allKpis.filter(k => k.drillKey !== 'fuel')
 
   return (
     <>

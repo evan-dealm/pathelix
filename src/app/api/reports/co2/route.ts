@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
+import { hasPermission } from '@/lib/permissions'
 
 const USE_MOCK = process.env.USE_MOCK_DATA !== 'false'
 
@@ -17,7 +18,10 @@ const CO2_G_PER_KM: Record<string, number> = {
 const CO2_DEFAULT = 270
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { tenantId } = getRequestContext(req)
+  const { tenantId, role, userId } = getRequestContext(req)
+  if (role === 'driver' || !(await hasPermission(userId, role, 'view_reports'))) {
+    return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
+  }
 
   if (USE_MOCK) {
     return NextResponse.json({

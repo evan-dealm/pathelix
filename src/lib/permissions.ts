@@ -24,7 +24,7 @@ export type Permission = typeof ALL_PERMISSIONS[number]
 export const DEFAULT_PERMISSIONS: Record<string, Permission[]> = {
   admin:      [...ALL_PERMISSIONS],
   superadmin: [...ALL_PERMISSIONS],
-  dispatcher: ['optimize', 'manage_missions', 'manage_drivers', 'view_reports', 'manage_vehicles'],
+  dispatcher: ['optimize', 'manage_missions', 'manage_drivers', 'view_reports', 'manage_vehicles', 'view_costs'],
   driver:     [],
 }
 
