@@ -13,7 +13,12 @@ const maplibreVersion = JSON.parse(
   readFileSync(new URL('./node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'),
 ).version
 
-if (process.env.NODE_ENV !== 'test') {
+// Runtime secrets are not needed to *build*: a Docker image must build without them (they would
+// otherwise end up in a build arg / layer). The server validates them at startup anyway
+// (instrumentation.ts → validateEnv(), which hard-fails in production).
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build' || process.argv.includes('build')
+
+if (process.env.NODE_ENV !== 'test' && !isBuildPhase) {
   const missing = ['DATABASE_URL', 'SESSION_SECRET'].filter(k => !process.env[k])
   if (missing.length > 0) {
     console.error(`[FATAL] Missing required environment variables: ${missing.join(', ')}`)

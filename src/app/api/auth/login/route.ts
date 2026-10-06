@@ -11,11 +11,9 @@ const log = createLogger('/api/auth/login')
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? ''
 const USE_MOCK       = process.env.USE_MOCK_DATA !== 'false'
 
-if (process.env.NODE_ENV === 'production' && !ADMIN_PASSWORD && USE_MOCK) {
-  throw new Error(
-    '[auth/login] ADMIN_PASSWORD est requis en production. Définissez cette variable d\'environnement.',
-  )
-}
+// No module-level check: production never runs in mock mode (validateEnv() refuses to start),
+// and a throw here broke `next build`, which loads this module without runtime secrets. A mock
+// deployment without ADMIN_PASSWORD answers 503 in the handler instead.
 
 const _loginRl = createRateLimiter(5, 60_000)
 // Per-account limiter on top of the per-IP one: a distributed guessing attack (many IPs, one
