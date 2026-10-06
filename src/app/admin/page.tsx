@@ -763,10 +763,10 @@ export default function AdminPage() {
             {displayShort(planDate)}
           </span>
           {[
-            { label: 'Missions assignees',   value: dashboardStats.assignedForDate,         color: dashboardStats.assignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
+            { label: 'Missions assignées',   value: dashboardStats.assignedForDate,         color: dashboardStats.assignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
             { label: 'Missions en pool',      value: dashboardStats.poolToday,              color: dashboardStats.poolToday > 0 ? 'text-brand-500' : 'text-surface-300' },
             { label: `${vocab.drivers} avec plan`,  value: `${dashboardStats.driversWithPlanForDate}/${dashboardStats.totalDrivers}`, color: dashboardStats.driversWithPlanForDate > 0 ? 'text-surface-900' : 'text-surface-300' },
-            { label: 'P1 assignees',          value: dashboardStats.p1AssignedForDate,      color: dashboardStats.p1AssignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
+            { label: 'P1 assignées',          value: dashboardStats.p1AssignedForDate,      color: dashboardStats.p1AssignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
           ].map(k => (
             <div key={k.label} className="flex items-center gap-2 bg-surface-50 border border-surface-200 rounded-lg px-3 py-1.5 flex-shrink-0">
               <span className={`text-sm md:text-base font-bold tabular-nums leading-none ${k.color}`}>{k.value}</span>

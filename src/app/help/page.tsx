@@ -34,9 +34,9 @@ function buildSections(v: TradeVocabulary) {
     title: `Interface ${v.driver.toLowerCase()}`,
     icon: '\u{1F69B}',
     content: [
-      { q: `Comment un ${v.driver.toLowerCase()} accede a sa ${v.tour.toLowerCase()} ?`, a: `Le ${v.driver.toLowerCase()} se connecte sur l'app (login avec ses identifiants). Il voit sa ${v.tour.toLowerCase()} du jour : liste des ${v.missions.toLowerCase()}, carte, itineraire.` },
-      { q: 'Comment signaler l\'avancement ?', a: `Sur chaque ${v.mission.toLowerCase()}, le ${v.driver.toLowerCase()} clique "En route" > "Arrive" > "Demarre" > "Termine". Le statut est mis a jour en temps reel pour le dispatcher.` },
-      { q: 'L\'app fonctionne-t-elle hors connexion ?', a: `Oui. La ${v.tour.toLowerCase()} du jour est cachee localement. Les changements de statut sont envoyes des que la connexion revient.` },
+      { q: `Comment un ${v.driver.toLowerCase()} accède à sa ${v.tour.toLowerCase()} ?`, a: `Le ${v.driver.toLowerCase()} se connecte sur l'app (login avec ses identifiants). Il voit sa ${v.tour.toLowerCase()} du jour : liste des ${v.missions.toLowerCase()} dans l'ordre et itinéraire vers chaque arrêt.` },
+      { q: 'Comment signaler l\'avancement ?', a: `Sur chaque ${v.mission.toLowerCase()}, le ${v.driver.toLowerCase()} appuie successivement sur « Démarrer le trajet », « Je suis arrivé », « Commencer la manœuvre », « Manœuvre terminée » puis « Valider la mission ». Le statut est mis à jour en temps réel pour l\'exploitant.` },
+      { q: 'L\'app fonctionne-t-elle hors connexion ?', a: `Oui. La ${v.tour.toLowerCase()} du jour est conservée sur le téléphone. Statuts, photos et signatures sont envoyés dès que la connexion revient, sans doublon.` },
     ],
   },
   {

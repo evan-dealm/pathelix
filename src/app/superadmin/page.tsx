@@ -1918,7 +1918,7 @@ export default function SuperAdminPage() {
                       </div>
                       <div>
                         <div className="text-3xl font-bold font-mono text-green-400">{health.queue.completed ?? 0}</div>
-                        <div className="text-[10px] text-zinc-500 uppercase mt-1">Termines</div>
+                        <div className="text-[10px] text-zinc-500 uppercase mt-1">Terminés</div>
                       </div>
                       <div>
                         <div className={`text-3xl font-bold font-mono ${(health.queue.failed ?? 0) > 0 ? 'text-red-400' : 'text-white'}`}>

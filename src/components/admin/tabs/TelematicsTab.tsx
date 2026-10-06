@@ -216,7 +216,7 @@ export function TelematicsTab({ date }: Props) {
             </div>
             <div className="flex items-start gap-2">
               <span className="text-brand-500 font-bold shrink-0">4.</span>
-              <span>En zone blanche, les positions sont stockees localement puis envoyees au retour du réseau</span>
+              <span>En zone blanche, les positions sont stockées localement puis envoyées au retour du réseau</span>
             </div>
           </div>
 

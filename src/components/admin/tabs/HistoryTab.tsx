@@ -144,7 +144,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
         <div className="flex-1" />
         <DateNav dateStr={browseDate} setDate={setBrowseDate} label="Date :" />
         {datesWithEntries.has(browseDate) && (
-          <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" title="Tournées enregistrees" />
+          <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" title="Tournées enregistrées" />
         )}
       </div>
 
@@ -201,10 +201,10 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
           <div className="flex items-center justify-center py-16 text-surface-400 text-sm">Chargement...</div>
         ) : entriesForDate.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-surface-400 gap-2">
-            <div className="text-sm">Aucune tournée enregistree pour cette date</div>
+            <div className="text-sm">Aucune tournée enregistrée pour cette date</div>
             <div className="text-xs text-surface-300">
               {entries.length === 0
-                ? 'Sauvegardez une tournée planifiee pour la retrouver ici.'
+                ? 'Sauvegardez une tournée planifiée pour la retrouver ici.'
                 : 'Utilisez les flèches pour naviguer vers une date avec des données.'}
             </div>
           </div>

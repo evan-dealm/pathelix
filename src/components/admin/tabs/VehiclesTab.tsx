@@ -662,7 +662,7 @@ export function VehiclesTab() {
                 <SelectInput value={form.statut} onChange={v => setForm(f => ({ ...f, statut: v as VehicleForm['statut'] }))} options={STATUT_OPTIONS} />
               </Field>
             </div>
-            <Field label="Chauffeur assigne">
+            <Field label="Chauffeur assigné">
               <SelectInput value={form.assignedDriverId || ''} onChange={v => setForm(f => ({ ...f, assignedDriverId: v }))} options={[
                 { value: '', label: '-- Aucun --' },
                 ...activeDrivers.map(d => ({ value: d.id, label: `${d.firstName} ${d.lastName}` })),

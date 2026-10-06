@@ -332,7 +332,7 @@ test.describe('Dashboard Advanced', () => {
   test('dashboard summary row shows day statistics', async ({ page }) => {
     await expect(page.locator('#tabpanel-dashboard')).toBeVisible({ timeout: 10_000 })
 
-    const summaryLabels = ['Missions assignees', 'Missions en pool', 'Chauffeurs avec plan', 'P1 assignees']
+    const summaryLabels = ['Missions assignées', 'Missions en pool', 'Chauffeurs avec plan', 'P1 assignées']
 
     for (const label of summaryLabels) {
       const el = page.locator(`text=${label}`).first()

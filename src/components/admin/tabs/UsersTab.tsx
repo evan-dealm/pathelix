@@ -410,7 +410,7 @@ export function UsersTab() {
                     {resetPwdId === modal.user.id ? '...' : 'Changer'}
                   </Btn>
                 </div>
-                {resetPwdStatus === 'ok' && <p className="text-emerald-600 text-xs mt-1.5">Mot de passe modifie avec succès</p>}
+                {resetPwdStatus === 'ok' && <p className="text-emerald-600 text-xs mt-1.5">Mot de passe modifié avec succès</p>}
                 {resetPwdStatus === 'error' && <p className="text-red-600 text-xs mt-1.5">Erreur — min. 12 caractères</p>}
               </div>
             )}
