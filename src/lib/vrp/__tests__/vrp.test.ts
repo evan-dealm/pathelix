@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { haversineKm, cachedDist, clearDistanceCache } from '../distanceCache'
-import { InsertionCache } from '../insertionCache'
+import { haversineKm, cachedDist } from '../distanceCache'
 import { computeRouteCost, computeSolutionCost } from '../routeCost'
 import { buildInitialSolution } from '../formatSolution'
 import { runVRP } from '../index'
@@ -88,9 +87,6 @@ const exutoires: Exutoire[] = [
 ]
 
 describe('distanceCache', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   describe('haversineKm', () => {
     it('computes Paris-Lyon distance within expected range (~392 km)', async () => {
@@ -154,95 +150,10 @@ describe('distanceCache', () => {
     })
   })
 
-  describe('clearDistanceCache', () => {
-    it('clears the cache without error', async () => {
-      haversineKm(PARIS_LAT, PARIS_LNG, LYON_LAT, LYON_LNG)
-      expect(() => clearDistanceCache()).not.toThrow()
-    })
-
-    it('still returns correct values after clearing cache', async () => {
-      const before = haversineKm(PARIS_LAT, PARIS_LNG, LYON_LAT, LYON_LNG)
-      clearDistanceCache()
-      const after = haversineKm(PARIS_LAT, PARIS_LNG, LYON_LAT, LYON_LNG)
-      expect(after).toBeCloseTo(before, 10)
-    })
-  })
 })
 
-describe('InsertionCache', () => {
-  let cache: InsertionCache
-
-  beforeEach(() => {
-    cache = new InsertionCache()
-  })
-
-  it('returns undefined for missing entry', async () => {
-    const result = cache.get(0, 'hash1', 'mission-1', 0)
-    expect(result).toBeUndefined()
-  })
-
-  it('stores and retrieves a cost entry', async () => {
-    cache.set(0, 'hash1', 'mission-1', 0, 42.5)
-    const result = cache.get(0, 'hash1', 'mission-1', 0)
-    expect(result).toBe(42.5)
-  })
-
-  it('returns undefined when routeHash does not match (stale entry)', async () => {
-    cache.set(0, 'hash1', 'mission-1', 0, 42.5)
-    const result = cache.get(0, 'hash2', 'mission-1', 0)
-    expect(result).toBeUndefined()
-  })
-
-  it('clear resets cache and stats', async () => {
-    cache.set(0, 'h', 'm1', 0, 10)
-    cache.get(0, 'h', 'm1', 0)
-    cache.clear()
-    const stats = cache.stats()
-    expect(stats.hits).toBe(0)
-    expect(stats.misses).toBe(0)
-    expect(stats.size).toBe(0)
-  })
-
-  it('stats tracks hits and misses correctly', async () => {
-    cache.set(0, 'h', 'm1', 0, 10)
-    cache.get(0, 'h', 'm1', 0)
-    cache.get(0, 'h', 'm1', 0)
-    cache.get(1, 'h', 'm2', 0)
-    const stats = cache.stats()
-    expect(stats.hits).toBe(2)
-    expect(stats.misses).toBe(1)
-    expect(stats.hitRate).toBe('66.7%')
-  })
-
-  it('stats returns N/A hitRate when no lookups', async () => {
-    const stats = cache.stats()
-    expect(stats.hitRate).toBe('N/A')
-  })
-
-  it('routeHash produces consistent hash for same missions', async () => {
-    const missions = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
-    const h1 = cache.routeHash(missions)
-    const h2 = cache.routeHash(missions)
-    expect(h1).toBe(h2)
-  })
-
-  it('routeHash changes when missions differ', async () => {
-    const h1 = cache.routeHash([{ id: 'a' }, { id: 'b' }])
-    const h2 = cache.routeHash([{ id: 'a' }, { id: 'c' }])
-    expect(h1).not.toBe(h2)
-  })
-
-  it('routeHash changes when mission order differs', async () => {
-    const h1 = cache.routeHash([{ id: 'a' }, { id: 'b' }])
-    const h2 = cache.routeHash([{ id: 'b' }, { id: 'a' }])
-    expect(h1).not.toBe(h2)
-  })
-})
 
 describe('computeRouteCost', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   const ctx = makeCtx(exutoires)
 
@@ -275,9 +186,6 @@ describe('computeRouteCost', () => {
 })
 
 describe('computeSolutionCost', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   const ctx = makeCtx(exutoires)
 
@@ -296,9 +204,6 @@ describe('computeSolutionCost', () => {
 })
 
 describe('buildInitialSolution', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   const ctx = makeCtx(exutoires)
 
@@ -344,9 +249,6 @@ describe('buildInitialSolution', () => {
 })
 
 describe('runVRP — end-to-end', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   it('returns a valid result with assignments, stats, and warnings', async () => {
     const result = await runVRP(missions, drivers, exutoires, TODAY, {
@@ -429,7 +331,6 @@ describe('runVRP — end-to-end', () => {
   it('returns deterministic results with the same seed', async () => {
     const opts = { timeBudgetMs: 500, seed: 123 }
     const result1 = await runVRP(missions, drivers, exutoires, TODAY, opts)
-    clearDistanceCache()
     const result2 = await runVRP(missions, drivers, exutoires, TODAY, opts)
 
     const ids1 = Object.entries(result1.assignments)

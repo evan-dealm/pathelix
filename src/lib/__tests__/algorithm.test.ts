@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { haversineKm, roadDistKm, travelTimeMin, trafficFactor, calcTour, minToHHMM, formatDuration } from '../algorithm'
-import { clearDistanceCache } from '@/lib/vrp/distanceCache'
 import type { PlannedMission, Exutoire } from '@/lib/types'
 
 const PARIS = { lat: 48.8566, lng: 2.3522 }
@@ -25,9 +24,6 @@ function makeMission(overrides: Partial<PlannedMission> = {}): PlannedMission {
 }
 
 describe('haversineKm', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   it('returns correct distance Paris → Lyon (~392 km)', () => {
     const dist = haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
@@ -62,9 +58,6 @@ describe('haversineKm', () => {
 })
 
 describe('distance cache', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   it('returns same result on cache hit', () => {
     const first  = haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
@@ -81,9 +74,6 @@ describe('distance cache', () => {
 })
 
 describe('roadDistKm', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   it('returns road distance > haversine distance (tortuosity factor)', () => {
     const hav  = haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
@@ -118,9 +108,6 @@ describe('trafficFactor', () => {
 })
 
 describe('travelTimeMin', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   it('returns 0 for same origin and destination', () => {
     const time = travelTimeMin(PARIS.lat, PARIS.lng, PARIS.lat, PARIS.lng, 50, 420)
@@ -139,9 +126,6 @@ describe('travelTimeMin', () => {
 })
 
 describe('calcTour', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   it('returns empty result for empty missions', () => {
     const result = calcTour([], 48.85, 2.35, '07:00', 50)

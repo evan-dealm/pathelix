@@ -3,7 +3,6 @@ import type { VRPSolution, CostContext, Route } from './types'
 import { computeRouteCost, computePrefixStates, computeInsertionDelta, computeRemovalDelta, isAllerRetourCompatible } from './routeCost'
 import { cachedDist } from './distanceCache'
 import { isHfvrpCompatible, areAllHfvrpCompatible } from './hfvrp'
-import { InsertionCache } from './insertionCache'
 
 export class SeededRng {
   private s: number
@@ -197,9 +196,27 @@ function repairRegretK(
   const useGrid = maxRoutes !== undefined && maxRoutes < solution.routes.length
   const grid = useGrid ? new RouteGrid(solution.routes, drivers) : undefined
 
-  const insertionCache = new InsertionCache()
+  // Per-route evaluation state, valid until that route changes. computeRouteCost and the prefix
+  // states depend only on the route, so they are computed once per route version instead of once
+  // per (mission × route) pair; insertion deltas of a mission into a route are kept until the
+  // route is modified. (A string-keyed cache used to dominate the profile.)
+  type RouteEval = { base: { costWithout: number; prefix: ReturnType<typeof computePrefixStates> } | null; deltas: Map<string, Float64Array> }
+  const evals: RouteEval[] = solution.routes.map(() => ({ base: null, deltas: new Map() }))
 
-  const routeHashes: string[] = solution.routes.map(r => insertionCache.routeHash(r.missions))
+  const deltasFor = (ri: number, mission: Mission): Float64Array => {
+    const ev = evals[ri]
+    let d = ev.deltas.get(mission.id)
+    if (d) return d
+    const route = solution.routes[ri]
+    if (!ev.base) ev.base = { costWithout: computeRouteCost(route, ctx, drivers), prefix: computePrefixStates(route, ctx, drivers) }
+    d = new Float64Array(route.missions.length + 1)
+    for (let pos = 0; pos <= route.missions.length; pos++) {
+      d[pos] = computeInsertionDelta(route, mission, pos, ev.base.prefix, ev.base.costWithout, ctx, drivers)
+    }
+    ev.deltas.set(mission.id, d)
+    return d
+  }
+  const touch = (ri: number) => { evals[ri].base = null; evals[ri].deltas.clear() }
 
   const uninserted = [...removed]
 
@@ -216,54 +233,27 @@ function repairRegretK(
         ? findNearestRouteIndices(mission, solution.routes, drivers, maxRoutes, grid)
         : solution.routes.map((_, i) => i)
 
-      const insertionCosts: Array<{ routeIdx: number; pos: number; cost: number }> = []
-
+      // Best insertion per route: regret-k compares the k best ROUTES (the cost of not putting
+      // the mission in its best route), not k positions that may all belong to one route.
+      const perRoute: Array<{ routeIdx: number; pos: number; cost: number }> = []
       for (const ri of routeIndices) {
-        const route       = solution.routes[ri]
-        if (!isAllerRetourCompatible(route.missions, mission.type)) continue
-        const n           = route.missions.length
-        const rHash       = routeHashes[ri]
-
-        let allCached = true
-        for (let pos = 0; pos <= n; pos++) {
-          const cached = insertionCache.get(ri, rHash, mission.id, pos)
-          if (cached !== undefined) {
-            insertionCosts.push({ routeIdx: ri, pos, cost: cached })
-          } else {
-            allCached = false
-            break
-          }
-        }
-
-        if (!allCached) {
-
-          const startLen = insertionCosts.length - (insertionCosts.length > 0 ? insertionCosts.filter(ic => ic.routeIdx === ri).length : 0)
-          while (insertionCosts.length > startLen && insertionCosts[insertionCosts.length - 1]?.routeIdx === ri) {
-            insertionCosts.pop()
-          }
-
-          const costWithout = computeRouteCost(route, ctx, drivers)
-          const prefixStates = computePrefixStates(route, ctx, drivers)
-
-          for (let pos = 0; pos <= n; pos++) {
-            const delta = computeInsertionDelta(route, mission, pos, prefixStates, costWithout, ctx, drivers)
-            insertionCosts.push({ routeIdx: ri, pos, cost: delta })
-
-            insertionCache.set(ri, rHash, mission.id, pos, delta)
-          }
-        }
+        if (!isAllerRetourCompatible(solution.routes[ri].missions, mission.type)) continue
+        const d = deltasFor(ri, mission)
+        let bp = 0
+        for (let pos = 1; pos < d.length; pos++) if (d[pos] < d[bp]) bp = pos
+        perRoute.push({ routeIdx: ri, pos: bp, cost: d[bp] })
       }
 
-      if (insertionCosts.length === 0) continue
+      if (perRoute.length === 0) continue
+      perRoute.sort((x, y) => x.cost - y.cost)
 
-      insertionCosts.sort((a, b) => a.cost - b.cost)
-
-      const best1 = insertionCosts[0]
-      const regret = insertionCosts.length >= k
-        ? Math.max(0, insertionCosts[k - 1].cost - best1.cost)
-        : insertionCosts.length > 1
-          ? Math.max(0, insertionCosts[insertionCosts.length - 1].cost - best1.cost)
-          : 0
+      const best1 = perRoute[0]
+      const regret = perRoute.length >= k
+        ? Math.max(0, perRoute[k - 1].cost - best1.cost)
+        : perRoute.length > 1
+          ? Math.max(0, perRoute[perRoute.length - 1].cost - best1.cost)
+          // Only one feasible route: insert it first (its options can only get worse).
+          : Number.MAX_SAFE_INTEGER
 
       if (regret > bestRegret) {
         bestRegret     = regret
@@ -276,11 +266,11 @@ function repairRegretK(
     if (bestRegret === -Infinity) {
       const mission = uninserted.splice(0, 1)[0]
       const fallbackIdx = solution.routes.findIndex(r => isAllerRetourCompatible(r.missions, mission.type))
-      const fallbackRoute = solution.routes[fallbackIdx >= 0 ? fallbackIdx : 0]
+      const fi = fallbackIdx >= 0 ? fallbackIdx : 0
+      const fallbackRoute = solution.routes[fi]
       if (fallbackRoute) {
         fallbackRoute.missions.push(mission)
-        const fi = fallbackIdx >= 0 ? fallbackIdx : 0
-        routeHashes[fi] = insertionCache.routeHash(fallbackRoute.missions)
+        touch(fi)
       }
       continue
     }
@@ -292,8 +282,7 @@ function repairRegretK(
       mission,
       ...route.missions.slice(bestPos),
     ]
-
-    routeHashes[bestRouteIdx] = insertionCache.routeHash(route.missions)
+    touch(bestRouteIdx)
   }
 
   return solution

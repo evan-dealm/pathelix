@@ -6,7 +6,6 @@ import { computeSolutionCost, computeRouteCost, computePrefixStates, isAllerReto
 import { runMvAlns } from '../mvAlns'
 import { findBestExutoire, resetExutoireCongestion, getCongestionMap } from '../exutoireSearch'
 import { buildWarmStartFromReference } from '../warmStart'
-import { clearDistanceCache } from '../distanceCache'
 
 function makeDriver(id: string, lat: number, lng: number, opts?: Partial<Driver>): Driver {
   return {
@@ -54,7 +53,6 @@ function makeParams(budget: number = 2000): ALNSParams {
 
 beforeEach(() => {
   resetExutoireCongestion()
-  clearDistanceCache()
 })
 
 describe('Q1 — Prefix state consistency', () => {

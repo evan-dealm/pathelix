@@ -112,6 +112,8 @@ export interface OptimizeOptions {
   defaultSpeedKmh?:  number
   defaultStartTime?: string
   tenantId?:         string
+  valhallaFactor?:   number
+  usePareto?:        boolean
   weights?: {
     distance:     number
     punctuality:  number

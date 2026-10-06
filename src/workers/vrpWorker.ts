@@ -2,8 +2,7 @@ import dotenv from 'dotenv'
 dotenv.config({ path: '.env' })
 dotenv.config({ path: '.env.local', override: true })
 import { validateEnv } from '@/lib/env'
-validateEnv()
-import { Worker, type Job } from 'bullmq'
+import { Worker, UnrecoverableError, type Job } from 'bullmq'
 import { PrismaClient } from '@/generated/prisma'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { VRP_QUEUE_NAME, type VrpJobData, type VrpJobResult } from '@/lib/queue/vrpQueue'
@@ -18,6 +17,11 @@ import { broadcastToTenant, type PushSubRecord } from '@/lib/webPush'
 import { getRedisClient } from '@/lib/redisClient'
 
 const log = createLogger('vrpWorker')
+
+// processJob() is importable (tests) — the worker itself only starts when this file is the entry.
+const isMainEntry = process.argv[1]
+  ? /vrpWorker\.(ts|js|mjs)$/.test(process.argv[1].replace(/\\/g, '/'))
+  : false
 
 let _prisma: PrismaClient | null = null
 
@@ -120,24 +124,29 @@ async function maybeSendOptimizationPush(
   }
 }
 
-async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<VrpJobResult> {
+/** Invalid input can never succeed on retry — failing it as unrecoverable skips the 3 attempts. */
+function invalid(message: string): never {
+  throw new UnrecoverableError(message)
+}
+
+export async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<VrpJobResult> {
   const { missions, drivers, exutoires, date, existingPlans, options, tenantId } = job.data
 
-  if (!Array.isArray(missions)) throw new Error('Invalid input: missions must be an array')
-  if (!Array.isArray(drivers)) throw new Error('Invalid input: drivers must be an array')
-  if (!Array.isArray(exutoires)) throw new Error('Invalid input: exutoires must be an array')
+  if (!Array.isArray(missions)) invalid('Invalid input: missions must be an array')
+  if (!Array.isArray(drivers)) invalid('Invalid input: drivers must be an array')
+  if (!Array.isArray(exutoires)) invalid('Invalid input: exutoires must be an array')
   if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error(`Invalid input: date must be YYYY-MM-DD format, got "${date}"`)
+    invalid(`Invalid input: date must be YYYY-MM-DD format, got "${date}"`)
   }
   if (!tenantId || typeof tenantId !== 'string') {
-    throw new Error('Invalid input: tenantId is required')
+    invalid('Invalid input: tenantId is required')
   }
 
   for (let i = 0; i < missions.length; i++) {
     const m = missions[i]
     if (!m.id || typeof m.latitude !== 'number' || !isFinite(m.latitude)
             || typeof m.longitude !== 'number' || !isFinite(m.longitude)) {
-      throw new Error(`Invalid mission at index ${i} (id=${m?.id}): missing or invalid coordinates`)
+      invalid(`Invalid mission at index ${i} (id=${m?.id}): missing or invalid coordinates`)
     }
   }
 
@@ -145,7 +154,7 @@ async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<VrpJobRes
     const d = drivers[i]
     if (!d.id || typeof d.depotLat !== 'number' || !isFinite(d.depotLat)
             || typeof d.depotLng !== 'number' || !isFinite(d.depotLng)) {
-      throw new Error(`Invalid driver at index ${i} (id=${d?.id}): missing or invalid depot coordinates`)
+      invalid(`Invalid driver at index ${i} (id=${d?.id}): missing or invalid depot coordinates`)
     }
   }
 
@@ -185,12 +194,13 @@ async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<VrpJobRes
     exutoires,
     date,
     {
-      timeBudgetMs:    options.timeBudgetMs    ?? 30_000,
-      seed:            options.seed            ?? 42,
-      lnsIterations:   options.lnsIterations   ?? 120,
-      lnsDestroyRatio: options.lnsDestroyRatio ?? 0.3,
-      existingPlans:   resolvedExistingPlans   ?? {},
-      weights:         options.weights         ?? undefined,
+      // Every option the route resolved (tenant start time, speed, Valhalla factor, Pareto…)
+      // is forwarded — the async path used to drop them and always plan from 07:00 at 50 km/h.
+      // lnsIterations/destroyRatio stay unset unless given, so they scale with the instance.
+      ...options,
+      timeBudgetMs:    options.timeBudgetMs ?? 30_000,
+      seed:            options.seed         ?? 42,
+      existingPlans:   resolvedExistingPlans ?? undefined,
       tenantId,
     },
   )
@@ -224,45 +234,50 @@ async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<VrpJobRes
   return result
 }
 
-const concurrency = parseInt(process.env.VRP_CONCURRENCY ?? '1', 10) || 1
+function startWorker(): void {
+  validateEnv()
+  const concurrency = parseInt(process.env.VRP_CONCURRENCY ?? '1', 10) || 1
 
-const worker = new Worker<VrpJobData, VrpJobResult>(
-  VRP_QUEUE_NAME,
-  processJob,
-  {
-    connection:  workerConnectionOptions() as never,
-    concurrency,
+  const worker = new Worker<VrpJobData, VrpJobResult>(
+    VRP_QUEUE_NAME,
+    processJob,
+    {
+      connection:  workerConnectionOptions() as never,
+      concurrency,
 
-    lockDuration: 300_000,
-  },
-)
+      lockDuration: 300_000,
+    },
+  )
 
-worker.on('completed', (job, result) => {
-  log.info('Job completed', {
-    jobId:    job.id,
-    assigned: result.stats.assignedMissions,
+  worker.on('completed', (job, result) => {
+    log.info('Job completed', {
+      jobId:    job.id,
+      assigned: result.stats.assignedMissions,
+    })
   })
-})
 
-worker.on('failed', (job, err) => {
-  log.error('Job failed', {
-    jobId: job?.id,
-    err:   err instanceof Error ? err.message : String(err),
+  worker.on('failed', (job, err) => {
+    log.error('Job failed', {
+      jobId: job?.id,
+      err:   err instanceof Error ? err.message : String(err),
+    })
   })
-})
 
-worker.on('error', err => {
-  log.error('Worker error', { err: err instanceof Error ? err.message : String(err) })
-})
+  worker.on('error', err => {
+    log.error('Worker error', { err: err instanceof Error ? err.message : String(err) })
+  })
 
-installWorkerLifecycle(log, [
-  () => worker.close(),
-  async () => stopTrafficAggregation(),
-  async () => { await _prisma?.$disconnect() },
-])
+  installWorkerLifecycle(log, [
+    () => worker.close(),
+    async () => stopTrafficAggregation(),
+    async () => { await _prisma?.$disconnect() },
+  ])
 
-log.info('VRP Worker started', { queue: VRP_QUEUE_NAME, concurrency })
+  log.info('VRP Worker started', { queue: VRP_QUEUE_NAME, concurrency })
 
-if (process.env.VALHALLA_URL) {
-  startTrafficAggregation()
+  if (process.env.VALHALLA_URL) {
+    startTrafficAggregation()
+  }
 }
+
+if (isMainEntry) startWorker()

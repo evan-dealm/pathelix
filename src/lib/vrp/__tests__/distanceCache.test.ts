@@ -1,9 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   haversineKm,
   cachedDist,
-  clearDistanceCache,
-  distanceCacheStats,
   buildDistanceMatrix,
   collectMatrixPoints,
 } from '@/lib/vrp/distanceCache'
@@ -15,9 +13,6 @@ const ANNECY    = { lat: 45.8992, lng: 6.1294 }
 const GRENOBLE  = { lat: 45.1885, lng: 5.7245 }
 const LONDON    = { lat: 51.5074, lng: -0.1278 }
 
-beforeEach(() => {
-  clearDistanceCache()
-})
 
 describe('haversineKm', () => {
   it('returns 0 for the same point (Paris)', () => {
@@ -84,24 +79,10 @@ describe('haversineKm', () => {
     expect(haversineKm(LYON.lat, LYON.lng, MARSEILLE.lat, MARSEILLE.lng)).toBeGreaterThan(0)
   })
 
-  it('uses cache: second call does not increase cache size', () => {
-    haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    const sizeAfterFirst = distanceCacheStats().size
-    haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    expect(distanceCacheStats().size).toBe(sizeAfterFirst)
-  })
-
-  it('populates cache: cache size increases after first call', () => {
-    const before = distanceCacheStats().size
-    haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    expect(distanceCacheStats().size).toBeGreaterThan(before)
-  })
-
-  it('symmetric call hits same cache entry: size does not grow for B→A after A→B', () => {
-    haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    const sizeAfterAB = distanceCacheStats().size
-    haversineKm(LYON.lat, LYON.lng, PARIS.lat, PARIS.lng)
-    expect(distanceCacheStats().size).toBe(sizeAfterAB)
+  // The memo cache in front of haversineKm was removed (its string-key lookup cost more than
+  // the computation); what matters is that the function is pure and symmetric.
+  it('is symmetric', () => {
+    expect(haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)).toBe(haversineKm(LYON.lat, LYON.lng, PARIS.lat, PARIS.lng))
   })
 
   it('Paris to Marseille is in a reasonable range (660–700 km)', () => {
@@ -111,55 +92,10 @@ describe('haversineKm', () => {
   })
 })
 
-describe('clearDistanceCache', () => {
-  it('empties the cache', () => {
-    haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    expect(distanceCacheStats().size).toBeGreaterThan(0)
-    clearDistanceCache()
-    expect(distanceCacheStats().size).toBe(0)
-  })
-
-  it('can be called on an already-empty cache without error', () => {
-    expect(() => clearDistanceCache()).not.toThrow()
-    expect(distanceCacheStats().size).toBe(0)
-  })
-
-  it('subsequent calls work normally after clearing', () => {
-    haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    clearDistanceCache()
-    const dist = haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    expect(dist).toBeGreaterThan(387)
-    expect(dist).toBeLessThan(397)
-  })
-})
-
-describe('distanceCacheStats', () => {
-  it('returns maxSize of 500 000', () => {
-    expect(distanceCacheStats().maxSize).toBe(500_000)
-  })
-
-  it('returns size 0 after clearDistanceCache', () => {
-    haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    clearDistanceCache()
-    expect(distanceCacheStats().size).toBe(0)
-  })
-
-  it('returns size >= 1 after one new computation', () => {
-    haversineKm(PARIS.lat, PARIS.lng, MARSEILLE.lat, MARSEILLE.lng)
-    expect(distanceCacheStats().size).toBeGreaterThanOrEqual(1)
-  })
-
-  it('has both size and maxSize fields', () => {
-    const stats = distanceCacheStats()
-    expect(stats).toHaveProperty('size')
-    expect(stats).toHaveProperty('maxSize')
-  })
-})
 
 describe('cachedDist', () => {
   it('returns a value strictly greater than haversineKm (factor > 1)', () => {
     const hav = haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    clearDistanceCache()
     const road = cachedDist(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
     expect(road).toBeGreaterThan(hav)
   })
@@ -171,7 +107,6 @@ describe('cachedDist', () => {
     const lat2 = 45.9082
     const lng2 = 6.1294
     const hav = haversineKm(lat1, lng1, lat2, lng2)
-    clearDistanceCache()
     const road = cachedDist(lat1, lng1, lat2, lng2)
     expect(hav).toBeLessThan(5)
     expect(road).toBeCloseTo(hav * 1.50, 4)
@@ -184,7 +119,6 @@ describe('cachedDist', () => {
     const lat2 = 45.9892
     const lng2 = 6.2500
     const hav = haversineKm(lat1, lng1, lat2, lng2)
-    clearDistanceCache()
     const road = cachedDist(lat1, lng1, lat2, lng2)
     if (hav >= 5 && hav < 20) {
       expect(road).toBeCloseTo(hav * 1.35, 4)
@@ -195,7 +129,6 @@ describe('cachedDist', () => {
 
   it('applies factor 1.20 for long trips (> 20 km) — Paris to Lyon', () => {
     const hav = haversineKm(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    clearDistanceCache()
     const road = cachedDist(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
     expect(hav).toBeGreaterThan(20)
     expect(road).toBeCloseTo(hav * 1.20, 4)
@@ -203,7 +136,6 @@ describe('cachedDist', () => {
 
   it('applies factor 1.20 for Paris–Marseille', () => {
     const hav = haversineKm(PARIS.lat, PARIS.lng, MARSEILLE.lat, MARSEILLE.lng)
-    clearDistanceCache()
     const road = cachedDist(PARIS.lat, PARIS.lng, MARSEILLE.lat, MARSEILLE.lng)
     expect(hav).toBeGreaterThan(20)
     expect(road).toBeCloseTo(hav * 1.20, 4)
@@ -214,9 +146,7 @@ describe('cachedDist', () => {
   })
 
   it('is symmetric (same factor both directions)', () => {
-    clearDistanceCache()
     const ab = cachedDist(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    clearDistanceCache()
     const ba = cachedDist(LYON.lat, LYON.lng, PARIS.lat, PARIS.lng)
     expect(ab).toBeCloseTo(ba, 4)
   })
@@ -312,9 +242,7 @@ describe('buildDistanceMatrix', () => {
   })
 
   it('3-point matrix: all pairs computed and Paris–Lyon matches cachedDist', () => {
-    clearDistanceCache()
     const expected = cachedDist(PARIS.lat, PARIS.lng, LYON.lat, LYON.lng)
-    clearDistanceCache()
     const matrix = buildDistanceMatrix(points)
     expect(matrix.get(0, 1)).toBeCloseTo(expected, 2)
   })
@@ -465,24 +393,7 @@ describe('collectMatrixPoints', () => {
 // different pair. The key is now the coordinates themselves (as a string), so two distinct
 // pairs structurally cannot collide.
 describe('cache key collision (M8 regression)', () => {
-  it('gives every distinct coordinate pair its own cache entry — no merging under load', () => {
-    clearDistanceCache()
-    const pairs: [number, number, number, number][] = []
-    // 2000 distinct, deterministic pairs — enough to be a meaningful sample without slowing
-    // the suite down; a hashed-int32 key would show entries < pairs.length as soon as any two
-    // pairs collided (a real, non-negligible probability at this key space for a 500k-cap cache).
-    for (let i = 0; i < 2000; i++) {
-      pairs.push([
-        45 + (i % 50) * 0.01, 5 + Math.floor(i / 50) * 0.01,
-        46 + (i % 40) * 0.013, 6 + Math.floor(i / 40) * 0.011,
-      ])
-    }
-    for (const [a, b, c, d] of pairs) haversineKm(a, b, c, d)
-    expect(distanceCacheStats().size).toBe(pairs.length)
-  })
-
   it('two distinct nearby coordinate pairs each return their own correct distance, repeatedly', () => {
-    clearDistanceCache()
     const d1a = haversineKm(45.1000, 5.2000, 45.1000, 5.3000)
     const d2a = haversineKm(45.1001, 5.2001, 45.1001, 5.3001)
     // Same two pairs queried again must still return their own value, not a merged/overwritten one

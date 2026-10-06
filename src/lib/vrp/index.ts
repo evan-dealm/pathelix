@@ -79,6 +79,17 @@ export async function runVRP(
 ): Promise<OptimizationResult> {
   const startTs = Date.now()
 
+  // Duplicate ids would be placed once and silently dropped by every id-keyed structure below.
+  const duplicateIds: string[] = []
+  {
+    const seen = new Set<string>()
+    missions = missions.filter(m => {
+      if (seen.has(m.id)) { duplicateIds.push(m.id); return false }
+      seen.add(m.id)
+      return true
+    })
+  }
+
   drivers = drivers.map(d => {
     if (!d.startingExutoireId) return d
     const ex = exutoires.find(e => e.id === d.startingExutoireId)
@@ -90,7 +101,11 @@ export async function runVRP(
 
   const timeBudgetMs   = options?.timeBudgetMs    ?? DEFAULT_TIME_BUDGET_MS
   const seed           = options?.seed            ?? DEFAULT_SEED
-  const existingPlans  = options?.existingPlans
+  // An empty warm-start map is "no warm start" — callers pass {} by default, which used to
+  // disable the GRASP multi-start entirely.
+  const existingPlans  = options?.existingPlans && Object.keys(options.existingPlans).length > 0
+    ? options.existingPlans
+    : undefined
 
   let calibratedMissions = missions
 
@@ -252,7 +267,16 @@ export async function runVRP(
     log.warn('Matrix build failed, falling back to haversine', { err: matrixErr instanceof Error ? matrixErr.message : String(matrixErr) })
   }
 
-  const scaled = scaleAlnsParams(drivers.length, assignableMissions.length, timeBudgetMs)
+  // The search budget is what remains once the routing matrix is built (Valhalla can take
+  // seconds); post-optimisation steps are scheduled from that point. Pareto alternatives, when
+  // requested, come out of the same budget instead of adding 50 % on top of it.
+  const algoStartTs  = Date.now()
+  const remainingMs  = Math.max(Math.round(timeBudgetMs * 0.4), timeBudgetMs - (algoStartTs - startTs))
+  const paretoShare  = options?.usePareto && drivers.length <= 300 ? 0.2 : 0
+  // 2.1 s are reserved inside the budget for 3-opt, ejection chains, compaction and P1 repair.
+  const POST_STEPS_MS = remainingMs > 6000 ? 2100 : Math.round(remainingMs * 0.2)
+  const searchBudget = Math.max(300, Math.round(remainingMs * (1 - 2 * paretoShare)) - POST_STEPS_MS)
+  const scaled = scaleAlnsParams(drivers.length, assignableMissions.length, searchBudget)
   const effectiveIterations   = options?.lnsIterations   ?? scaled.iterations
   const effectiveDestroyRatio = options?.lnsDestroyRatio ?? scaled.destroyRatio
 
@@ -262,14 +286,14 @@ export async function runVRP(
     best = await runVRPWithSectors(
       assignableMissions, drivers, ctx, seed,
       effectiveIterations, effectiveDestroyRatio,
-      timeBudgetMs, existingPlans,
+      searchBudget, existingPlans,
       scaled.saT0Ratio, scaled.saTMinRatio,
     )
   } else {
 
     const MULTI_START_COUNT = drivers.length <= 10 && assignableMissions.length <= 60 ? 3 : 1
     if (MULTI_START_COUNT > 1) {
-      const perStartBudget = Math.floor(timeBudgetMs / MULTI_START_COUNT)
+      const perStartBudget = Math.floor(searchBudget / MULTI_START_COUNT)
       const perStartIter = Math.floor(effectiveIterations / MULTI_START_COUNT)
       let bestCost = Infinity
       best = { routes: drivers.map(d => ({ driverId: d.id, missions: [] })), cost: 0 }
@@ -288,7 +312,7 @@ export async function runVRP(
       best = runVRPDirect(
         assignableMissions, drivers, ctx, seed,
         effectiveIterations, effectiveDestroyRatio,
-        timeBudgetMs, existingPlans,
+        searchBudget, existingPlans,
         scaled.saT0Ratio, scaled.saTMinRatio,
       )
     }
@@ -298,29 +322,30 @@ export async function runVRP(
     best = { routes: drivers.map(d => ({ driverId: d.id, missions: [] })), cost: 0 }
   }
 
-  const threeOptDeadline = startTs + timeBudgetMs - 800
+  const postDeadline = algoStartTs + searchBudget
+  const threeOptDeadline = postDeadline + Math.round(POST_STEPS_MS * 0.57)
   if (Date.now() < threeOptDeadline && best.routes.length <= 500) {
     best = threeOptOnWorstRoutes(best, ctx, drivers, 5, threeOptDeadline)
   }
 
-  const ejDeadline = startTs + timeBudgetMs - 600
+  const ejDeadline = postDeadline + Math.round(POST_STEPS_MS * 0.76)
   if (Date.now() < ejDeadline && best.routes.length <= 200) {
     best = ejectionChainSearch(best, ctx, drivers, ejDeadline, 3)
   }
 
-  const compactDeadline = startTs + timeBudgetMs - 400
+  const compactDeadline = postDeadline + Math.round(POST_STEPS_MS * 0.9)
   if (Date.now() < compactDeadline && best.routes.length <= 200) {
     best = compactRoutes(best, ctx, drivers, compactDeadline)
   }
 
   best = batchByWasteType(best, ctx, drivers)
 
-  const forceAssignDeadline = startTs + timeBudgetMs - 200
+  const forceAssignDeadline = postDeadline + POST_STEPS_MS
   best = forceAssignP1(best, assignableMissions, ctx, drivers, hfvrpWarnings, forceAssignDeadline)
 
   let paretoFrontResult: Array<{ label: string; totalDistanceKm: number; totalLatenessMin: number; workloadCV: number }> | undefined
   if (options?.usePareto && drivers.length <= 300) {
-    const paretoTimeBudget = Math.round(timeBudgetMs * 0.25)
+    const paretoTimeBudget = Math.round(remainingMs * paretoShare)
     const paretoSolutions: ParetoSolution[] = [
       {
         solution: best,
@@ -382,10 +407,51 @@ export async function runVRP(
 
   result.unassignedMissions.push(...unassignableByCapacity)
   result.warnings.push(...hfvrpWarnings)
+  enforceMissionConservation(result, calibratedMissions, duplicateIds)
   result.stats.timeTakenMs = Date.now() - startTs
   result.stats.routingSource = ctx.osrmMatrix?.source ?? 'haversine'
 
   return result
+}
+
+/**
+ * Last line of defence on the output: every input mission ends up exactly once — in one route
+ * or in unassignedMissions. Whatever happened upstream (a failed sector, an operator bug, a
+ * mission shared by two routes after a cross-sector move), nothing is silently lost or
+ * planned twice; anything corrected is reported as a warning.
+ */
+export function enforceMissionConservation(result: OptimizationResult, inputMissions: Mission[], duplicateIds: string[] = []): void {
+  const seen = new Set<string>()
+  let removedDuplicates = 0
+  for (const driverId of Object.keys(result.assignments)) {
+    result.assignments[driverId] = result.assignments[driverId].filter(m => {
+      if (m.isSynthetic) return true
+      if (seen.has(m.id)) { removedDuplicates++; return false }
+      seen.add(m.id)
+      return true
+    })
+  }
+  const unassignedIds = new Set(result.unassignedMissions.map(m => m.id))
+  result.unassignedMissions = result.unassignedMissions.filter(m => !seen.has(m.id))
+  const lost = inputMissions.filter(m => !seen.has(m.id) && !unassignedIds.has(m.id))
+  if (lost.length > 0) {
+    result.unassignedMissions.push(...lost)
+    result.warnings.push({
+      driverId: '',
+      message:  `${lost.length} mission(s) n'ont pas pu être placées par l'optimiseur et restent à planifier`,
+      severity: 'warning',
+    })
+    log.error('VRP output was missing missions — returned as unassigned', { count: lost.length, ids: lost.slice(0, 10).map(m => m.id) })
+  }
+  if (removedDuplicates > 0) {
+    result.warnings.push({ driverId: '', message: `${removedDuplicates} doublon(s) de mission retiré(s) des tournées`, severity: 'warning' })
+    log.error('VRP output contained duplicated missions — removed', { count: removedDuplicates })
+  }
+  if (duplicateIds.length > 0) {
+    result.warnings.push({ driverId: '', message: `${duplicateIds.length} mission(s) en double dans la demande ont été ignorées`, severity: 'warning' })
+  }
+  result.stats.totalMissions    = inputMissions.length
+  result.stats.assignedMissions = seen.size
 }
 
 function batchByWasteType(

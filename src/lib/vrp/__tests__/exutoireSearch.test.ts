@@ -6,7 +6,6 @@ import {
   findBestExutoire,
 } from '@/lib/vrp/exutoireSearch'
 import type { Exutoire } from '@/lib/types'
-import { clearDistanceCache } from '@/lib/vrp/distanceCache'
 
 function makeExutoire(overrides: Partial<Exutoire> & { id: string }): Exutoire {
   return {
@@ -36,7 +35,6 @@ const SUN = 0
 
 beforeEach(() => {
   resetExutoireCongestion()
-  clearDistanceCache()
 })
 
 describe('resetExutoireCongestion', () => {

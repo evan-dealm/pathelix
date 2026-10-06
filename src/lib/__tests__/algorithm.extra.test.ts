@@ -8,7 +8,6 @@ import {
   minToHHMM,
   formatDuration,
 } from '@/lib/algorithm'
-import { clearDistanceCache } from '@/lib/vrp/distanceCache'
 import type { PlannedMission, Exutoire } from '@/lib/types'
 
 const NORTH_POLE = { lat: 90, lng: 0 }
@@ -39,7 +38,6 @@ function makeMission(overrides: Partial<PlannedMission> = {}): PlannedMission {
 }
 
 describe('haversineKm — advanced cases', () => {
-  beforeEach(() => clearDistanceCache())
 
   it('both poles (90,0 to -90,0) is approximately 20015 km', () => {
     const dist = haversineKm(NORTH_POLE.lat, NORTH_POLE.lng, SOUTH_POLE.lat, SOUTH_POLE.lng)
@@ -83,7 +81,6 @@ describe('haversineKm — advanced cases', () => {
 })
 
 describe('roadDistKm — always >= haversineKm', () => {
-  beforeEach(() => clearDistanceCache())
 
   it('roadDistKm >= haversineKm for Grenoble → Lyon', () => {
     const hav  = haversineKm(GRENOBLE.lat, GRENOBLE.lng, LYON.lat, LYON.lng)
@@ -112,7 +109,6 @@ describe('roadDistKm — always >= haversineKm', () => {
 })
 
 describe('travelTimeMin — advanced cases', () => {
-  beforeEach(() => clearDistanceCache())
 
   it('returns 0 for identical origin and destination', () => {
     expect(travelTimeMin(45.188, 5.724, 45.188, 5.724, 50, 420)).toBe(0)
@@ -287,7 +283,6 @@ describe('formatDuration — additional cases', () => {
 })
 
 describe('calcTour — additional cases', () => {
-  beforeEach(() => clearDistanceCache())
 
   it('single mission — result has totalDurationMin, totalRoadDistKm, steps', () => {
     const mission = makeMission()

@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { optimizeSequence } from '../optimizer'
-import { clearDistanceCache } from '@/lib/vrp/distanceCache'
 import type { Mission, Driver, Exutoire } from '@/lib/types'
 
 function makeDriver(overrides: Partial<Driver> = {}): Driver {
@@ -47,9 +46,6 @@ function makeExutoire(overrides: Partial<Exutoire> = {}): Exutoire {
 }
 
 describe('optimizeSequence', () => {
-  beforeEach(() => {
-    clearDistanceCache()
-  })
 
   it('returns empty result for empty missions', () => {
     const driver = makeDriver()
@@ -198,9 +194,7 @@ describe('optimizeSequence', () => {
 
     const opts = { timeBudgetMs: 1000, seed: 123, lnsIterations: 10 }
 
-    clearDistanceCache()
     const result1 = optimizeSequence(missions, driver, [], '07:00', 50, opts)
-    clearDistanceCache()
     const result2 = optimizeSequence(missions, driver, [], '07:00', 50, opts)
 
     const ids1 = result1.orderedMissions.map(m => m.id)
