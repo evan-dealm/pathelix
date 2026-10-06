@@ -230,6 +230,15 @@ export async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<Vr
   }).catch(() => {})
 
   void maybeSendOptimizationPush(tenantId, date, result.stats.assignedMissions, result.stats.totalMissions)
+  void import('@/lib/events/outbound').then(({ emitBusinessEvent }) => emitBusinessEvent(tenantId, 'route.optimized', {
+    date, assignedMissions: result.stats.assignedMissions, totalMissions: result.stats.totalMissions, unassigned: result.unassignedMissions.length,
+  })).catch(() => {})
+  if (result.unassignedMissions.length > 0) {
+    void import('@/lib/notifications').then(({ notify }) => notify(tenantId, {
+      kind: 'UNASSIGNED', title: `${result.unassignedMissions.length} mission(s) non planifiée(s) le ${date.split('-').reverse().join('/')}`,
+      body: 'Les raisons sont affichées dans l\'onglet Tournées.', link: 'tours', dedupeKey: `UNASSIGNED:${date}:${result.unassignedMissions.length}`,
+    })).catch(() => {})
+  }
 
   return result
 }

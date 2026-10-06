@@ -24,8 +24,8 @@ function permsResult(perms: string[]) {
 }
 
 describe('ALL_PERMISSIONS', () => {
-  it('has exactly 11 entries', () => {
-    expect(ALL_PERMISSIONS).toHaveLength(11)
+  it('has exactly 13 entries (sales and billing added)', () => {
+    expect(ALL_PERMISSIONS).toHaveLength(13)
   })
 
   it('contains optimize', () => {

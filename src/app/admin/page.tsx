@@ -63,8 +63,11 @@ const TelematicsTab = dynamic(() => import('@/components/admin/tabs/TelematicsTa
 const CatalogueTab  = dynamic(() => import('@/components/admin/tabs/CatalogueTab').then(m => ({ default: m.CatalogueTab })), { ssr: false, loading: DynamicLoading })
 const WeeklyPlanTab = dynamic(() => import('@/components/admin/tabs/WeeklyPlanTab').then(m => ({ default: m.WeeklyPlanTab })), { ssr: false, loading: DynamicLoading })
 const ContainersTab = dynamic(() => import('@/components/admin/containers/ContainersTab').then(m => ({ default: m.ContainersTab })), { ssr: false, loading: DynamicLoading })
+const SalesTab      = dynamic(() => import('@/components/admin/commercial/SalesTab').then(m => ({ default: m.SalesTab })), { ssr: false, loading: DynamicLoading })
+const BillingTab    = dynamic(() => import('@/components/admin/commercial/BillingTab').then(m => ({ default: m.BillingTab })), { ssr: false, loading: DynamicLoading })
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { NotificationBell } from '@/components/admin/NotificationBell'
 import { useToast } from '@/components/ui/Toast'
 import { useTrade } from '@/providers/TradeProvider'
 import { OnboardingGuide } from '@/components/ui/OnboardingGuide'
@@ -540,8 +543,10 @@ export default function AdminPage() {
     { id: 'stats',     label: 'Statistiques', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 13V9M9 13V5M13 13V8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg> },
     { id: 'history',   label: 'Historique', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 3v12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M6 12l3-4 3 2 3-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
 
-    { id: 'catalogue', label: 'Catalogue', section: 'Ressources', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4h12M3 8h12M3 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="14" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M16 14l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'containers', label: 'Parc de bennes', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 6.5h14l-1.6 7.2a1 1 0 01-1 .8H4.6a1 1 0 01-1-.8L2 6.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M5 6.5V4.5M13 6.5V4.5M6.5 9.5h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'catalogue', label: 'Clients & sites', section: 'Commercial', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4h12M3 8h12M3 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="14" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M16 14l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'sales',     label: 'Ventes', adminOnly: true, permission: 'manage_sales', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 2.5h7l3 3v10H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M6.5 8.5h5M6.5 11.5h5M6.5 5.5h2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'billing',   label: 'Facturation', adminOnly: true, permission: 'manage_billing', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M2 7.5h14M5 11h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+    { id: 'containers', label: 'Parc de bennes', section: 'Ressources', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 6.5h14l-1.6 7.2a1 1 0 01-1 .8H4.6a1 1 0 01-1-.8L2 6.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M5 6.5V4.5M13 6.5V4.5M6.5 9.5h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
     { id: 'drivers',   label: vocab.drivers, adminOnly: true, permission: 'manage_drivers', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 15.5c0-2.5 2.5-4.5 6-4.5s6 2 6 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
     { id: 'vehicles',  label: vocab.vehicles, adminOnly: true, permission: 'manage_vehicles', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="5" width="14" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="5.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="12.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg> },
     { id: 'exutoires', label: vocab.exutoires, adminOnly: true, permission: 'manage_exutoires', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L2 7v8a1 1 0 001 1h12a1 1 0 001-1V7L9 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg> },
@@ -699,6 +704,7 @@ export default function AdminPage() {
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
             {}
+            <NotificationBell onNavigate={(tab) => setActiveTab(tab as Parameters<typeof setActiveTab>[0])} />
             <SyncIndicator />
             <button type="button" onClick={() => window.location.reload()} title="Rafraîchir"
               className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-surface-600 hover:bg-surface-100 rounded-lg transition-colors">
@@ -886,6 +892,8 @@ export default function AdminPage() {
       {activeTab === 'telematics' && <div role="tabpanel" id="tabpanel-telematics" aria-labelledby="tab-telematics" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><TelematicsTab date={planDate} /></div>}
       {activeTab === 'catalogue' && <div role="tabpanel" id="tabpanel-catalogue" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><CatalogueTab readOnly={!isAdmin} /></div>}
       {activeTab === 'settings' && <div role="tabpanel" id="tabpanel-settings" aria-labelledby="tab-settings" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><SettingsTab /></div>}
+      {activeTab === 'sales' && <div role="tabpanel" id="tabpanel-sales" aria-labelledby="tab-sales" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><SalesTab /></div>}
+      {activeTab === 'billing' && <div role="tabpanel" id="tabpanel-billing" aria-labelledby="tab-billing" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><BillingTab /></div>}
       {activeTab === 'containers' && <div role="tabpanel" id="tabpanel-containers" aria-labelledby="tab-containers" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><ContainersTab /></div>}
       {activeTab === 'weekly-plan' && <div role="tabpanel" id="tabpanel-weekly-plan" aria-labelledby="tab-weekly-plan" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><WeeklyPlanTab onNavigateToTours={(date) => { setPlanDate(date); setActiveTab('tours') }} /></div>}
 

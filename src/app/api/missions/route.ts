@@ -122,6 +122,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ])
 
     auditAsync(req, 'mission.create', 'Mission', mission.id, { type: parsed.data.type, address: parsed.data.address, date: parsed.data.date })
+    void import('@/lib/events/outbound').then(({ emitBusinessEvent }) => emitBusinessEvent(tenantId, 'mission.created', { missionId: mission.id, type: mission.type, date: mission.date, clientId: mission.clientId ?? null, priority: mission.priority ?? null }))
+    if (mission.priority === 1) {
+      void import('@/lib/notifications').then(({ notify }) => notify(tenantId, {
+        kind: 'P1_CREATED', title: `Urgence P1 : ${mission.clientName || mission.address} le ${mission.date.split('-').reverse().join('/')}`,
+        body: 'À intégrer aux tournées (ré-optimisation en cours de journée si nécessaire).', link: 'tours', entityType: 'mission', entityId: mission.id,
+      }))
+    }
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/missions', method: 'POST', status: '201' })
     return NextResponse.json(mission, { status: 201 })
   } catch (err) {

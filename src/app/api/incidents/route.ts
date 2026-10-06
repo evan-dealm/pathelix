@@ -59,6 +59,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       })
 
       log.info('Incident reported', { tenantId, missionId, incidentType, userId })
+      void import('@/lib/events/outbound').then(({ emitBusinessEvent }) => emitBusinessEvent(tenantId, 'mission.failed', { missionId, incidentType }))
+      void import('@/lib/notifications').then(({ notify }) => notify(tenantId, {
+        kind: 'INCIDENT', title: `Incident terrain : ${target.clientName || target.address}`, body: notes ?? '',
+        link: 'tours', entityType: 'mission', entityId: missionId, dedupeKey: `INCIDENT:${missionId}:${incidentType}`,
+      }))
       return NextResponse.json({ ok: true })
     } catch (err) {
       log.error('Incident POST failed', { err: err instanceof Error ? err.message : String(err) })

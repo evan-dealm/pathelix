@@ -44,6 +44,7 @@ const idemDb = vi.hoisted(() => ({
   }),
   deleteMany: vi.fn(async ({ where }: { where: { key: string } }) => ({ count: idemRows.delete(where.key) ? 1 : 0 })),
 }))
+const mockMissionUpdateMany = vi.hoisted(() => vi.fn(async () => ({ count: 1 })))
 const mockQueryRaw = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => [] as unknown[]))
 vi.mock('@/lib/tenantDb', () => ({
   unscopedPrisma: { driver: { findUnique: mockDriverFindUnique } },
@@ -91,6 +92,7 @@ beforeEach(() => {
     const tx = {
       plan:     { findFirst: mockPlanFindFirst, update: mockPlanUpdate },
       auditLog: { create: mockAuditLogCreate },
+      mission:  { updateMany: mockMissionUpdateMany },
       $queryRaw: mockQueryRaw,
     }
     return fn(tx)
@@ -100,6 +102,18 @@ beforeEach(() => {
   mockEmit.mockResolvedValue(undefined)
   mockCollect.mockResolvedValue(undefined)
   mockSyncERP.mockResolvedValue(undefined)
+})
+
+describe('POST /api/driver-status/update — mission completion', () => {
+  it('records completedAt on the mission row when the step is done', async () => {
+    mockVerifySession.mockResolvedValueOnce(SESSION_DRIVER)
+    mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1', firstName: 'A', lastName: 'B' })
+    mockPlanUpdate.mockResolvedValueOnce({})
+    mockMissionFindFirst.mockResolvedValueOnce({ type: 'POSER', clientName: 'C', wasteTypeLabel: null, address: 'x' })
+    const res = await POST(makeReq({ ...VALID_BODY, status: 'done' }, 'tok'))
+    expect(res.status).toBe(200)
+    expect(mockMissionUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'm1', completedAt: null } }))
+  })
 })
 
 describe('POST /api/driver-status/update', () => {

@@ -12,6 +12,8 @@ import { canActForDriver } from '@/lib/driverAccess'
 import { checkTenantSuspension } from '@/lib/data/context'
 import { MISSION_STATUSES, type MissionStatus } from '@/lib/missionStatus'
 import { onStepStatus } from '@/lib/containers/service'
+import { recordDriverWeighing } from '@/lib/sales/weighings'
+import { emitBusinessEvent } from '@/lib/events/outbound'
 
 const log = createLogger('/api/driver-status/update')
 
@@ -138,6 +140,11 @@ async function handleStatusUpdate({
         where: { id: plan.id },
         data: { statuses: statuses as Parameters<typeof tx.plan.update>[0]['data']['statuses'] },
       })
+      // The mission row records its completion too (reports, tracking page, billing read it —
+      // it used to stay null forever). Synthetic steps have no row: nothing is updated.
+      if (status === 'done') {
+        await tx.mission.updateMany({ where: { id: missionId, completedAt: null }, data: { completedAt: new Date(ts) } })
+      }
 
       // Same transaction as the status write: a crash between the two must not leave a
       // persisted status with no audit row.
@@ -162,6 +169,15 @@ async function handleStatusUpdate({
     }
 
     log.info('Status updated', { driverId, missionId, status, weightKg, date })
+    // The ticket's weight becomes a Weighing (billing per tonne, BSD, weight calibration).
+    if (weightKg !== undefined) {
+      try {
+        const weighingId = await recordDriverWeighing(db, { driverId, stepId: missionId, netKg: weightKg, at: new Date(ts) })
+        if (weighingId) void emitBusinessEvent(tenantId, 'weighing.created', { weighingId, stepId: missionId, netKg: weightKg })
+      } catch (err) {
+        log.error('Weighing record failed', { missionId, err: err instanceof Error ? err.message : String(err) })
+      }
+    }
     // Weight-only update on an already-reported step: no status side effects to replay.
     if (!status) return NextResponse.json({ ok: true, weightKg, timestamp: ts })
 
@@ -172,9 +188,13 @@ async function handleStatusUpdate({
       try {
         const steps = parsePlanSteps(outcome.planMissions)
         const doneIds = new Set(Object.entries(outcome.statuses).filter(([, s]) => s?.status === 'done').map(([id]) => id))
-        await db.$transaction(tx => onStepStatus(tx, {
+        const moved = await db.$transaction(tx => onStepStatus(tx, {
           driverId, stepId: missionId, status, planStepIds: steps, doneStepIds: doneIds, at: new Date(ts), latitude, longitude,
         }))
+        for (const e of moved) {
+          if (e.event === 'PLACED') void emitBusinessEvent(tenantId, 'container.placed', { containerId: e.containerId, missionId, clientId: e.patch.clientId, siteId: e.patch.siteId })
+          if (e.event === 'PICKED_UP') void emitBusinessEvent(tenantId, 'container.removed', { containerId: e.containerId, missionId })
+        }
       } catch (err) {
         log.error('Container update after status failed', { missionId, status, err: err instanceof Error ? err.message : String(err) })
       }
@@ -182,6 +202,7 @@ async function handleStatusUpdate({
 
     if (status === 'done') {
       void emitEvent(tenantId, 'mission.done', { missionId, driverId, driverName: driverFullName, date, status })
+      if (!missionId.startsWith('_')) void emitBusinessEvent(tenantId, 'mission.completed', { missionId, driverId, date, completedAt: ts })
 
       const missionForERP = await db.mission.findFirst({
         where: { id: missionId },

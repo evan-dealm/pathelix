@@ -1,11 +1,13 @@
 import { Queue, QueueEvents, type ConnectionOptions } from 'bullmq'
 import type { TourPdfProps } from '@/lib/tourPdf'
 import type { MonthlyReportData } from '@/lib/pdfReport'
+import type { SalesDocumentData } from '@/lib/sales/document'
 import { queueConnectionOptions, workerConnectionOptions, withTimeout } from './connection'
 
 export type PdfJobData =
   | { kind: 'tour';   tenantId: string; props: TourPdfProps }
   | { kind: 'report'; tenantId: string; data:  MonthlyReportData }
+  | { kind: 'sales';  tenantId: string; data:  SalesDocumentData }
 
 export interface PdfJobResult {
   base64: string

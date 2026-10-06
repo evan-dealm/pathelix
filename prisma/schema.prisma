@@ -63,6 +63,25 @@ model Tenant {
   containerTypes         ContainerType[]
   containers             Container[]
   containerEvents        ContainerEvent[]
+  clientContacts         ClientContact[]
+  customerNotes          CustomerNote[]
+  priceLists             PriceList[]
+  priceRules             PriceRule[]
+  documentSequences      DocumentSequence[]
+  contracts              Contract[]
+  quotes                 Quote[]
+  quoteLines             QuoteLine[]
+  orders                 Order[]
+  orderLines             OrderLine[]
+  invoices               Invoice[]
+  invoiceLines           InvoiceLine[]
+  payments               Payment[]
+  weighings              Weighing[]
+  documents              Document[]
+  webhookEndpoints       WebhookEndpoint[]
+  webhookDeliveries      WebhookDelivery[]
+  notifications          Notification[]
+  notificationPrefs      NotificationPreference[]
 }
 
 model User {
@@ -157,6 +176,14 @@ model Client {
   missions        Mission[]
   siteProducts    SiteProduct[]
   containers      Container[]
+  contacts        ClientContact[]
+  notesTimeline   CustomerNote[]
+  priceLists      PriceList[]
+  contracts       Contract[]
+  quotes          Quote[]
+  orders          Order[]
+  invoices        Invoice[]
+  payments        Payment[]
 
   @@index([tenantId])
   @@index([tenantId, archived])
@@ -189,6 +216,8 @@ model Site {
   tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   siteProducts       SiteProduct[]
   containers         Container[]
+  quotes             Quote[]
+  orders             Order[]
 
   @@index([tenantId])
   @@index([tenantId, archived])
@@ -308,6 +337,9 @@ model Mission {
   containerType        ContainerType?  @relation(fields: [containerTypeId], references: [id], onDelete: SetNull)
   placedContainer      Container?      @relation("MissionPlacedContainer", fields: [placedContainerId], references: [id], onDelete: SetNull)
   collectedContainer   Container?      @relation("MissionCollectedContainer", fields: [collectedContainerId], references: [id], onDelete: SetNull)
+  // ─── Commercial ──────────────────────────────────────────────────────────
+  orderId              String?
+  order                Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
   dependsOn            Mission?        @relation("MissionDependency", fields: [dependsOnId], references: [id], onDelete: SetNull)
   dependents           Mission[]       @relation("MissionDependency")
   client               Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -334,6 +366,7 @@ model Mission {
   @@index([materialId])
   @@index([placedContainerId])
   @@index([collectedContainerId])
+  @@index([orderId])
 }
 
 model MissionComment {
@@ -621,6 +654,19 @@ model TenantSettings {
   lunchBreakDurationMin Int      @default(30)
   /// A wait of 15 min or more before a time window may be planned as a break (shown as such).
   breakDuringWait       Boolean  @default(true)
+  // ─── Commercial ──────────────────────────────────────────────────────────
+  defaultVatRate        Float    @default(20)
+  quotePrefix           String   @default("DEV")
+  orderPrefix           String   @default("CMD")
+  creditNotePrefix      String   @default("AV")
+  quoteValidityDays     Int      @default(30)
+  defaultQuoteTerms     String   @default("")
+  companyLegalName      String   @default("")
+  companyAddress        String   @default("")
+  companySiret          String   @default("")
+  companyIban           String   @default("")
+  /// Penalties and fixed recovery fee shown on invoices (Code de commerce L441-10).
+  latePaymentTerms      String   @default("Pénalités de retard : 3 fois le taux d'intérêt légal. Indemnité forfaitaire pour frais de recouvrement : 40 €.")
   tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
@@ -795,6 +841,504 @@ model ContainerEvent {
   @@index([tenantId, missionId])
   @@index([tenantId, clientId, at])
   @@index([tenantId, at])
+}
+
+// ─── Commercial : contacts, notes, tarifs, contrats, devis, commandes, factures ─────────────
+
+/// A person at a customer: who to call, who receives quotes/invoices, who uses the portal.
+model ClientContact {
+  id               String   @id @default(cuid())
+  tenantId         String
+  clientId         String
+  name             String
+  role             String   @default("")
+  email            String   @default("")
+  phone            String   @default("")
+  isPrimary        Boolean  @default(false)
+  receivesInvoices Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, clientId])
+}
+
+/// Customer timeline entry written by a person (call, email, meeting, note).
+model CustomerNote {
+  id        String   @id @default(cuid())
+  tenantId  String
+  clientId  String
+  kind      String   @default("NOTE") // NOTE | CALL | EMAIL | MEETING
+  content   String
+  createdBy String
+  at        DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, clientId, at])
+}
+
+/// A price grid: the tenant's default one, or one negotiated for a customer (or a contract).
+model PriceList {
+  id         String      @id @default(cuid())
+  tenantId   String
+  name       String
+  isDefault  Boolean     @default(false)
+  clientId   String?
+  validFrom  String?     // YYYY-MM-DD
+  validTo    String?
+  archived   Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client     Client?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  rules      PriceRule[]
+  contracts  Contract[]
+
+  @@index([tenantId, clientId])
+}
+
+/// One priced item of a grid. The pricing engine (src/lib/pricing) picks the most specific rule
+/// for an operation (conditions on bin type, material, mission type, zone) and explains it.
+model PriceRule {
+  id          String    @id @default(cuid())
+  tenantId    String
+  priceListId String
+  /// TRANSPORT | KM | ZONE | POSE | RETRAIT | ECHANGE | ROTATION | ALLER_RETOUR | RENTAL_DAY | TREATMENT_TON
+  /// | EXUTOIRE | FUEL_PCT | URGENCY_PCT | WEEKEND_PCT | DISCOUNT_PCT | MINIMUM | CUSTOM
+  code        String
+  label       String
+  /// UNIT | KM | DAY | TON | PCT | FLAT
+  unit        String    @default("UNIT")
+  amount      Float
+  vatRate     Float     @default(20)
+  /// { containerTypeId?, materialId?, missionType?, zipPrefix?, freeDays?, minQty? }
+  conditions  Json      @default("{}")
+  priority    Int       @default(0)
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, priceListId])
+}
+
+/// Atomic per-tenant, per-year numbering (quotes, orders, invoices, credit notes). Invoice
+/// numbers are taken when the invoice is issued, so the sequence has no gap.
+model DocumentSequence {
+  id       String @id @default(cuid())
+  tenantId String
+  kind     String // QUOTE | ORDER | INVOICE | CREDIT_NOTE | CONTRACT
+  year     Int
+  next     Int    @default(1)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, year])
+}
+
+model Contract {
+  id                String     @id @default(cuid())
+  tenantId          String
+  number            String
+  clientId          String
+  siteId            String?
+  priceListId       String?
+  status            String     @default("ACTIVE") // DRAFT | ACTIVE | SUSPENDED | ENDED
+  title             String     @default("")
+  startDate         String
+  endDate           String?
+  /// NONE | TACIT (tacit renewal for the same duration)
+  renewal           String     @default("NONE")
+  noticeDays        Int        @default(30)
+  /// PER_OPERATION | MONTHLY
+  billingFrequency  String     @default("PER_OPERATION")
+  rentalFreeDays    Int        @default(0)
+  paymentTermsDays  Int        @default(30)
+  notes             String     @default("")
+  createdBy         String
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  tenant            Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client            Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  priceList         PriceList? @relation(fields: [priceListId], references: [id], onDelete: SetNull)
+  orders            Order[]
+  invoices          Invoice[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, clientId])
+  @@index([tenantId, status, endDate])
+}
+
+model Quote {
+  id             String      @id @default(cuid())
+  tenantId       String
+  number         String
+  clientId       String
+  siteId         String?
+  /// DRAFT | SENT | ACCEPTED | REFUSED | EXPIRED | CONVERTED
+  status         String      @default("DRAFT")
+  title          String      @default("")
+  issueDate      String
+  validUntil     String
+  notes          String      @default("")
+  terms          String      @default("")
+  totalHT        Float       @default(0)
+  totalVAT       Float       @default(0)
+  totalTTC       Float       @default(0)
+  sentAt         DateTime?
+  decidedAt      DateTime?
+  decidedBy      String      @default("")
+  refusalReason  String      @default("")
+  orderId        String?     @unique
+  createdBy      String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client         Client      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  site           Site?       @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  order          Order?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  lines          QuoteLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, clientId])
+  @@index([tenantId, status, validUntil])
+}
+
+/// A line of a quote or order. Operational lines (missionType set) become missions on conversion.
+model QuoteLine {
+  id              String  @id @default(cuid())
+  tenantId        String
+  quoteId         String
+  position        Int
+  label           String
+  description     String  @default("")
+  quantity        Float   @default(1)
+  unit            String  @default("UNIT")
+  unitPrice       Float   @default(0)
+  discountPct     Float   @default(0)
+  vatRate         Float   @default(20)
+  amountHT        Float   @default(0)
+  /// How the price was obtained (grid, rule, manual) — shown to the user.
+  explanation     String  @default("")
+  missionType     String?
+  containerTypeId String?
+  materialId      String?
+  /// For rentals / rotations: planned date of the operation (YYYY-MM-DD).
+  plannedDate     String?
+  tenant          Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quote           Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, quoteId])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  tenantId    String
+  number      String
+  clientId    String
+  siteId      String?
+  contractId  String?
+  /// CONFIRMED | IN_PROGRESS | COMPLETED | CANCELLED
+  status      String      @default("CONFIRMED")
+  /// ONE_OFF | POSE_RETRAIT | ROTATION | RECURRING | LONG_RENTAL
+  kind        String      @default("ONE_OFF")
+  title       String      @default("")
+  startDate   String
+  endDate     String?
+  notes       String      @default("")
+  totalHT     Float       @default(0)
+  createdBy   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client      Client      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  site        Site?       @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  contract    Contract?   @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  quote       Quote?
+  lines       OrderLine[]
+  missions    Mission[]
+  invoices    Invoice[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, clientId])
+  @@index([tenantId, status])
+}
+
+model OrderLine {
+  id              String  @id @default(cuid())
+  tenantId        String
+  orderId         String
+  position        Int
+  label           String
+  description     String  @default("")
+  quantity        Float   @default(1)
+  unit            String  @default("UNIT")
+  unitPrice       Float   @default(0)
+  discountPct     Float   @default(0)
+  vatRate         Float   @default(20)
+  amountHT        Float   @default(0)
+  explanation     String  @default("")
+  missionType     String?
+  containerTypeId String?
+  materialId      String?
+  plannedDate     String?
+  tenant          Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order           Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId])
+}
+
+model Invoice {
+  id                String        @id @default(cuid())
+  tenantId          String
+  /// Taken at issue time (gap-free); null while DRAFT.
+  number            String?
+  /// INVOICE | CREDIT_NOTE
+  kind              String        @default("INVOICE")
+  creditedInvoiceId String?
+  clientId          String
+  orderId           String?
+  contractId        String?
+  /// DRAFT | ISSUED | SENT | PARTIALLY_PAID | PAID | CANCELLED  (overdue = computed from dueDate)
+  status            String        @default("DRAFT")
+  issueDate         String?
+  dueDate           String?
+  periodStart       String?
+  periodEnd         String?
+  /// Snapshot of the customer's legal details at issue time.
+  clientName        String        @default("")
+  billingAddress    String        @default("")
+  clientSiret       String        @default("")
+  totalHT           Float         @default(0)
+  totalVAT          Float         @default(0)
+  totalTTC          Float         @default(0)
+  amountPaid        Float         @default(0)
+  notes             String        @default("")
+  sentAt            DateTime?
+  paidAt            DateTime?
+  cancelledAt       DateTime?
+  exportedAt        DateTime?
+  createdBy         String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client            Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  order             Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  contract          Contract?     @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  creditedInvoice   Invoice?      @relation("CreditNote", fields: [creditedInvoiceId], references: [id], onDelete: SetNull)
+  creditNotes       Invoice[]     @relation("CreditNote")
+  lines             InvoiceLine[]
+  payments          Payment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, clientId])
+  @@index([tenantId, status, dueDate])
+}
+
+model InvoiceLine {
+  id           String   @id @default(cuid())
+  tenantId     String
+  invoiceId    String
+  position     Int
+  label        String
+  description  String   @default("")
+  quantity     Float    @default(1)
+  unit         String   @default("UNIT")
+  unitPrice    Float    @default(0)
+  discountPct  Float    @default(0)
+  vatRate      Float    @default(20)
+  amountHT     Float    @default(0)
+  explanation  String   @default("")
+  /// Field data this line bills (traceability: mission, bin, weighing).
+  missionId    String?
+  containerId  String?
+  weighingId   String?
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, invoiceId])
+  @@index([tenantId, missionId])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  clientId    String
+  /// Null = received but not yet matched to an invoice.
+  invoiceId   String?
+  amount      Float
+  /// TRANSFER | CHECK | CARD | CASH | DIRECT_DEBIT | OTHER
+  method      String   @default("TRANSFER")
+  reference   String   @default("")
+  receivedAt  String   // YYYY-MM-DD
+  notes       String   @default("")
+  provider    String?
+  providerRef String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, clientId])
+  @@index([tenantId, invoiceId])
+}
+
+/// A weighing ticket: from the driver, an OCR reading (to be confirmed by a person) or an import.
+model Weighing {
+  id           String    @id @default(cuid())
+  tenantId     String
+  missionId    String?
+  /// Plan step it was recorded on (a dump step id, synthetic).
+  stepId       String?
+  driverId     String?
+  exutoireId   String?
+  containerId  String?
+  materialId   String?
+  clientId     String?
+  ticketNumber String    @default("")
+  grossKg      Float?
+  tareKg       Float?
+  netKg        Float
+  /// MANUAL | DRIVER | OCR | IMPORT
+  source       String    @default("MANUAL")
+  /// PENDING_REVIEW | VALIDATED | REJECTED — OCR readings wait for a person.
+  status       String    @default("VALIDATED")
+  aiJobId      String?
+  documentId   String?
+  weighedAt    DateTime  @default(now())
+  validatedBy  String?
+  validatedAt  DateTime?
+  notes        String    @default("")
+  createdAt    DateTime  @default(now())
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, missionId])
+  @@index([tenantId, status])
+  @@index([tenantId, clientId, weighedAt])
+  @@index([tenantId, weighedAt])
+}
+
+/// A stored file and what it belongs to. Bytes live in the storage backend (local disk or
+/// S3-compatible, src/lib/storage), never under public/.
+model Document {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// QUOTE_PDF | INVOICE_PDF | CREDIT_NOTE_PDF | CONTRACT | WEIGHING_TICKET | PHOTO | SIGNATURE | BSD | PROOF | REPORT | OTHER
+  kind            String
+  storageKey      String
+  filename        String
+  mimeType        String
+  sizeBytes       Int
+  sha256          String
+  clientId        String?
+  missionId       String?
+  quoteId         String?
+  orderId         String?
+  invoiceId       String?
+  contractId      String?
+  weighingId      String?
+  containerId     String?
+  /// Shown in the customer portal.
+  visibleToClient Boolean  @default(false)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, storageKey])
+  @@index([tenantId, clientId])
+  @@index([tenantId, missionId])
+  @@index([tenantId, invoiceId])
+  @@index([tenantId, quoteId])
+}
+
+/// A subscriber to business events (ERP, BI, customer system). Secret stored encrypted.
+model WebhookEndpoint {
+  id              String            @id @default(cuid())
+  tenantId        String
+  url             String
+  description     String            @default("")
+  /// Encrypted { secret } (src/lib/configCrypto.ts) — signing key of the deliveries.
+  secret          Json
+  /// Event names subscribed to; empty = all.
+  events          Json              @default("[]")
+  active          Boolean           @default(true)
+  lastSuccessAt   DateTime?
+  lastFailureAt   DateTime?
+  consecutiveFailures Int           @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries      WebhookDelivery[]
+
+  @@index([tenantId, active])
+}
+
+/// One event for one endpoint: retried with exponential backoff, then DEAD (replayable by hand).
+model WebhookDelivery {
+  id             String          @id @default(cuid())
+  tenantId       String
+  endpointId     String
+  /// Stable id of the event, sent as Pathelix-Event-Id — consumers deduplicate on it.
+  eventId        String
+  eventType      String
+  payload        Json
+  /// PENDING | SUCCESS | FAILED (will retry) | DEAD (retries exhausted)
+  status         String          @default("PENDING")
+  attempts       Int             @default(0)
+  nextAttemptAt  DateTime        @default(now())
+  lastStatusCode Int?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime        @default(now())
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  endpoint       WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, endpointId, createdAt(sort: Desc)])
+  @@index([status, nextAttemptAt])
+  @@index([eventId])
+}
+
+/// One notification for one staff user (fan-out at creation, so read state is per person).
+model Notification {
+  id         String    @id @default(cuid())
+  tenantId   String
+  userId     String
+  /// P1_CREATED | UNASSIGNED | DRIVER_ABSENT | VEHICLE_DOWN | CONTAINER_LONG_STAY | CONTRACT_ENDING
+  /// | QUOTE_EXPIRING | INVOICE_OVERDUE | WEBHOOK_FAILING | PORTAL_REQUEST | WEIGHING_REVIEW | INCIDENT
+  kind       String
+  /// info | warning | critical
+  severity   String    @default("info")
+  title      String
+  body       String    @default("")
+  /// Admin tab (and optional entity) to open.
+  link       String    @default("")
+  entityType String?
+  entityId   String?
+  /// Same key within 24 h = same notification (anti-spam).
+  dedupeKey  String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, readAt, createdAt(sort: Desc)])
+  @@index([tenantId, userId, dedupeKey, createdAt])
+}
+
+/// Per user and kind: which channels to use (in-app is always on for critical).
+model NotificationPreference {
+  id        String  @id @default(cuid())
+  tenantId  String
+  userId    String
+  kind      String
+  inApp     Boolean @default(true)
+  email     Boolean @default(false)
+  push      Boolean @default(false)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, kind])
 }
 
 model UserPermission {

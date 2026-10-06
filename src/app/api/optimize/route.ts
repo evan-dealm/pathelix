@@ -213,6 +213,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const result = await runVRP(missions, drivers, allExutoires, date, syncOptions)
 
       void maybeSendOptimizationPush(db, tenantId, date, result.stats.assignedMissions, missions.length)
+      void import('@/lib/events/outbound').then(({ emitBusinessEvent }) => emitBusinessEvent(tenantId, 'route.optimized', {
+        date, assignedMissions: result.stats.assignedMissions, totalMissions: result.stats.totalMissions, unassigned: result.unassignedMissions.length,
+      })).catch(() => {})
 
       return NextResponse.json(
         { status: 'completed', mode: 'sync', result, missions: missions.length, drivers: drivers.length },

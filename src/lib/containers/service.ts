@@ -23,8 +23,8 @@ const MISSION_FIELDS = {
 } as const
 
 /** Applies effects (status + fields) and logs one event per bin moved. Unknown/archived bins are skipped. */
-export async function applyEffects(db: ContainerDb, effects: ContainerEffect[], who: Who, missionId?: string): Promise<number> {
-  let applied = 0
+export async function applyEffects(db: ContainerDb, effects: ContainerEffect[], who: Who, missionId?: string): Promise<ContainerEffect[]> {
+  const applied: ContainerEffect[] = []
   const at = who.at ?? new Date()
   for (const e of effects) {
     const c = await db.container.findFirst({ where: { id: e.containerId }, select: { id: true, status: true } })
@@ -44,7 +44,7 @@ export async function applyEffects(db: ContainerDb, effects: ContainerEffect[], 
         notes: who.notes ?? '', at,
       } as Parameters<typeof db.containerEvent.create>[0]['data'],
     })
-    applied++
+    applied.push(e)
   }
   return applied
 }
@@ -62,16 +62,17 @@ export async function onStepStatus(db: ContainerDb, p: {
   at:          Date
   latitude?:   number
   longitude?:  number
-}): Promise<void> {
+}): Promise<ContainerEffect[]> {
   const who: Who = { driverId: p.driverId, latitude: p.latitude, longitude: p.longitude, at: p.at }
+  const moved: ContainerEffect[] = []
   const synth = syntheticStepKind(p.stepId)
 
   if (p.status === 'en_route' && synth.kind === null) {
     const m = await db.mission.findFirst({ where: { id: p.stepId }, select: MISSION_FIELDS })
-    if (m) await applyEffects(db, effectsOnDeparture(m as MissionForContainers, p.driverId), who, m.id)
-    return
+    if (m) moved.push(...await applyEffects(db, effectsOnDeparture(m as MissionForContainers, p.driverId), who, m.id))
+    return moved
   }
-  if (p.status !== 'done') return
+  if (p.status !== 'done') return moved
 
   if (synth.kind === 'DUMP') {
     // Everything this driver carries is emptied: one rotation more for each bin.
@@ -83,14 +84,14 @@ export async function onStepStatus(db: ContainerDb, p: {
   } else if (synth.kind === 'REPOSE' && synth.missionId) {
     const m = await db.mission.findFirst({ where: { id: synth.missionId }, select: MISSION_FIELDS })
     if (m?.collectedContainerId) {
-      await applyEffects(db, [{
+      moved.push(...await applyEffects(db, [{
         containerId: m.collectedContainerId, to: 'AT_CUSTOMER', event: 'PLACED',
         patch: { clientId: m.clientId, siteId: m.siteId, latitude: m.latitude, longitude: m.longitude, locationLabel: '', driverId: null, missionId: null, placedAt: p.at },
-      }], who, m.id)
+      }], who, m.id))
     }
   } else if (synth.kind === null) {
     const m = await db.mission.findFirst({ where: { id: p.stepId }, select: MISSION_FIELDS })
-    if (m) await applyEffects(db, effectsOnDone(m as MissionForContainers, p.driverId), who, m.id)
+    if (m) moved.push(...await applyEffects(db, effectsOnDone(m as MissionForContainers, p.driverId), who, m.id))
   }
 
   // Last step of the tour done: what is still on the truck goes back to the depot.
@@ -103,6 +104,7 @@ export async function onStepStatus(db: ContainerDb, p: {
       patch: { driverId: null, missionId: null, clientId: null, siteId: null, locationLabel: driver?.depotName ?? 'Dépôt', latitude: driver?.depotLat ?? null, longitude: driver?.depotLng ?? null },
     })), who)
   }
+  return moved
 }
 
 /** Manual status change, only along the allowed transitions (lifecycle.ts). */

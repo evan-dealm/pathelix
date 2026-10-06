@@ -17,6 +17,7 @@ import { workerConnectionOptions } from '@/lib/queue/connection'
 import { installWorkerLifecycle } from './lifecycle'
 import { renderTourPdf } from '@/lib/tourPdf'
 import { generateMonthlyReportPdf } from '@/lib/pdfReport'
+import { renderSalesPdf } from '@/lib/salesPdf'
 import { createLogger } from '@/lib/logger'
 
 const log = createLogger('pdfWorker')
@@ -32,7 +33,9 @@ async function processJob(job: Job<PdfJobData, PdfJobResult>): Promise<PdfJobRes
 
   const buffer = data.kind === 'tour'
     ? await renderTourPdf(data.props)
-    : await generateMonthlyReportPdf(data.data)
+    : data.kind === 'sales'
+      ? await renderSalesPdf(data.data)
+      : await generateMonthlyReportPdf(data.data)
 
   log.info('PDF generated', { jobId: job.id, kind: data.kind, tenantId: data.tenantId, ms: elapsed(), bytes: buffer.length })
 

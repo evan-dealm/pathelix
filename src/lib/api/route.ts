@@ -4,6 +4,7 @@ import { getRequestContext } from '@/lib/data/context'
 import { hasPermission, type Permission } from '@/lib/permissions'
 import { getTenantDb, type TenantDb } from '@/lib/tenantDb'
 import { ForeignTenantRefError } from '@/lib/tenantRefs'
+import { BlockedUrlError } from '@/lib/outboundUrl'
 import { handleApiError } from '@/lib/apiError'
 import { createLogger } from '@/lib/logger'
 import { metrics, METRIC } from '@/lib/metrics'
@@ -90,6 +91,10 @@ export function apiRoute<B = undefined>(opts: RouteOptions<B>, fn: (_ctx: RouteC
       if (err instanceof ApiError) {
         status = err.status
         return NextResponse.json({ error: err.message, code: err.code, ...(err.details !== undefined ? { details: err.details } : {}) }, { status })
+      }
+      if (err instanceof BlockedUrlError) {
+        status = 422
+        return NextResponse.json({ error: `URL refusée : ${err.message}`, code: 'BLOCKED_URL' }, { status })
       }
       if (err instanceof ForeignTenantRefError) {
         status = 422

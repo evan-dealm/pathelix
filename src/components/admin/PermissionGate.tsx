@@ -15,6 +15,8 @@ export const PERMISSION_LABELS: Record<string, string> = {
   manage_settings:     'Gérer les paramètres',
   api_access:          'Accès API',
   manage_integrations: 'Gérer les intégrations',
+  manage_sales: 'Devis, commandes, contrats et tarifs',
+  manage_billing: 'Factures et paiements',
 }
 
 /**

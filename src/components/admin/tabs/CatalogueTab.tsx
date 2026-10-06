@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { CustomerPanel } from '@/components/admin/commercial/CustomerPanel'
 import { fetchAllPages } from '@/lib/apiClient'
 import { CatalogClient, CatalogSite, CatalogProduct, Exutoire } from '@/lib/types'
 import { Btn, Modal, Field, Input, SelectInput, Textarea } from '../ui'
@@ -49,6 +50,7 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 200)
   const [modal, setModal] = useState<{ kind: 'new' } | { kind: 'edit'; client: CatalogClient } | null>(null)
+  const [customerId, setCustomerId] = useState<string | null>(null)
 
   function load() {
     setLoading(true)
@@ -137,7 +139,7 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
                 <tr key={c.id} className="border-b border-surface-100 hover:bg-surface-50 transition-colors group">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-surface-900">{c.name}</span>
+                      <button type="button" onClick={() => setCustomerId(c.id)} className="font-semibold text-surface-900 hover:text-brand-600 hover:underline" title="Ouvrir la fiche client">{c.name}</button>
                       {c.vip && <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5 font-bold">VIP</span>}
                     </div>
                   </td>
@@ -169,6 +171,7 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
       </div>
 
       {modal && <ClientFormModal mode={modal} onClose={() => setModal(null)} onSaved={() => { invalidateClientCache('/api/clients'); load() }} />}
+      {customerId && <CustomerPanel clientId={customerId} onClose={() => setCustomerId(null)} />}
     </div>
   )
 }

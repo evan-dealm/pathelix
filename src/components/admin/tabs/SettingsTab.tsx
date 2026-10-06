@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { apiRequest } from '@/lib/apiClient'
 import { usePlanningStore } from '@/stores/planningStore'
 import { IntegrationsPanel } from '../IntegrationsPanel'
+import { WebhooksPanel } from '../WebhooksPanel'
 import { ApiKeysPanel } from '../ApiKeysPanel'
 import { TRADES, TRADE_IDS, type TradeId } from '@/lib/trades'
 import { useTrade } from '@/providers/TradeProvider'
@@ -497,8 +498,9 @@ export function SettingsTab() {
       </div>
 
       {settingsSubTab === 'integrations' ? (
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-8">
           <IntegrationsPanel />
+          <WebhooksPanel />
         </div>
       ) : settingsSubTab === 'api' ? (
         <div className="flex-1 overflow-y-auto p-4">
