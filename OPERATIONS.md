@@ -50,6 +50,9 @@ Gates avant tout déploiement : `npm run lint`, `npm run typecheck`, `npm test`,
 - Les en-têtes de sécurité (`next.config.mjs`) sont figés **au build** dans la sortie standalone :
   `FORCE_HTTPS=false` (désactive HSTS) doit être positionné au moment du `docker compose build`,
   pas seulement au runtime. En production, laisser HSTS actif.
+- `NEXT_PUBLIC_SITE_URL` (origine publique du site vitrine) est lue **au build** elle aussi : les
+  pages du site sont statiques et y inscrivent leurs URL canoniques, le `sitemap.xml`, le
+  `robots.txt` et l'image Open Graph. Le compose la transmet en argument de build.
 - Fichiers déposés (photos, signatures) : `UPLOAD_DIR=/app/uploads`, volume `photo_storage`.
 - Redis doit tourner en `maxmemory-policy noeviction` (exigence BullMQ : une politique LRU peut
   évincer des jobs en attente). C'est le réglage du compose ; vérifier toute instance Redis

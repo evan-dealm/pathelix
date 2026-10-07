@@ -25,7 +25,7 @@ interface CaptureProps {
  *
  * On a desk the whole screen fits. On a phone a shrunk desktop screen is unreadable, so the
  * screenshot keeps a legible scale and the frame scrolls sideways instead — deliberately, inside
- * the frame only (it is focusable, so the keyboard can pan it too).
+ * the frame only (browsers make a scrollable area reachable from the keyboard by themselves).
  */
 export function Capture({
   src,
@@ -42,9 +42,6 @@ export function Capture({
     <figure>
       <div className={`frame ${className}`}>
         <div
-          tabIndex={0}
-          role="group"
-          aria-label="Capture d’écran, défilement horizontal sur petit écran"
           className={`relative overflow-x-auto overscroll-x-contain lg:overflow-hidden ${windowRatio}`}
         >
           <Image

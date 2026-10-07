@@ -289,7 +289,7 @@
 /* ─── Motion ────────────────────────────────────────────────────────────────── */
 
 /* One orchestrated moment on arrival: the headline settles, then the product rises into place
-   while the orbit is drawn once around it. Nothing loops. */
+   while the orbit is drawn once behind it. Nothing loops. */
 
 @keyframes site-rise {
   from {
@@ -316,20 +316,6 @@
 @keyframes site-draw {
   to {
     stroke-dashoffset: 0;
-  }
-}
-
-@keyframes site-travel {
-  from {
-    offset-distance: 0%;
-    opacity: 0;
-  }
-  8% {
-    opacity: 1;
-  }
-  to {
-    offset-distance: 100%;
-    opacity: 1;
   }
 }
 
@@ -366,11 +352,6 @@
 
 .orbit-draw-late {
   animation-delay: 900ms;
-}
-
-.orbit-point {
-  offset-rotate: 0deg;
-  animation: site-travel 2600ms cubic-bezier(0.45, 0.05, 0.25, 1) 700ms both;
 }
 
 .dialog-in {

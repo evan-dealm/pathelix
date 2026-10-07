@@ -1,5 +1,9 @@
 node_modules
 .next
+.next-site*
+# Original screenshots and the 108 MB master of the film: the website uses the copies in
+# src/assets/site and public/site-media.
+ecran/
 .git
 *.md
 .env*

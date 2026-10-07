@@ -100,6 +100,10 @@ désactive les actions correspondantes.
   exceptions explicites. Endpoints de notification push limités aux services push connus.
 - **Actions chauffeur hors ligne** : rejouables sans doublon (`Idempotency-Key`, réservation
   atomique en base) ; mises à jour de statut sérialisées par verrou de ligne.
+- **Formulaire de démonstration du site** (`POST /api/demo-requests`) : seul point d'écriture
+  anonyme. Corps validé (Zod), 5 demandes / 10 min par adresse, champ leurre contre les envois
+  automatiques, table hors organisation (`DemoRequest`) lisible par le superadmin uniquement,
+  purge au-delà de 3 ans.
 - Limitation globale dans le middleware : 600 req/min par utilisateur connecté, 300 par IP pour le
   trafic anonyme (signature du jeton vérifiée avant de choisir la clé) ; corps limités à 5 Mo.
 

@@ -68,7 +68,10 @@ offres.
 
 | URL | Contenu |
 |---|---|
-| `/` | Présentation du produit (redirige un utilisateur connecté vers son espace) |
+| `/` | Site vitrine : accueil (redirige un utilisateur connecté vers son espace) |
+| `/produit`, `/metiers`, `/securite` | Site vitrine : produit par module, métiers servis, sécurité |
+| `/contact` | Demande de démonstration (enregistrée, lue dans Superadmin → Demandes de démo) |
+| `/mentions-legales`, `/confidentialite` | Pages légales du site |
 | `/login` | Connexion |
 | `/track/<jeton>` | Suivi d'une intervention par le client final (lien à durée limitée) |
 | `/status` | État du service |
@@ -119,7 +122,8 @@ d'OPERATIONS.md §8 n'est pas validée).
 
 - Interface en français uniquement (`next-intl` installé, non câblé).
 - OCR des tickets : nécessite le déploiement de l'AI Engine (non fourni dans le compose).
-- Le poids total transporté (PTAC) n'est pas contraint, seul le volume des bennes l'est.
+- Le poids transporté (charge utile / PTAC) n'est contraint que si le poids de la mission est
+  connu ou estimable (matière × volume) ; sinon seul le volume des bennes l'est.
 - Saisie en langage naturel : indisponible sans Ollama.
 - Temps de conduite : le calcul remet le compteur de conduite continue à zéro après un passage
   à l'exutoire (déchargement), alors que le règlement CE 561/2006 n'assimile pas un arrêt de

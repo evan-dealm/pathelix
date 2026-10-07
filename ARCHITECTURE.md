@@ -23,13 +23,16 @@ données. Exploitation : OPERATIONS.md. Sécurité : SECURITY.md.
 src/
 ├── middleware.ts        Authentification, ré-injection de l'identité, RBAC, clés API, rate limit global
 ├── app/
-│   ├── page.tsx         Page publique (produit) ; session → redirection vers l'espace
-│   ├── admin/           Interface exploitant/admin (onglets : tableau de bord, missions, tournées,
+│   ├── (site)/          Site vitrine public : son propre layout racine, sa feuille de style
+│   │                    (site.css + tailwind.site.config.js), aucun provider de l'application.
+│   │                    Pages statiques ; médias dans public/site-media, captures dans src/assets/site
+│   ├── (app)/           Application (mêmes URL qu'avant) : layout avec providers et service worker
+│   ├── (app)/admin/     Interface exploitant/admin (onglets : tableau de bord, missions, tournées,
 │   │                    statistiques, historique, catalogue, chauffeurs, camions, exutoires,
 │   │                    récurrentes, utilisateurs, audit, télématique, paramètres, planning semaine)
-│   ├── driver/[id]/     Application chauffeur (mobile, hors ligne)
-│   ├── superadmin/      Console multi-organisations
-│   ├── track/[token]/   Suivi client public
+│   ├── (app)/driver/[id]/  Application chauffeur (mobile, hors ligne)
+│   ├── (app)/superadmin/   Console multi-organisations
+│   ├── (app)/track/[token]/ Suivi client public
 │   └── api/             ~120 routes REST
 ├── lib/
 │   ├── tenantDb.ts      getTenantDb() — isolation structurelle (voir SECURITY.md)
@@ -39,7 +42,7 @@ src/
 │   ├── syncQueue.ts, idempotency.ts   Synchronisation hors ligne (§6)
 │   └── trackdechets/    Client GraphQL + validations BSD (HALT dans le code)
 ├── workers/             vrp, pdf, mlProfile, recurringMissions, auditRetention (+ lifecycle.ts)
-├── components/          admin/, driver/, landing/, ui/, cartes (FleetMap, LiveTrackingMap)
+├── components/          admin/, driver/, site/ (site vitrine), ui/, cartes (FleetMap, LiveTrackingMap)
 ├── providers/           DataProvider (chargement du planning), TradeProvider (vocabulaire métier)
 └── stores/planningStore.ts  Plans du jour, annuler/rétablir, synchronisation base
 ```
