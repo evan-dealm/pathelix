@@ -15,8 +15,18 @@ import { unscopedPrisma } from '@/lib/tenantDb'
  * condition of every query below — keep it that way.
  */
 
-export interface LivePosition { driverId: string; lat: number; lng: number; speedKmh: number; ignition: boolean; updatedAt: number }
-export interface SpeedPoint { minuteOfDay: number; speedKmh: number }
+export interface LivePosition {
+  driverId: string
+  lat: number
+  lng: number
+  speedKmh: number
+  ignition: boolean
+  updatedAt: number
+}
+export interface SpeedPoint {
+  minuteOfDay: number
+  speedKmh: number
+}
 
 const DAY_MS = 86_400_000
 /** No time zone is further than 14 h from UTC: a local day always sits inside this margin. */
@@ -34,10 +44,21 @@ function safeTimeZone(timeZone: string): string {
 }
 
 /** Latest position of each driver of the tenant since `since` (one row per driver). */
-export async function latestPositions(tenantId: string, opts: { since: Date; driverIds?: string[] }): Promise<LivePosition[]> {
+export async function latestPositions(
+  tenantId: string,
+  opts: { since: Date; driverIds?: string[] },
+): Promise<LivePosition[]> {
   const all = !opts.driverIds
   const ids = opts.driverIds ?? []
-  const rows = await unscopedPrisma.$queryRaw<Array<{ driverId: string; latitude: number; longitude: number; speedKmh: number | null; recordedAt: Date }>>`
+  const rows = await unscopedPrisma.$queryRaw<
+    Array<{
+      driverId: string
+      latitude: number
+      longitude: number
+      speedKmh: number | null
+      recordedAt: Date
+    }>
+  >`
     SELECT d.id AS "driverId", p.latitude, p.longitude, p."speedKmh", p."recordedAt"
     FROM "Driver" d
     CROSS JOIN LATERAL (
@@ -51,9 +72,13 @@ export async function latestPositions(tenantId: string, opts: { since: Date; dri
     WHERE d."tenantId" = ${tenantId}
       AND (${all}::boolean OR d.id = ANY(${ids}::text[]))`
   return rows.map(r => ({
-    driverId: r.driverId, lat: r.latitude, lng: r.longitude, speedKmh: r.speedKmh ?? 0,
+    driverId: r.driverId,
+    lat: r.latitude,
+    lng: r.longitude,
+    speedKmh: r.speedKmh ?? 0,
     // The sources do not all report ignition: a moving truck has its engine on.
-    ignition: (r.speedKmh ?? 0) > 0, updatedAt: r.recordedAt.getTime(),
+    ignition: (r.speedKmh ?? 0) > 0,
+    updatedAt: r.recordedAt.getTime(),
   }))
 }
 
@@ -62,7 +87,12 @@ export async function latestPositions(tenantId: string, opts: { since: Date; dri
  * minute, per driver. Minutes are local to the tenant, which is what the dispatcher's 05h–22h
  * graph plots — not the server's clock.
  */
-export async function speedHistory(tenantId: string, date: string, timeZone: string, driverIds?: string[]): Promise<Record<string, SpeedPoint[]>> {
+export async function speedHistory(
+  tenantId: string,
+  date: string,
+  timeZone: string,
+  driverIds?: string[],
+): Promise<Record<string, SpeedPoint[]>> {
   const utcMidnight = /^\d{4}-\d{2}-\d{2}$/.test(date) ? Date.parse(`${date}T00:00:00Z`) : NaN
   if (Number.isNaN(utcMidnight)) return {}
   const zone = safeTimeZone(timeZone)
@@ -71,7 +101,9 @@ export async function speedHistory(tenantId: string, date: string, timeZone: str
   // The UTC window only narrows the index scan; the local-day filter below is the real one.
   const from = new Date(utcMidnight - TZ_MARGIN_MS).toISOString()
   const to = new Date(utcMidnight + DAY_MS + TZ_MARGIN_MS).toISOString()
-  const rows = await unscopedPrisma.$queryRaw<Array<{ driverId: string; minute: number; speedKmh: number }>>`
+  const rows = await unscopedPrisma.$queryRaw<
+    Array<{ driverId: string; minute: number; speedKmh: number }>
+  >`
     SELECT "driverId", minute, (array_agg("speedKmh" ORDER BY "recordedAt" DESC))[1] AS "speedKmh"
     FROM (
       SELECT "driverId", "speedKmh", "recordedAt",
@@ -88,6 +120,7 @@ export async function speedHistory(tenantId: string, date: string, timeZone: str
     GROUP BY "driverId", minute
     ORDER BY "driverId", minute`
   const out: Record<string, SpeedPoint[]> = {}
-  for (const r of rows) (out[r.driverId] ??= []).push({ minuteOfDay: Number(r.minute), speedKmh: Number(r.speedKmh) })
+  for (const r of rows)
+    (out[r.driverId] ??= []).push({ minuteOfDay: Number(r.minute), speedKmh: Number(r.speedKmh) })
   return out
 }

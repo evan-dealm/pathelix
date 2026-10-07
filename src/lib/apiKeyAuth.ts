@@ -18,20 +18,20 @@ export const API_KEY_ROLE = 'dispatcher'
 
 const RESOURCE_PATHS: Record<string, RegExp> = {
   missions: /^\/api\/missions(?:\/|$)/,
-  drivers:  /^\/api\/drivers(?:\/|$)/,
+  drivers: /^\/api\/drivers(?:\/|$)/,
   vehicles: /^\/api\/vehicles(?:\/|$)/,
-  clients:  /^\/api\/clients(?:\/|$)/,
-  sites:    /^\/api\/sites(?:\/|$)/,
-  plans:    /^\/api\/plans(?:\/|$)/,
+  clients: /^\/api\/clients(?:\/|$)/,
+  sites: /^\/api\/sites(?:\/|$)/,
+  plans: /^\/api\/plans(?:\/|$)/,
   optimize: /^\/api\/optimize(?:\/|$)/,
-  reports:  /^\/api\/reports(?:\/|$)/,
+  reports: /^\/api\/reports(?:\/|$)/,
   containers: /^\/api\/(?:containers|container-types)(?:\/|$)/,
-  weighings:  /^\/api\/weighings(?:\/|$)/,
-  quotes:     /^\/api\/quotes(?:\/|$)/,
-  orders:     /^\/api\/orders(?:\/|$)/,
-  contracts:  /^\/api\/contracts(?:\/|$)/,
-  invoices:   /^\/api\/invoices(?:\/|$)/,
-  payments:   /^\/api\/payments(?:\/|$)/,
+  weighings: /^\/api\/weighings(?:\/|$)/,
+  quotes: /^\/api\/quotes(?:\/|$)/,
+  orders: /^\/api\/orders(?:\/|$)/,
+  contracts: /^\/api\/contracts(?:\/|$)/,
+  invoices: /^\/api\/invoices(?:\/|$)/,
+  payments: /^\/api\/payments(?:\/|$)/,
 }
 
 /**
@@ -39,9 +39,7 @@ const RESOURCE_PATHS: Record<string, RegExp> = {
  * one-time link that opens a customer account: a `clients:write` key could have minted itself
  * a login to any customer's documents and invoices.
  */
-const NEVER_BY_API_KEY: RegExp[] = [
-  /^\/api\/clients\/[^/]+\/portal-users(?:\/|$)/,
-]
+const NEVER_BY_API_KEY: RegExp[] = [/^\/api\/clients\/[^/]+\/portal-users(?:\/|$)/]
 
 /**
  * Permissions a scope brings on top of the dispatcher defaults (`API_KEY_ROLE`). Billing is not
@@ -88,19 +86,22 @@ export function hashApiKey(raw: string): string {
 }
 
 export interface ApiKeyIdentity {
-  id:       string
+  id: string
   tenantId: string
-  scopes:   string[]
+  scopes: string[]
 }
 
-const CACHE_TTL_MS      = 30_000
-const CACHE_MAX         = 2_000
+const CACHE_TTL_MS = 30_000
+const CACHE_MAX = 2_000
 const TOUCH_INTERVAL_MS = 5 * 60_000
 // Kept on globalThis: the middleware and the route handlers are separate bundles with their own
 // module instances in the same process — a module-level Map would let the revoke route clear
 // its copy while the middleware kept serving the revoked key from the other.
 type CacheEntry = { identity: ApiKeyIdentity | null; checkedAt: number }
-const _g = globalThis as typeof globalThis & { __pathelixApiKeyCache?: Map<string, CacheEntry>; __pathelixApiKeyTouch?: Map<string, number> }
+const _g = globalThis as typeof globalThis & {
+  __pathelixApiKeyCache?: Map<string, CacheEntry>
+  __pathelixApiKeyTouch?: Map<string, number>
+}
 const _cache = (_g.__pathelixApiKeyCache ??= new Map<string, CacheEntry>())
 const _lastTouch = (_g.__pathelixApiKeyTouch ??= new Map<string, number>())
 
@@ -121,12 +122,18 @@ export async function authenticateApiKey(raw: string): Promise<ApiKeyIdentity | 
   // Cross-tenant by design: the key itself is what identifies the tenant (like webhook secrets).
   const { unscopedPrisma: prisma } = await import('@/lib/tenantDb')
   const row = await prisma.apiKey.findUnique({
-    where:  { keyHash },
+    where: { keyHash },
     select: { id: true, tenantId: true, scopes: true, revoked: true, expiresAt: true },
   })
   const valid = row && !row.revoked && (!row.expiresAt || row.expiresAt.getTime() > now)
   const identity: ApiKeyIdentity | null = valid
-    ? { id: row.id, tenantId: row.tenantId, scopes: Array.isArray(row.scopes) ? row.scopes.filter((s): s is string => typeof s === 'string') : [] }
+    ? {
+        id: row.id,
+        tenantId: row.tenantId,
+        scopes: Array.isArray(row.scopes)
+          ? row.scopes.filter((s): s is string => typeof s === 'string')
+          : [],
+      }
     : null
 
   if (_cache.size >= CACHE_MAX) _cache.clear()
@@ -134,8 +141,14 @@ export async function authenticateApiKey(raw: string): Promise<ApiKeyIdentity | 
 
   if (identity && now - (_lastTouch.get(identity.id) ?? 0) > TOUCH_INTERVAL_MS) {
     _lastTouch.set(identity.id, now)
-    prisma.apiKey.update({ where: { id: identity.id }, data: { lastUsedAt: new Date(now) } })
-      .catch(err => log.warn('lastUsedAt update failed', { keyId: identity.id, err: err instanceof Error ? err.message : String(err) }))
+    prisma.apiKey
+      .update({ where: { id: identity.id }, data: { lastUsedAt: new Date(now) } })
+      .catch(err =>
+        log.warn('lastUsedAt update failed', {
+          keyId: identity.id,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      )
   }
   return identity
 }
@@ -149,13 +162,21 @@ export async function apiKeyPermissions(keyId: string): Promise<Set<string>> {
   const now = Date.now()
   let scopes: string[] | null = null
   for (const entry of _cache.values()) {
-    if (entry.identity?.id === keyId && now - entry.checkedAt < CACHE_TTL_MS) { scopes = entry.identity.scopes; break }
+    if (entry.identity?.id === keyId && now - entry.checkedAt < CACHE_TTL_MS) {
+      scopes = entry.identity.scopes
+      break
+    }
   }
   if (!scopes && process.env.USE_MOCK_DATA === 'false') {
     const { unscopedPrisma: prisma } = await import('@/lib/tenantDb')
-    const row = await prisma.apiKey.findUnique({ where: { id: keyId }, select: { scopes: true, revoked: true, expiresAt: true } })
+    const row = await prisma.apiKey.findUnique({
+      where: { id: keyId },
+      select: { scopes: true, revoked: true, expiresAt: true },
+    })
     if (row && !row.revoked && (!row.expiresAt || row.expiresAt.getTime() > now)) {
-      scopes = Array.isArray(row.scopes) ? row.scopes.filter((s): s is string => typeof s === 'string') : []
+      scopes = Array.isArray(row.scopes)
+        ? row.scopes.filter((s): s is string => typeof s === 'string')
+        : []
     }
   }
   const granted = new Set<string>()
@@ -166,7 +187,9 @@ export async function apiKeyPermissions(keyId: string): Promise<Set<string>> {
   return granted
 }
 
-onBust('apiKeys', () => { _cache.clear() })
+onBust('apiKeys', () => {
+  _cache.clear()
+})
 
 /** Drops cached identities so a revocation takes effect at once, on every instance. */
 export function invalidateApiKeyCache(): void {

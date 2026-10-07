@@ -4,8 +4,8 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 vi.mock('@/lib/traffic/trafficTarBuilder', () => ({
-  buildTrafficTar:  vi.fn(() => null),
-  writeTrafficTar:  vi.fn(),
+  buildTrafficTar: vi.fn(() => null),
+  writeTrafficTar: vi.fn(),
 }))
 
 type Row = { latitude: number; longitude: number; speedKmh: number | null; recordedAt: Date }
@@ -38,7 +38,9 @@ describe('collectGpsSpeeds', () => {
     const before = Date.now()
     await collectGpsSpeeds()
     const args = mockFindPositions.mock.calls[0][0] as {
-      where: { recordedAt: { gte: Date }; speedKmh: { gt: number } }; distinct: string[]; orderBy: { recordedAt: string }
+      where: { recordedAt: { gte: Date }; speedKmh: { gt: number } }
+      distinct: string[]
+      orderBy: { recordedAt: string }
     }
     expect(args.where.speedKmh).toEqual({ gt: 2 })
     // The cut-off is taken a few ms after `before`, so the window seen from here is ≤ 5 min.
@@ -50,9 +52,13 @@ describe('collectGpsSpeeds', () => {
 
   it('returns anonymous observations: coordinates, speed and time, no driver or tenant', async () => {
     const recordedAt = new Date(Date.now() - 5000)
-    mockFindPositions.mockResolvedValueOnce([{ latitude: 45.9, longitude: 6.1, speedKmh: 50, recordedAt }])
+    mockFindPositions.mockResolvedValueOnce([
+      { latitude: 45.9, longitude: 6.1, speedKmh: 50, recordedAt },
+    ])
     const result = await collectGpsSpeeds()
-    expect(result).toEqual([{ lat: 45.9, lng: 6.1, speedKmh: 50, timestamp: recordedAt.getTime(), source: 'gps' }])
+    expect(result).toEqual([
+      { lat: 45.9, lng: 6.1, speedKmh: 50, timestamp: recordedAt.getTime(), source: 'gps' },
+    ])
   })
 
   it('returns empty array when the database is unavailable', async () => {

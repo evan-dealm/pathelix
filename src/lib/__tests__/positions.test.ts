@@ -2,14 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // The SQL itself (latest row per driver, local-day grouping, tenant isolation) is exercised on a
 // real PostgreSQL by .manualtest/positions-flow.ts; these tests pin what surrounds it.
-const queryRaw = vi.hoisted(() => vi.fn(async (_sql: string, _values: unknown[]) => [] as unknown[]))
+const queryRaw = vi.hoisted(() =>
+  vi.fn(async (_sql: string, _values: unknown[]) => [] as unknown[]),
+)
 vi.mock('@/lib/tenantDb', () => ({
-  unscopedPrisma: { $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => queryRaw(strings.join('?'), values) },
+  unscopedPrisma: {
+    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) =>
+      queryRaw(strings.join('?'), values),
+  },
 }))
 
 import { latestPositions, speedHistory } from '../positions'
 
-beforeEach(() => { vi.clearAllMocks() })
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 const lastCall = () => ({ sql: queryRaw.mock.calls[0][0], values: queryRaw.mock.calls[0][1] })
 
 describe('latestPositions', () => {
@@ -44,7 +51,14 @@ describe('latestPositions', () => {
       { driverId: 'd2', latitude: 46, longitude: 6.2, speedKmh: null, recordedAt: at },
     ])
     expect(await latestPositions('tenant-a', { since: new Date(0) })).toEqual([
-      { driverId: 'd1', lat: 45.9, lng: 6.1, speedKmh: 42, ignition: true, updatedAt: at.getTime() },
+      {
+        driverId: 'd1',
+        lat: 45.9,
+        lng: 6.1,
+        speedKmh: 42,
+        ignition: true,
+        updatedAt: at.getTime(),
+      },
       { driverId: 'd2', lat: 46, lng: 6.2, speedKmh: 0, ignition: false, updatedAt: at.getTime() },
     ])
   })
@@ -56,12 +70,16 @@ describe('speedHistory', () => {
     const { sql, values } = lastCall()
     expect(sql).toContain('"tenantId" = ?')
     expect(sql).toContain('GROUP BY "driverId", minute')
-    expect(values).toEqual(expect.arrayContaining(['tenant-a', 'Europe/Paris', '2026-07-01', false, ['d1']]))
+    expect(values).toEqual(
+      expect.arrayContaining(['tenant-a', 'Europe/Paris', '2026-07-01', false, ['d1']]),
+    )
   })
 
   it('narrows the scan to a window wide enough for any time zone', async () => {
     await speedHistory('tenant-a', '2026-07-01', 'Europe/Paris')
-    const dates = lastCall().values.filter((v): v is string => typeof v === 'string' && v.endsWith('Z')).map(v => Date.parse(v))
+    const dates = lastCall()
+      .values.filter((v): v is string => typeof v === 'string' && v.endsWith('Z'))
+      .map(v => Date.parse(v))
     expect(Math.min(...dates)).toBeLessThanOrEqual(Date.parse('2026-06-30T12:00:00Z'))
     expect(Math.max(...dates)).toBeGreaterThanOrEqual(Date.parse('2026-07-02T12:00:00Z'))
   })
@@ -73,7 +91,10 @@ describe('speedHistory', () => {
       { driverId: 'd2', minute: 540, speedKmh: 70 },
     ])
     expect(await speedHistory('tenant-a', '2026-01-15', 'Europe/Paris')).toEqual({
-      d1: [{ minuteOfDay: 540, speedKmh: 20 }, { minuteOfDay: 541, speedKmh: 0 }],
+      d1: [
+        { minuteOfDay: 540, speedKmh: 20 },
+        { minuteOfDay: 541, speedKmh: 0 },
+      ],
       d2: [{ minuteOfDay: 540, speedKmh: 70 }],
     })
   })
@@ -86,7 +107,9 @@ describe('speedHistory', () => {
 
   it('returns nothing for a malformed date without querying', async () => {
     expect(await speedHistory('tenant-a', 'nope', 'Europe/Paris')).toEqual({})
-    expect(await speedHistory('tenant-a', "2026-07-01'; DROP TABLE x; --", 'Europe/Paris')).toEqual({})
+    expect(await speedHistory('tenant-a', "2026-07-01'; DROP TABLE x; --", 'Europe/Paris')).toEqual(
+      {},
+    )
     expect(queryRaw).not.toHaveBeenCalled()
   })
 })

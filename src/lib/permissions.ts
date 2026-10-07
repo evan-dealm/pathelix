@@ -23,20 +23,33 @@ export const ALL_PERMISSIONS = [
   'manage_billing',
 ] as const
 
-export type Permission = typeof ALL_PERMISSIONS[number]
+export type Permission = (typeof ALL_PERMISSIONS)[number]
 
 export const DEFAULT_PERMISSIONS: Record<string, Permission[]> = {
-  admin:      [...ALL_PERMISSIONS],
+  admin: [...ALL_PERMISSIONS],
   superadmin: [...ALL_PERMISSIONS],
-  dispatcher: ['optimize', 'manage_missions', 'manage_drivers', 'view_reports', 'manage_vehicles', 'view_costs', 'manage_sales'],
-  driver:     [],
+  dispatcher: [
+    'optimize',
+    'manage_missions',
+    'manage_drivers',
+    'view_reports',
+    'manage_vehicles',
+    'view_costs',
+    'manage_sales',
+  ],
+  driver: [],
 }
 
 // On globalThis: the middleware and the route handlers are separate bundles (separate module
 // instances, same process) — a module-level Map let a route invalidate its own copy while the
 // middleware kept serving the stale entry from the other until the TTL expired.
-const _gp = globalThis as typeof globalThis & { __pathelixPermCache?: Map<string, { perms: Set<string>; ts: number }> }
-const _permCache = (_gp.__pathelixPermCache ??= new Map<string, { perms: Set<string>; ts: number }>())
+const _gp = globalThis as typeof globalThis & {
+  __pathelixPermCache?: Map<string, { perms: Set<string>; ts: number }>
+}
+const _permCache = (_gp.__pathelixPermCache ??= new Map<
+  string,
+  { perms: Set<string>; ts: number }
+>())
 const PERM_CACHE_TTL = 60_000
 
 export async function hasPermission(
@@ -44,7 +57,6 @@ export async function hasPermission(
   role: string,
   permission: Permission,
 ): Promise<boolean> {
-
   if (role === 'admin' || role === 'superadmin') return true
 
   // An API key is not a user: it has the dispatcher defaults plus what its scopes bring. The
@@ -67,10 +79,8 @@ export async function hasPermission(
 
   let perms: Set<string>
   if (customPerms.length > 0) {
-
     perms = new Set(customPerms.map(p => p.permission))
   } else {
-
     perms = new Set(DEFAULT_PERMISSIONS[role] ?? [])
   }
 
@@ -78,7 +88,9 @@ export async function hasPermission(
   return perms.has(permission)
 }
 
-onBust('perm', userId => { _permCache.delete(userId) })
+onBust('perm', userId => {
+  _permCache.delete(userId)
+})
 
 /** Drops a user's cached permissions here and on every other instance. */
 export function invalidatePermCache(userId: string): void {

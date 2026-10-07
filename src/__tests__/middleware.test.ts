@@ -3,7 +3,9 @@ import { NextRequest } from 'next/server'
 
 const { mockVerifySession, mockCheckTenantSuspension } = vi.hoisted(() => {
   const mockVerifySession = vi.fn()
-  const mockCheckTenantSuspension = vi.fn(async (): Promise<import('next/server').NextResponse | null> => null)
+  const mockCheckTenantSuspension = vi.fn(
+    async (): Promise<import('next/server').NextResponse | null> => null,
+  )
   return { mockVerifySession, mockCheckTenantSuspension }
 })
 
@@ -15,7 +17,7 @@ vi.mock('@/lib/session', () => ({
 const mockIsSessionCurrent = vi.hoisted(() => vi.fn(async () => true))
 vi.mock('@/lib/sessionRevocation', () => ({ isSessionCurrent: mockIsSessionCurrent }))
 
-vi.mock('@/lib/data/context', async (importOriginal) => {
+vi.mock('@/lib/data/context', async importOriginal => {
   const original = await importOriginal<typeof import('@/lib/data/context')>()
   return {
     ...original,
@@ -24,7 +26,7 @@ vi.mock('@/lib/data/context', async (importOriginal) => {
 })
 
 const mockAuthenticateApiKey = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/apiKeyAuth', async (importOriginal) => {
+vi.mock('@/lib/apiKeyAuth', async importOriginal => {
   const original = await importOriginal<typeof import('@/lib/apiKeyAuth')>()
   return { ...original, authenticateApiKey: mockAuthenticateApiKey }
 })
@@ -181,10 +183,10 @@ describe('middleware', () => {
     mockVerifySession.mockResolvedValue(makeSession({ role: 'admin' }))
     const req = makeReq('/api/drivers', {
       headers: {
-        'x-user-id':   'attacker-id',
+        'x-user-id': 'attacker-id',
         'x-user-role': 'superadmin',
         'x-tenant-id': 'other-tenant',
-        'cookie':      'session=token',
+        cookie: 'session=token',
       },
     })
     // We verify through the fact that the middleware succeeds without superadmin role
@@ -195,19 +197,30 @@ describe('middleware', () => {
   })
 
   it('re-injects identity headers from the verified session, not from the client', async () => {
-    mockVerifySession.mockResolvedValue(makeSession({ role: 'admin', tenantId: 'tenant-1', sub: 'user-1' }))
-    const res = await middleware(makeReq('/api/drivers', {
-      headers: { 'x-user-role': 'superadmin', 'x-tenant-id': 'other-tenant', 'x-driver-ref': 'd9', cookie: 'session=t' },
-    }))
+    mockVerifySession.mockResolvedValue(
+      makeSession({ role: 'admin', tenantId: 'tenant-1', sub: 'user-1' }),
+    )
+    const res = await middleware(
+      makeReq('/api/drivers', {
+        headers: {
+          'x-user-role': 'superadmin',
+          'x-tenant-id': 'other-tenant',
+          'x-driver-ref': 'd9',
+          cookie: 'session=t',
+        },
+      }),
+    )
     expect(res.headers.get('x-middleware-request-x-tenant-id')).toBe('tenant-1')
     expect(res.headers.get('x-middleware-request-x-user-role')).toBe('admin')
     expect(res.headers.get('x-middleware-request-x-driver-ref')).toBeNull()
   })
 
   it('strips a client-supplied x-tenant-id on the Nessy webhook path (tenant comes from the HMAC secret)', async () => {
-    const res = await middleware(makeReq('/api/webhooks/nessy', {
-      headers: { 'x-tenant-id': 'tenant-from-nessy' },
-    }))
+    const res = await middleware(
+      makeReq('/api/webhooks/nessy', {
+        headers: { 'x-tenant-id': 'tenant-from-nessy' },
+      }),
+    )
     expect(res.status).toBe(200)
     expect(res.headers.get('x-middleware-request-x-tenant-id')).toBeNull()
   })
@@ -215,26 +228,46 @@ describe('middleware', () => {
   // ─── Driver deny-by-default ───────────────────────────────────────────────
 
   it.each([
-    '/api/clients', '/api/vehicles', '/api/settings', '/api/integrations', '/api/kpi-history',
-    '/api/permissions', '/api/reports/co2', '/api/tours/pdf', '/api/driver-list', '/api/users',
-  ])('denies a driver session on tenant-wide route %s', async (path) => {
-    mockVerifySession.mockResolvedValue(makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }))
+    '/api/clients',
+    '/api/vehicles',
+    '/api/settings',
+    '/api/integrations',
+    '/api/kpi-history',
+    '/api/permissions',
+    '/api/reports/co2',
+    '/api/tours/pdf',
+    '/api/driver-list',
+    '/api/users',
+  ])('denies a driver session on tenant-wide route %s', async path => {
+    mockVerifySession.mockResolvedValue(
+      makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }),
+    )
     const res = await middleware(makeReq(path, { cookie: 'session=t' }))
     expect(res.status).toBe(403)
   })
 
   it.each([
-    '/api/driver-plan/d1', '/api/driver-status/update', '/api/driver-photos', '/api/incidents',
-    '/api/mission-comments', '/api/auth/me', '/api/ai/ocr', '/api/files/t/photos/x.jpg',
-  ])('lets a driver session reach driver route %s', async (path) => {
-    mockVerifySession.mockResolvedValue(makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }))
+    '/api/driver-plan/d1',
+    '/api/driver-status/update',
+    '/api/driver-photos',
+    '/api/incidents',
+    '/api/mission-comments',
+    '/api/auth/me',
+    '/api/ai/ocr',
+    '/api/files/t/photos/x.jpg',
+  ])('lets a driver session reach driver route %s', async path => {
+    mockVerifySession.mockResolvedValue(
+      makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }),
+    )
     const res = await middleware(makeReq(path, { cookie: 'session=t' }))
     expect(res.status).toBe(200)
     expect(res.headers.get('x-middleware-request-x-driver-ref')).toBe('d1')
   })
 
   it("redirects a driver opening another driver's page (or the picker) to its own page", async () => {
-    mockVerifySession.mockResolvedValue(makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }))
+    mockVerifySession.mockResolvedValue(
+      makeSession({ role: 'driver', sub: 'u-d1', driverRef: 'd1' }),
+    )
     for (const path of ['/driver', '/driver/d2']) {
       const res = await middleware(makeReq(path, { cookie: 'session=t' }))
       expect(res.status).toBe(307)
@@ -258,7 +291,9 @@ describe('middleware', () => {
     mockVerifySession.mockResolvedValue(null)
     let last = 401
     for (let i = 0; i < 305; i++) {
-      const res = await middleware(makeReq('/api/drivers', { ip: `10.0.${i % 250}.${i}, 203.0.113.77` }))
+      const res = await middleware(
+        makeReq('/api/drivers', { ip: `10.0.${i % 250}.${i}, 203.0.113.77` }),
+      )
       last = res.status
     }
     expect(last).toBe(429)
@@ -268,11 +303,15 @@ describe('middleware', () => {
     const sameIp = '198.51.100.9'
     mockVerifySession.mockResolvedValue(makeSession({ sub: 'rl-user-a' }))
     let lastA = 200
-    for (let i = 0; i < 601; i++) lastA = (await middleware(makeReq('/api/drivers', { cookie: 'session=a', ip: sameIp }))).status
+    for (let i = 0; i < 601; i++)
+      lastA = (await middleware(makeReq('/api/drivers', { cookie: 'session=a', ip: sameIp })))
+        .status
     expect(lastA).toBe(429)
 
     mockVerifySession.mockResolvedValue(makeSession({ sub: 'rl-user-b' }))
-    expect((await middleware(makeReq('/api/drivers', { cookie: 'session=b', ip: sameIp }))).status).toBe(200)
+    expect(
+      (await middleware(makeReq('/api/drivers', { cookie: 'session=b', ip: sameIp }))).status,
+    ).toBe(200)
   })
 
   // ─── Auth enforcement ─────────────────────────────────────────────────────
@@ -299,12 +338,14 @@ describe('middleware', () => {
   // ─── Header injection ─────────────────────────────────────────────────────
 
   it('injects x-tenant-id, x-user-id, x-user-role from session', async () => {
-    mockVerifySession.mockResolvedValue(makeSession({
-      sub: 'user-42',
-      role: 'admin',
-      tenantId: 'tenant-XYZ',
-      trade: 'waste',
-    }))
+    mockVerifySession.mockResolvedValue(
+      makeSession({
+        sub: 'user-42',
+        role: 'admin',
+        tenantId: 'tenant-XYZ',
+        trade: 'waste',
+      }),
+    )
     const req = makeReq('/api/drivers', { cookie: 'session=tok' })
     const res = await middleware(req)
     expect(res.status).toBe(200)
@@ -340,11 +381,13 @@ describe('middleware', () => {
   })
 
   it('allows impersonating superadmin to exit via /api/superadmin/exit-impersonation', async () => {
-    mockVerifySession.mockResolvedValue(makeSession({
-      role: 'admin',
-      sub: 'sa:real-sa-id',
-      trade: 'waste',
-    }))
+    mockVerifySession.mockResolvedValue(
+      makeSession({
+        role: 'admin',
+        sub: 'sa:real-sa-id',
+        trade: 'waste',
+      }),
+    )
     const req = makeReq('/api/superadmin/exit-impersonation', { cookie: 'session=tok' })
     const res = await middleware(req)
     // Should not 403 — the exit-impersonation exemption applies
@@ -375,12 +418,14 @@ describe('middleware', () => {
   })
 
   it('redirects driver to their page when accessing /admin', async () => {
-    mockVerifySession.mockResolvedValue(makeSession({
-      role: 'driver',
-      sub: 'driver-1',
-      driverRef: 'DRV-42',
-      trade: 'waste',
-    }))
+    mockVerifySession.mockResolvedValue(
+      makeSession({
+        role: 'driver',
+        sub: 'driver-1',
+        driverRef: 'DRV-42',
+        trade: 'waste',
+      }),
+    )
     const req = makeReq('/admin', { cookie: 'session=tok' })
     const res = await middleware(req)
     expect(res.status).toBe(307)
@@ -430,11 +475,19 @@ describe('middleware', () => {
 })
 
 describe('middleware — X-API-Key', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('authenticates a scoped key and injects its tenant as a dispatcher', async () => {
-    mockAuthenticateApiKey.mockResolvedValue({ id: 'k1', tenantId: 'tenant-9', scopes: ['missions:read'] })
-    const res = await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_x' } }))
+    mockAuthenticateApiKey.mockResolvedValue({
+      id: 'k1',
+      tenantId: 'tenant-9',
+      scopes: ['missions:read'],
+    })
+    const res = await middleware(
+      makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_x' } }),
+    )
     expect(res.status).toBe(200)
     expect(res.headers.get('x-middleware-request-x-tenant-id')).toBe('tenant-9')
     expect(res.headers.get('x-middleware-request-x-user-id')).toBe('apikey:k1')
@@ -442,31 +495,67 @@ describe('middleware — X-API-Key', () => {
   })
 
   it('403 when no scope covers the route (deny by default)', async () => {
-    mockAuthenticateApiKey.mockResolvedValue({ id: 'k1', tenantId: 'tenant-9', scopes: ['missions:read'] })
-    expect((await middleware(makeReq('/api/missions', { method: 'POST', headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
-    expect((await middleware(makeReq('/api/users', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
-    expect((await middleware(makeReq('/api/api-keys', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
+    mockAuthenticateApiKey.mockResolvedValue({
+      id: 'k1',
+      tenantId: 'tenant-9',
+      scopes: ['missions:read'],
+    })
+    expect(
+      (
+        await middleware(
+          makeReq('/api/missions', { method: 'POST', headers: { 'x-api-key': 'ef_live_x' } }),
+        )
+      ).status,
+    ).toBe(403)
+    expect(
+      (await middleware(makeReq('/api/users', { headers: { 'x-api-key': 'ef_live_x' } }))).status,
+    ).toBe(403)
+    expect(
+      (await middleware(makeReq('/api/api-keys', { headers: { 'x-api-key': 'ef_live_x' } })))
+        .status,
+    ).toBe(403)
   })
 
   it('a billing key reaches the invoices, a customer key never reaches portal invitations', async () => {
-    mockAuthenticateApiKey.mockResolvedValue({ id: 'k2', tenantId: 'tenant-9', scopes: ['invoices:read', 'clients:write'] })
+    mockAuthenticateApiKey.mockResolvedValue({
+      id: 'k2',
+      tenantId: 'tenant-9',
+      scopes: ['invoices:read', 'clients:write'],
+    })
     const key = { headers: { 'x-api-key': 'ef_live_x' } }
     expect((await middleware(makeReq('/api/invoices/export', key))).status).toBe(200)
-    expect((await middleware(makeReq('/api/invoices', { ...key, method: 'POST' }))).status).toBe(403)
+    expect((await middleware(makeReq('/api/invoices', { ...key, method: 'POST' }))).status).toBe(
+      403,
+    )
     expect((await middleware(makeReq('/api/clients', { ...key, method: 'POST' }))).status).toBe(200)
-    expect((await middleware(makeReq('/api/clients/c1/portal-users', { ...key, method: 'POST' }))).status).toBe(403)
+    expect(
+      (await middleware(makeReq('/api/clients/c1/portal-users', { ...key, method: 'POST' })))
+        .status,
+    ).toBe(403)
   })
 
   it('401 for an unknown/revoked key', async () => {
     mockAuthenticateApiKey.mockResolvedValue(null)
-    expect((await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_bad' } }))).status).toBe(401)
+    expect(
+      (await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_bad' } })))
+        .status,
+    ).toBe(401)
   })
 
   it('respects tenant suspension', async () => {
-    mockAuthenticateApiKey.mockResolvedValue({ id: 'k1', tenantId: 'tenant-9', scopes: ['missions:read'] })
+    mockAuthenticateApiKey.mockResolvedValue({
+      id: 'k1',
+      tenantId: 'tenant-9',
+      scopes: ['missions:read'],
+    })
     const { NextResponse } = await import('next/server')
-    mockCheckTenantSuspension.mockResolvedValueOnce(NextResponse.json({ error: 'suspendu' }, { status: 403 }))
-    expect((await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
+    mockCheckTenantSuspension.mockResolvedValueOnce(
+      NextResponse.json({ error: 'suspendu' }, { status: 403 }),
+    )
+    expect(
+      (await middleware(makeReq('/api/missions', { headers: { 'x-api-key': 'ef_live_x' } })))
+        .status,
+    ).toBe(403)
   })
 
   it('is ignored for pages (no API key login to the UI)', async () => {

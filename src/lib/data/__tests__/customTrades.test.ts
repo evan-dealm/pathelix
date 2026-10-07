@@ -16,8 +16,13 @@ const bus = vi.hoisted(() => ({
   published: [] as Array<{ kind: string; key: string }>,
 }))
 vi.mock('@/lib/cacheBus', () => ({
-  onBust: (_kind: string, handler: (_key: string) => void) => { bus.handlers.push(handler) },
-  bust: (kind: string, key: string) => { for (const h of bus.handlers) h(key); bus.published.push({ kind, key }) },
+  onBust: (_kind: string, handler: (_key: string) => void) => {
+    bus.handlers.push(handler)
+  },
+  bust: (kind: string, key: string) => {
+    for (const h of bus.handlers) h(key)
+    bus.published.push({ kind, key })
+  },
 }))
 /** What an instance receives when another one changed a trade. */
 const fromAnotherInstance = async (tradeKey: string) => {
@@ -26,16 +31,23 @@ const fromAnotherInstance = async (tradeKey: string) => {
 }
 
 import {
-  customTradeRowToConfig, loadCustomTradesFromDb, syncCustomTradeRegistered, syncCustomTradeUnregistered,
+  customTradeRowToConfig,
+  loadCustomTradesFromDb,
+  syncCustomTradeRegistered,
+  syncCustomTradeUnregistered,
 } from '../customTrades'
 import { getTradeConfig, unregisterCustomTrade } from '@/lib/trades'
 
 const ROW = {
-  tradeKey:            'transport_medical',
-  tradeName:           'Transport Médical',
-  tradeDescription:    'Transport de patients',
-  tradeIcon:           '🚑',
-  vocabulary:          { driver: 'Ambulancier', drivers: 'Ambulanciers', missionTypeLabels: { POSER: 'Prise en charge' } },
+  tradeKey: 'transport_medical',
+  tradeName: 'Transport Médical',
+  tradeDescription: 'Transport de patients',
+  tradeIcon: '🚑',
+  vocabulary: {
+    driver: 'Ambulancier',
+    drivers: 'Ambulanciers',
+    missionTypeLabels: { POSER: 'Prise en charge' },
+  },
   enabledMissionTypes: ['POSER', 'RETIRER'],
 }
 

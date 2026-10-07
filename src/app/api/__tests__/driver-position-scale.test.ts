@@ -17,7 +17,7 @@ const mockPositionCreateMany = vi.fn(async (_args: unknown) => ({ count: 1 }))
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
     driver: {
-      findMany:  (args: unknown) => mockFindMany(args),
+      findMany: (args: unknown) => mockFindMany(args),
       findFirst: (args: unknown) => mockFindFirst(args),
     },
     driverPosition: { createMany: (args: unknown) => mockPositionCreateMany(args) },
@@ -26,11 +26,11 @@ vi.mock('@/lib/tenantDb', () => ({
 }))
 vi.mock('@/lib/positions', () => ({
   latestPositions: (...args: unknown[]) => mockLatestPositions(...args),
-  speedHistory:    (...args: unknown[]) => mockSpeedHistory(...args),
+  speedHistory: (...args: unknown[]) => mockSpeedHistory(...args),
 }))
 vi.mock('@/lib/session', () => ({
   SESSION_COOKIE: 'session',
-  verifySession:  (...args: unknown[]) => mockVerifySession(...args),
+  verifySession: (...args: unknown[]) => mockVerifySession(...args),
 }))
 vi.mock('@/lib/data/drivers', () => ({
   getDriver: (...args: unknown[]) => mockGetDriver(...args),
@@ -42,7 +42,13 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-const ADMIN_SESSION = { sub: 'user-1', role: 'admin' as const, tenantId: 'tenant-perf', iat: 0, exp: 9999999999 }
+const ADMIN_SESSION = {
+  sub: 'user-1',
+  role: 'admin' as const,
+  tenantId: 'tenant-perf',
+  iat: 0,
+  exp: 9999999999,
+}
 const DRIVER_IDS = Array.from({ length: 150 }, (_, i) => `driver-${i + 1}`)
 
 function makeGetReq(date = '2026-06-19'): NextRequest {
@@ -67,7 +73,14 @@ describe('GET /api/driver-position — positions lues en base sous volume', () =
     mockVerifySession.mockResolvedValue(ADMIN_SESSION)
     mockFindMany.mockResolvedValue(DRIVER_IDS.map(id => ({ id })))
     mockLatestPositions.mockResolvedValue(
-      DRIVER_IDS.map((id, i) => ({ driverId: id, lat: 45.7 + i * 0.001, lng: 4.8, speedKmh: 50, ignition: true, updatedAt: Date.now() })),
+      DRIVER_IDS.map((id, i) => ({
+        driverId: id,
+        lat: 45.7 + i * 0.001,
+        lng: 4.8,
+        speedKmh: 50,
+        ignition: true,
+        updatedAt: Date.now(),
+      })),
     )
     mockSpeedHistory.mockResolvedValue({})
   })
@@ -76,7 +89,10 @@ describe('GET /api/driver-position — positions lues en base sous volume', () =
   it('une requête GET lit 150 chauffeurs en 2 lectures (dernières positions + historique), pas une par chauffeur', async () => {
     await GET(makeGetReq())
     expect(mockLatestPositions).toHaveBeenCalledTimes(1)
-    expect(mockLatestPositions).toHaveBeenCalledWith('tenant-perf', expect.objectContaining({ since: expect.any(Date) }))
+    expect(mockLatestPositions).toHaveBeenCalledWith(
+      'tenant-perf',
+      expect.objectContaining({ since: expect.any(Date) }),
+    )
     expect(mockSpeedHistory).toHaveBeenCalledTimes(1)
     expect(mockSpeedHistory).toHaveBeenCalledWith('tenant-perf', '2026-06-19', 'Europe/Paris')
     expect(mockFindMany).not.toHaveBeenCalled()
@@ -84,7 +100,11 @@ describe('GET /api/driver-position — positions lues en base sous volume', () =
 
   // The live map polls every 15 s and never draws the speed graph.
   it("history=0 : la carte ne paie pas l'historique de la journée", async () => {
-    const res = await GET(new NextRequest('http://localhost/api/driver-position?date=2026-06-19&history=0', { headers: { Cookie: 'session=token' } }))
+    const res = await GET(
+      new NextRequest('http://localhost/api/driver-position?date=2026-06-19&history=0', {
+        headers: { Cookie: 'session=token' },
+      }),
+    )
     expect(res.status).toBe(200)
     expect((await res.json()).positions).toHaveLength(150)
     expect(mockSpeedHistory).not.toHaveBeenCalled()
@@ -97,7 +117,7 @@ describe('GET /api/driver-position — positions lues en base sous volume', () =
   })
 
   it('réponse GET contient positions des 150 chauffeurs', async () => {
-    const res  = await GET(makeGetReq())
+    const res = await GET(makeGetReq())
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(Array.isArray(json.positions)).toBe(true)

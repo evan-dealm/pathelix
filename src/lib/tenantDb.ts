@@ -53,20 +53,82 @@ export { unscopedPrisma }
 // from `Prisma.dmmf` at runtime) so adding a new model to schema.prisma without adding it here
 // is a visible, reviewable diff rather than an implicit behavior change.
 export const TENANT_SCOPED_MODELS: ReadonlySet<string> = new Set([
-  'User', 'Driver', 'Client', 'Site', 'SiteProduct', 'Mission', 'MissionComment', 'Exutoire',
-  'Plan', 'TourHistory', 'Vehicle', 'MaintenanceRecord', 'FuelRecord', 'DriverPosition',
-  'AuditLog', 'Holiday', 'TenantSettings', 'DriverUnavailability', 'UserPermission', 'ApiKey',
-  'WeeklyPlan', 'Integration', 'InterventionMetric', 'TenantMLProfile', 'MissionTemplate',
-  'DeliveryProof', 'PushSubscription', 'AiJob', 'TrackdechetsAccount', 'Bsd', 'IdempotencyKey',
-  'PlanningNote', 'Material', 'VehicleUnavailability', 'ContainerType', 'Container', 'ContainerEvent',
-  'ClientContact', 'CustomerNote', 'PriceList', 'PriceRule', 'DocumentSequence', 'Contract', 'Quote', 'QuoteLine',
-  'Order', 'OrderLine', 'Invoice', 'InvoiceLine', 'Payment', 'Weighing', 'Document', 'WebhookEndpoint', 'WebhookDelivery',
-  'Notification', 'NotificationPreference', 'PortalUser', 'PortalRequest', 'MaintenancePlan', 'VehicleDefect',
+  'User',
+  'Driver',
+  'Client',
+  'Site',
+  'SiteProduct',
+  'Mission',
+  'MissionComment',
+  'Exutoire',
+  'Plan',
+  'TourHistory',
+  'Vehicle',
+  'MaintenanceRecord',
+  'FuelRecord',
+  'DriverPosition',
+  'AuditLog',
+  'Holiday',
+  'TenantSettings',
+  'DriverUnavailability',
+  'UserPermission',
+  'ApiKey',
+  'WeeklyPlan',
+  'Integration',
+  'InterventionMetric',
+  'TenantMLProfile',
+  'MissionTemplate',
+  'DeliveryProof',
+  'PushSubscription',
+  'AiJob',
+  'TrackdechetsAccount',
+  'Bsd',
+  'IdempotencyKey',
+  'PlanningNote',
+  'Material',
+  'VehicleUnavailability',
+  'ContainerType',
+  'Container',
+  'ContainerEvent',
+  'ClientContact',
+  'CustomerNote',
+  'PriceList',
+  'PriceRule',
+  'DocumentSequence',
+  'Contract',
+  'Quote',
+  'QuoteLine',
+  'Order',
+  'OrderLine',
+  'Invoice',
+  'InvoiceLine',
+  'Payment',
+  'Weighing',
+  'Document',
+  'WebhookEndpoint',
+  'WebhookDelivery',
+  'Notification',
+  'NotificationPreference',
+  'PortalUser',
+  'PortalRequest',
+  'MaintenancePlan',
+  'VehicleDefect',
 ])
 
 const READ_OR_DELETE_WHERE_OPS = new Set([
-  'findFirst', 'findFirstOrThrow', 'findMany', 'findUnique', 'findUniqueOrThrow',
-  'count', 'aggregate', 'groupBy', 'update', 'updateMany', 'updateManyAndReturn', 'delete', 'deleteMany',
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'findUnique',
+  'findUniqueOrThrow',
+  'count',
+  'aggregate',
+  'groupBy',
+  'update',
+  'updateMany',
+  'updateManyAndReturn',
+  'delete',
+  'deleteMany',
 ])
 
 const CREATE_OPS = new Set(['create', 'createMany', 'createManyAndReturn'])
@@ -85,10 +147,15 @@ function scopedWhere(where: unknown, tenantId: string): Record<string, unknown> 
 function scopedCreateData(data: unknown, tenantId: string, model: string): unknown {
   if (Array.isArray(data)) return data.map(d => scopedCreateData(d, tenantId, model))
   const record = data as Record<string, unknown> | undefined
-  if (record && 'tenantId' in record && record.tenantId !== undefined && record.tenantId !== tenantId) {
+  if (
+    record &&
+    'tenantId' in record &&
+    record.tenantId !== undefined &&
+    record.tenantId !== tenantId
+  ) {
     throw new Error(
       `getTenantDb: refusing to create a ${model} with tenantId "${String(record.tenantId)}" ` +
-      `while scoped to tenant "${tenantId}" — this is always a bug, never a legitimate cross-tenant write.`,
+        `while scoped to tenant "${tenantId}" — this is always a bug, never a legitimate cross-tenant write.`,
     )
   }
   return { ...record, tenantId }
@@ -101,7 +168,9 @@ function scopedCreateData(data: unknown, tenantId: string, model: string): unkno
  */
 export function getTenantDb(tenantId: string) {
   if (!tenantId) {
-    throw new Error('getTenantDb() requires a non-empty tenantId — never call it with an unverified/undefined value.')
+    throw new Error(
+      'getTenantDb() requires a non-empty tenantId — never call it with an unverified/undefined value.',
+    )
   }
 
   return unscopedPrisma.$extends({
@@ -116,13 +185,15 @@ export function getTenantDb(tenantId: string) {
           } else if (CREATE_OPS.has(operation)) {
             args.data = scopedCreateData(args.data, tenantId, model)
           } else if (operation === 'upsert') {
-            args.where  = scopedWhere(args.where, tenantId)
+            args.where = scopedWhere(args.where, tenantId)
             args.create = scopedCreateData(args.create, tenantId, model)
             // `update` on an upsert never changes tenantId — no need to touch args.update.
           } else {
             // Fail closed: an operation added by a future Prisma version must be reviewed and
             // scoped here, never silently run unscoped against a tenant-scoped model.
-            throw new Error(`getTenantDb: operation "${operation}" on ${model} is not tenant-scoped`)
+            throw new Error(
+              `getTenantDb: operation "${operation}" on ${model} is not tenant-scoped`,
+            )
           }
 
           return query(args)

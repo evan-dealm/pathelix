@@ -13,16 +13,21 @@ const TOKENS = (() => {
   try {
     return JSON.parse(open('./.tokens.json'))
   } catch (_err) {
-    throw new Error('load-tests/.tokens.json is missing — run: npx tsx --tsconfig tsconfig.json load-tests/seed.ts')
+    throw new Error(
+      'load-tests/.tokens.json is missing — run: npx tsx --tsconfig tsconfig.json load-tests/seed.ts',
+    )
   }
 })()
 
 /** Number of simulated drivers (at most what the seed created). */
-export const DRIVER_COUNT = Math.min(parseInt(__ENV.DRIVER_COUNT || '150', 10), TOKENS.drivers.length)
+export const DRIVER_COUNT = Math.min(
+  parseInt(__ENV.DRIVER_COUNT || '150', 10),
+  TOKENS.drivers.length,
+)
 export const DISPATCHER_COUNT = TOKENS.dispatchers.length
 export const CLIENT_IDS = TOKENS.clientIds
 
-const headers = token => ({ 'Cookie': `session=${token}`, 'Content-Type': 'application/json' })
+const headers = token => ({ Cookie: `session=${token}`, 'Content-Type': 'application/json' })
 
 /** The driver played by virtual user `vu` (1-based): its id and its own session. */
 export function driverFor(vu) {
@@ -43,7 +48,15 @@ export function driverIds(count = DRIVER_COUNT) {
   return TOKENS.drivers.slice(0, count).map(d => d.id)
 }
 
-export function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
-export function randomLat() { return 45.75 + (Math.random() - 0.5) * 0.5 }
-export function randomLng() { return 4.83 + (Math.random() - 0.5) * 0.5 }
-export function today() { return new Date().toISOString().slice(0, 10) }
+export function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)]
+}
+export function randomLat() {
+  return 45.75 + (Math.random() - 0.5) * 0.5
+}
+export function randomLng() {
+  return 4.83 + (Math.random() - 0.5) * 0.5
+}
+export function today() {
+  return new Date().toISOString().slice(0, 10)
+}

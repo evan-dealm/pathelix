@@ -29,7 +29,9 @@ function assertSafeDatabase(): void {
   const dbName = (process.env.DATABASE_URL ?? '').split('?')[0].split('/').pop() ?? ''
   if (!dbName) throw new Error('DATABASE_URL is not set')
   if (dbName.includes('manualtest_sandbox') || process.env.LOADTEST_DB === dbName) return
-  throw new Error(`Refusing to seed load-test data into "${dbName}". If that is really intended: LOADTEST_DB=${dbName}`)
+  throw new Error(
+    `Refusing to seed load-test data into "${dbName}". If that is really intended: LOADTEST_DB=${dbName}`,
+  )
 }
 
 async function clean(): Promise<void> {
@@ -45,7 +47,13 @@ async function seed(): Promise<void> {
     // ENTERPRISE: the per-plan write limits of a free account (60 writes/min for the whole
     // organisation) would cap the scenarios long before the application does.
     update: { plan: 'ENTERPRISE' },
-    create: { name: 'Load test', slug: SLUG, trade: 'waste', plan: 'ENTERPRISE', contactEmail: 'admin@load-test.invalid' },
+    create: {
+      name: 'Load test',
+      slug: SLUG,
+      trade: 'waste',
+      plan: 'ENTERPRISE',
+      contactEmail: 'admin@load-test.invalid',
+    },
     select: { id: true },
   })
   const db = getTenantDb(tenant.id)
@@ -53,34 +61,64 @@ async function seed(): Promise<void> {
   await db.driver.createMany({
     skipDuplicates: true,
     data: Array.from({ length: DRIVERS }, (_, i) => ({
-      id: `load-driver-${pad(i + 1)}`, firstName: 'Load', lastName: pad(i + 1), sector: 'Lyon',
-      depotName: 'Dépôt de test', depotLat: 45.75, depotLng: 4.83,
+      id: `load-driver-${pad(i + 1)}`,
+      firstName: 'Load',
+      lastName: pad(i + 1),
+      sector: 'Lyon',
+      depotName: 'Dépôt de test',
+      depotLat: 45.75,
+      depotLng: 4.83,
     })) as Parameters<typeof db.driver.createMany>[0]['data'],
   })
 
   const accounts = [
     { email: 'admin@load-test.invalid', role: 'ADMIN' as const, driverRef: null as string | null },
-    ...Array.from({ length: DISPATCHERS }, (_, i) => ({ email: `dispatcher-${pad(i + 1)}@load-test.invalid`, role: 'DISPATCHER' as const, driverRef: null })),
-    ...Array.from({ length: DRIVERS }, (_, i) => ({ email: `driver-${pad(i + 1)}@load-test.invalid`, role: 'DRIVER' as const, driverRef: `load-driver-${pad(i + 1)}` })),
+    ...Array.from({ length: DISPATCHERS }, (_, i) => ({
+      email: `dispatcher-${pad(i + 1)}@load-test.invalid`,
+      role: 'DISPATCHER' as const,
+      driverRef: null,
+    })),
+    ...Array.from({ length: DRIVERS }, (_, i) => ({
+      email: `driver-${pad(i + 1)}@load-test.invalid`,
+      role: 'DRIVER' as const,
+      driverRef: `load-driver-${pad(i + 1)}`,
+    })),
   ]
   await db.user.createMany({
     skipDuplicates: true,
     // No usable password: these accounts only exist through the tokens minted below.
-    data: accounts.map(a => ({ email: a.email, role: a.role, driverRef: a.driverRef, passwordHash: '!', firstName: 'Load', lastName: a.email.split('@')[0] })) as Parameters<typeof db.user.createMany>[0]['data'],
+    data: accounts.map(a => ({
+      email: a.email,
+      role: a.role,
+      driverRef: a.driverRef,
+      passwordHash: '!',
+      firstName: 'Load',
+      lastName: a.email.split('@')[0],
+    })) as Parameters<typeof db.user.createMany>[0]['data'],
   })
 
   if ((await db.client.count()) < CLIENTS) {
     await db.client.createMany({
-      data: Array.from({ length: CLIENTS }, (_, i) => ({ name: `Client de charge ${pad(i + 1)}` })) as Parameters<typeof db.client.createMany>[0]['data'],
+      data: Array.from({ length: CLIENTS }, (_, i) => ({
+        name: `Client de charge ${pad(i + 1)}`,
+      })) as Parameters<typeof db.client.createMany>[0]['data'],
     })
   }
 
-  const users = await db.user.findMany({ select: { id: true, email: true, role: true, driverRef: true, sessionVersion: true } })
-  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_S
-  const token = (u: typeof users[number]) => signSession({
-    sub: u.id, role: u.role.toLowerCase() as 'admin' | 'dispatcher' | 'driver', tenantId: tenant.id, trade: 'waste',
-    sv: u.sessionVersion, exp, ...(u.driverRef ? { driverRef: u.driverRef } : {}),
+  const users = await db.user.findMany({
+    select: { id: true, email: true, role: true, driverRef: true, sessionVersion: true },
   })
+  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_S
+  const token = (u: (typeof users)[number]) =>
+    signSession({
+      sub: u.id,
+      role: u.role.toLowerCase() as 'admin' | 'dispatcher' | 'driver',
+      tenantId: tenant.id,
+      trade: 'waste',
+      sv: u.sessionVersion,
+      exp,
+      ...(u.driverRef ? { driverRef: u.driverRef } : {}),
+    })
   const byEmail = [...users].sort((a, b) => a.email.localeCompare(b.email))
   const admin = byEmail.find(u => u.role === 'ADMIN')
   if (!admin) throw new Error('admin account missing')
@@ -89,11 +127,17 @@ async function seed(): Promise<void> {
     expiresAt: new Date(exp * 1000).toISOString(),
     admin: await token(admin),
     dispatchers: await Promise.all(byEmail.filter(u => u.role === 'DISPATCHER').map(token)),
-    drivers: await Promise.all(byEmail.filter(u => u.role === 'DRIVER' && u.driverRef).map(async u => ({ id: u.driverRef as string, token: await token(u) }))),
+    drivers: await Promise.all(
+      byEmail
+        .filter(u => u.role === 'DRIVER' && u.driverRef)
+        .map(async u => ({ id: u.driverRef as string, token: await token(u) })),
+    ),
     clientIds: (await db.client.findMany({ select: { id: true }, take: CLIENTS })).map(c => c.id),
   }
   writeFileSync(TOKENS_FILE, JSON.stringify(out))
-  console.log(`Load-test tenant ready: ${out.drivers.length} drivers, ${out.dispatchers.length} dispatchers, ${out.clientIds.length} customers.`)
+  console.log(
+    `Load-test tenant ready: ${out.drivers.length} drivers, ${out.dispatchers.length} dispatchers, ${out.clientIds.length} customers.`,
+  )
   console.log(`Sessions valid until ${out.expiresAt} → ${TOKENS_FILE}`)
 }
 
@@ -108,4 +152,9 @@ async function main(): Promise<void> {
 }
 
 // Explicit exit: importing the session module opens a Redis subscription that keeps Node alive.
-main().then(() => process.exit(0)).catch(err => { console.error(err instanceof Error ? err.message : err); process.exit(1) })
+main()
+  .then(() => process.exit(0))
+  .catch(err => {
+    console.error(err instanceof Error ? err.message : err)
+    process.exit(1)
+  })

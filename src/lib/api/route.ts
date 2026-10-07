@@ -34,22 +34,22 @@ export const conflict = (message: string, code = 'CONFLICT') => new ApiError(409
 export const unprocessable = (message: string, code = 'INVALID') => new ApiError(422, message, code)
 
 export interface RouteContext<B> {
-  req:      NextRequest
+  req: NextRequest
   tenantId: string
-  userId:   string
-  role:     string
-  db:       TenantDb
-  body:     B
-  params:   Record<string, string>
+  userId: string
+  role: string
+  db: TenantDb
+  body: B
+  params: Record<string, string>
 }
 
 interface RouteOptions<B> {
   /** Name used in logs and metrics (the route path). */
-  name:         string
-  permission?:  Permission
+  name: string
+  permission?: Permission
   /** Drivers are refused unless explicitly allowed (they also go through the middleware allowlist). */
   allowDriver?: boolean
-  schema?:      ZodType<B>
+  schema?: ZodType<B>
 }
 
 /**
@@ -67,9 +67,14 @@ type Handler = RouteHandler
 // Compile-time guard (`npm run typecheck`): fails if the context parameter Next reads becomes
 // optional again — the production build would break without any test noticing.
 type SecondParameter<F> = F extends (..._args: infer A) => unknown ? A[1] : never
-export const ROUTE_CONTEXT_IS_REQUIRED: undefined extends SecondParameter<RouteHandler> ? never : true = true
+export const ROUTE_CONTEXT_IS_REQUIRED: undefined extends SecondParameter<RouteHandler>
+  ? never
+  : true = true
 
-export function apiRoute<B = undefined>(opts: RouteOptions<B>, fn: (_ctx: RouteContext<B>) => Promise<unknown>): Handler {
+export function apiRoute<B = undefined>(
+  opts: RouteOptions<B>,
+  fn: (_ctx: RouteContext<B>) => Promise<unknown>,
+): Handler {
   const log = createLogger(opts.name)
   return async (req: NextRequest, routeCtx?: { params: Promise<Record<string, string>> }) => {
     const t0 = Date.now()
@@ -87,29 +92,47 @@ export function apiRoute<B = undefined>(opts: RouteOptions<B>, fn: (_ctx: RouteC
       let body = undefined as B
       if (opts.schema) {
         let raw: unknown
-        try { raw = await req.json() } catch {
+        try {
+          raw = await req.json()
+        } catch {
           status = 400
           return NextResponse.json({ error: 'Corps JSON invalide', code: 'BAD_JSON' }, { status })
         }
         const parsed = opts.schema.safeParse(raw)
         if (!parsed.success) {
           status = 422
-          return NextResponse.json({ error: parsed.error.flatten(), code: 'VALIDATION' }, { status })
+          return NextResponse.json(
+            { error: parsed.error.flatten(), code: 'VALIDATION' },
+            { status },
+          )
         }
         body = parsed.data
       }
       const params = routeCtx?.params ? await routeCtx.params : {}
       const out = await fn({ req, tenantId, userId, role, db: getTenantDb(tenantId), body, params })
-      if (out instanceof NextResponse) { status = out.status; return out }
+      if (out instanceof NextResponse) {
+        status = out.status
+        return out
+      }
       return NextResponse.json(out ?? { ok: true })
     } catch (err) {
       if (err instanceof ApiError) {
         status = err.status
-        return NextResponse.json({ error: err.message, code: err.code, ...(err.details !== undefined ? { details: err.details } : {}) }, { status })
+        return NextResponse.json(
+          {
+            error: err.message,
+            code: err.code,
+            ...(err.details !== undefined ? { details: err.details } : {}),
+          },
+          { status },
+        )
       }
       if (err instanceof BlockedUrlError) {
         status = 422
-        return NextResponse.json({ error: `URL refusée : ${err.message}`, code: 'BLOCKED_URL' }, { status })
+        return NextResponse.json(
+          { error: `URL refusée : ${err.message}`, code: 'BLOCKED_URL' },
+          { status },
+        )
       }
       if (err instanceof ForeignTenantRefError) {
         status = 422
@@ -119,18 +142,32 @@ export function apiRoute<B = undefined>(opts: RouteOptions<B>, fn: (_ctx: RouteC
       status = res.status
       return res
     } finally {
-      metrics.histogram(METRIC.API_LATENCY_MS, Date.now() - t0, { route: opts.name, method: req.method })
-      metrics.increment(METRIC.API_REQUESTS, { route: opts.name, method: req.method, status: String(status) })
-      if (status >= 500) metrics.increment(METRIC.API_ERRORS, { route: opts.name, type: 'server_error' })
+      metrics.histogram(METRIC.API_LATENCY_MS, Date.now() - t0, {
+        route: opts.name,
+        method: req.method,
+      })
+      metrics.increment(METRIC.API_REQUESTS, {
+        route: opts.name,
+        method: req.method,
+        status: String(status),
+      })
+      if (status >= 500)
+        metrics.increment(METRIC.API_ERRORS, { route: opts.name, type: 'server_error' })
     }
   }
 }
 
 /** `?page=&limit=` with bounds (limit ≤ 100). */
-export function pagination(req: NextRequest, defaultLimit = 50): { page: number; limit: number; skip: number } {
+export function pagination(
+  req: NextRequest,
+  defaultLimit = 50,
+): { page: number; limit: number; skip: number } {
   const p = req.nextUrl.searchParams
   const page = Math.max(1, parseInt(p.get('page') ?? '1', 10) || 1)
-  const limit = Math.min(100, Math.max(1, parseInt(p.get('limit') ?? String(defaultLimit), 10) || defaultLimit))
+  const limit = Math.min(
+    100,
+    Math.max(1, parseInt(p.get('limit') ?? String(defaultLimit), 10) || defaultLimit),
+  )
   return { page, limit, skip: (page - 1) * limit }
 }
 
@@ -139,10 +176,16 @@ export function paged<T>(data: T[], total: number, page: number, limit: number) 
 }
 
 /** A `?sort=field` / `?sort=-field` restricted to an allow-list, for Prisma `orderBy`. */
-export function sortParam<F extends string>(req: NextRequest, allowed: readonly F[], fallback: F, fallbackDir: 'asc' | 'desc' = 'asc'): Record<F, 'asc' | 'desc'> {
+export function sortParam<F extends string>(
+  req: NextRequest,
+  allowed: readonly F[],
+  fallback: F,
+  fallbackDir: 'asc' | 'desc' = 'asc',
+): Record<F, 'asc' | 'desc'> {
   const raw = req.nextUrl.searchParams.get('sort') ?? ''
   const desc = raw.startsWith('-')
   const field = (desc ? raw.slice(1) : raw) as F
-  if (allowed.includes(field)) return { [field]: desc ? 'desc' : 'asc' } as Record<F, 'asc' | 'desc'>
+  if (allowed.includes(field))
+    return { [field]: desc ? 'desc' : 'asc' } as Record<F, 'asc' | 'desc'>
   return { [fallback]: fallbackDir } as Record<F, 'asc' | 'desc'>
 }

@@ -3,11 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 
 export interface DriverPosition {
-  driverId:  string
-  lat:       number
-  lng:       number
-  speedKmh:  number
-  ignition:  boolean
+  driverId: string
+  lat: number
+  lng: number
+  speedKmh: number
+  ignition: boolean
   updatedAt: number
 }
 
@@ -23,9 +23,7 @@ export function useDriverPositions(date: string, intervalMs: number = 15_000) {
       if (Array.isArray(data.positions)) {
         setPositions(data.positions)
       }
-    } catch {
-
-    }
+    } catch {}
   }, [date])
 
   useEffect(() => {

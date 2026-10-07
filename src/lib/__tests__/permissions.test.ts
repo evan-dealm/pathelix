@@ -203,9 +203,7 @@ describe('hasPermission — dispatcher with no custom permissions', () => {
 
   it('queries with correct userId filter', async () => {
     await hasPermission(userId, 'dispatcher', 'optimize')
-    expect(mockFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId } }),
-    )
+    expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId } }))
   })
 
   it('returns true for optimize (in dispatcher defaults)', async () => {
@@ -294,7 +292,6 @@ describe('hasPermission — custom permissions override defaults', () => {
   })
 
   it('custom permissions take full precedence over defaults', async () => {
-
     mockFindMany.mockResolvedValue(permsResult(['view_reports']))
     const result = await hasPermission(userId, 'dispatcher', 'optimize')
     expect(result).toBe(false)
@@ -380,7 +377,10 @@ describe('invalidatePermCache', () => {
 
 // An API key reaches the routes as `apikey:<id>` with the dispatcher role.
 describe('hasPermission — API keys', () => {
-  beforeEach(() => { mockFindMany.mockReset(); mockKeyPermissions.mockReset() })
+  beforeEach(() => {
+    mockFindMany.mockReset()
+    mockKeyPermissions.mockReset()
+  })
 
   it('has the dispatcher defaults without any lookup', async () => {
     expect(await hasPermission('apikey:k1', 'dispatcher', 'manage_missions')).toBe(true)
@@ -401,7 +401,12 @@ describe('hasPermission — API keys', () => {
 
   it('never gets an administration permission, whatever its scopes', async () => {
     mockKeyPermissions.mockResolvedValue(new Set(['manage_billing']))
-    for (const perm of ['manage_users', 'manage_settings', 'manage_integrations', 'api_access'] as Permission[]) {
+    for (const perm of [
+      'manage_users',
+      'manage_settings',
+      'manage_integrations',
+      'api_access',
+    ] as Permission[]) {
       expect(await hasPermission('apikey:k-bill', 'dispatcher', perm)).toBe(false)
     }
   })

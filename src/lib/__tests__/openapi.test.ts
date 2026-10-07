@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'fs'
 import { join, relative, sep } from 'path'
 
-vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }))
+vi.mock('@/lib/logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}))
 
 import { API_OPERATIONS, buildOpenApiSpec, requiredScope } from '@/lib/openapi'
 import { API_SCOPES } from '@/lib/apiScopes'
@@ -17,11 +19,22 @@ function realOperations(): Set<string> {
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       const full = join(dir, name)
-      if (statSync(full).isDirectory()) { if (name !== '__tests__') walk(full); continue }
+      if (statSync(full).isDirectory()) {
+        if (name !== '__tests__') walk(full)
+        continue
+      }
       if (name !== 'route.ts') continue
-      const path = '/' + relative(API_DIR, dir).split(sep).join('/').replace(/\[([^\]]+)\]/g, '{$1}')
+      const path =
+        '/' +
+        relative(API_DIR, dir)
+          .split(sep)
+          .join('/')
+          .replace(/\[([^\]]+)\]/g, '{$1}')
       const src = readFileSync(full, 'utf8')
-      for (const m of src.matchAll(/export (?:const|async function) (GET|POST|PUT|PATCH|DELETE)\b/g)) out.add(`${m[1]} ${path}`)
+      for (const m of src.matchAll(
+        /export (?:const|async function) (GET|POST|PUT|PATCH|DELETE)\b/g,
+      ))
+        out.add(`${m[1]} ${path}`)
     }
   }
   walk(API_DIR)
@@ -56,7 +69,11 @@ describe('API reference — matches what an API key can really do', () => {
       expect(scope, `${o.method} ${o.path}`).not.toBeNull()
       expect(scopeAllows([scope!], o.method.toUpperCase(), concrete(o.path))).toBe(true)
       // Reading never needs a write scope, and the other way round.
-      if (scope !== 'optimize') expect(scope!.endsWith(o.method === 'get' ? ':read' : ':write'), `${o.method} ${o.path} → ${scope}`).toBe(true)
+      if (scope !== 'optimize')
+        expect(
+          scope!.endsWith(o.method === 'get' ? ':read' : ':write'),
+          `${o.method} ${o.path} → ${scope}`,
+        ).toBe(true)
     }
   })
 
@@ -67,7 +84,14 @@ describe('API reference — matches what an API key can really do', () => {
 
   it('does not document what no key may reach', () => {
     expect([...documented].some(k => k.includes('portal-users'))).toBe(false)
-    for (const forbidden of ['/users', '/api-keys', '/settings', '/audit', '/webhook-endpoints', '/superadmin/tenants']) {
+    for (const forbidden of [
+      '/users',
+      '/api-keys',
+      '/settings',
+      '/audit',
+      '/webhook-endpoints',
+      '/superadmin/tenants',
+    ]) {
       expect([...documented].some(k => k.endsWith(` ${forbidden}`))).toBe(false)
     }
   })
@@ -76,7 +100,18 @@ describe('API reference — matches what an API key can really do', () => {
 describe('buildOpenApiSpec', () => {
   const spec = buildOpenApiSpec() as {
     openapi: string
-    paths: Record<string, Record<string, { operationId: string; description: string; requestBody?: { content: { 'application/json': { schema: Record<string, unknown> } } }; parameters?: Array<{ name: string; in: string }> }>>
+    paths: Record<
+      string,
+      Record<
+        string,
+        {
+          operationId: string
+          description: string
+          requestBody?: { content: { 'application/json': { schema: Record<string, unknown> } } }
+          parameters?: Array<{ name: string; in: string }>
+        }
+      >
+    >
     webhooks: Record<string, unknown>
     components: { securitySchemes: { ApiKey: { name: string } } }
   }
@@ -95,12 +130,18 @@ describe('buildOpenApiSpec', () => {
   })
 
   it('takes request bodies from the schemas the routes validate with', () => {
-    const payment = spec.paths['/payments'].post.requestBody!.content['application/json'].schema as { required: string[]; properties: Record<string, { enum?: string[] }> }
+    const payment = spec.paths['/payments'].post.requestBody!.content['application/json']
+      .schema as { required: string[]; properties: Record<string, { enum?: string[] }> }
     expect(payment.required).toEqual(expect.arrayContaining(['clientId', 'amount', 'receivedAt']))
     expect(payment.properties.method.enum).toContain('TRANSFER')
-    const mission = spec.paths['/missions'].post.requestBody!.content['application/json'].schema as { properties: Record<string, unknown> }
-    expect(Object.keys(mission.properties)).toEqual(expect.arrayContaining(['type', 'date', 'address']))
-    const plans = spec.paths['/plans'].post.requestBody!.content['application/json'].schema as { type: string }
+    const mission = spec.paths['/missions'].post.requestBody!.content['application/json']
+      .schema as { properties: Record<string, unknown> }
+    expect(Object.keys(mission.properties)).toEqual(
+      expect.arrayContaining(['type', 'date', 'address']),
+    )
+    const plans = spec.paths['/plans'].post.requestBody!.content['application/json'].schema as {
+      type: string
+    }
     expect(plans.type).toBe('array')
   })
 

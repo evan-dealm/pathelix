@@ -4,7 +4,8 @@ import { getRedisClient } from './redisClient'
 import { createLogger } from './logger'
 
 // Read here rather than imported: test doubles of redisClient often omit the constant.
-const REDIS_AVAILABLE = Boolean(process.env.REDIS_URL || process.env.REDIS_HOST) && process.env.REDIS_DISABLED !== 'true'
+const REDIS_AVAILABLE =
+  Boolean(process.env.REDIS_URL || process.env.REDIS_HOST) && process.env.REDIS_DISABLED !== 'true'
 
 const log = createLogger('cacheBus')
 
@@ -17,7 +18,18 @@ const log = createLogger('cacheBus')
  * one Redis channel; each process runs the handlers its caches registered with `onBust()`.
  * Without Redis (single instance) it is local only, as before.
  */
-export type BustKind = 'perm' | 'sessionVersion' | 'apiKeys' | 'suspension' | 'tenantRevoked' | 'tenantRestored' | 'flags' | 'webhooks' | 'integrations' | 'cache' | 'trades'
+export type BustKind =
+  | 'perm'
+  | 'sessionVersion'
+  | 'apiKeys'
+  | 'suspension'
+  | 'tenantRevoked'
+  | 'tenantRestored'
+  | 'flags'
+  | 'webhooks'
+  | 'integrations'
+  | 'cache'
+  | 'trades'
 type Handler = (_key: string) => void
 
 const CHANNEL = 'pathelix:cache-bust'
@@ -31,7 +43,11 @@ const instanceId = (_g.__pathelixInstanceId ??= randomUUID())
 
 function runLocal(kind: BustKind, key: string): void {
   for (const h of handlers.get(kind) ?? []) {
-    try { h(key) } catch (err) { log.warn('Cache bust handler failed', { kind, err: String(err) }) }
+    try {
+      h(key)
+    } catch (err) {
+      log.warn('Cache bust handler failed', { kind, err: String(err) })
+    }
   }
 }
 
@@ -39,19 +55,26 @@ function ensureSubscriber(): void {
   if (!REDIS_AVAILABLE || _g.__pathelixBustSub) return
   _g.__pathelixBustSub = (async () => {
     try {
-      const [{ default: Redis }, { redisBaseOptions }] = await Promise.all([import('ioredis'), import('./queue/connection')])
+      const [{ default: Redis }, { redisBaseOptions }] = await Promise.all([
+        import('ioredis'),
+        import('./queue/connection'),
+      ])
       const sub = new Redis({ ...redisBaseOptions(), lazyConnect: true, maxRetriesPerRequest: 1 })
       sub.on('error', err => log.warn('Cache bus subscriber error', { err: String(err) }))
       sub.on('message', (_ch: string, raw: string) => {
         try {
           const m = JSON.parse(raw) as { from: string; kind: BustKind; key: string }
           if (m.from !== instanceId) runLocal(m.kind, m.key)
-        } catch { /* ignore malformed */ }
+        } catch {
+          /* ignore malformed */
+        }
       })
       await sub.connect()
       await sub.subscribe(CHANNEL)
     } catch (err) {
-      log.warn('Cache bus unavailable — invalidations stay local', { err: err instanceof Error ? err.message : String(err) })
+      log.warn('Cache bus unavailable — invalidations stay local', {
+        err: err instanceof Error ? err.message : String(err),
+      })
       _g.__pathelixBustSub = undefined
     }
   })()
@@ -73,7 +96,10 @@ export function bust(kind: BustKind, key = ''): void {
       const client = await getRedisClient()
       await client?.publish(CHANNEL, JSON.stringify({ from: instanceId, kind, key }))
     } catch (err) {
-      log.warn('Cache bust publish failed', { kind, err: err instanceof Error ? err.message : String(err) })
+      log.warn('Cache bust publish failed', {
+        kind,
+        err: err instanceof Error ? err.message : String(err),
+      })
     }
   })()
 }

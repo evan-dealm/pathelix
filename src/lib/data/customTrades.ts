@@ -1,54 +1,60 @@
 import { unscopedPrisma } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
 import { bust, onBust } from '@/lib/cacheBus'
-import { registerCustomTrade, unregisterCustomTrade, type TradeConfig, type TradeVocabulary } from '@/lib/trades'
+import {
+  registerCustomTrade,
+  unregisterCustomTrade,
+  type TradeConfig,
+  type TradeVocabulary,
+} from '@/lib/trades'
 import type { MissionType } from '@/lib/types'
 
 const log = createLogger('data/customTrades')
 
 interface CustomTradeRow {
-  tradeKey:            string
-  tradeName:           string
-  tradeDescription:    string
-  tradeIcon:           string
-  vocabulary:          unknown
+  tradeKey: string
+  tradeName: string
+  tradeDescription: string
+  tradeIcon: string
+  vocabulary: unknown
   enabledMissionTypes: unknown
 }
 
 export function customTradeRowToConfig(row: CustomTradeRow): TradeConfig {
-  const baseVocab = row.vocabulary && typeof row.vocabulary === 'object'
-    ? row.vocabulary as Record<string, unknown>
-    : {}
+  const baseVocab =
+    row.vocabulary && typeof row.vocabulary === 'object'
+      ? (row.vocabulary as Record<string, unknown>)
+      : {}
 
   const vocabulary: TradeVocabulary = {
-    tradeName:        row.tradeName,
-    tradeDescription:  row.tradeDescription,
-    tradeIcon:         row.tradeIcon,
-    driver:            String(baseVocab.driver ?? 'Chauffeur'),
-    drivers:           String(baseVocab.drivers ?? 'Chauffeurs'),
-    vehicle:           String(baseVocab.vehicle ?? 'Véhicule'),
-    vehicles:          String(baseVocab.vehicles ?? 'Véhicules'),
-    mission:           String(baseVocab.mission ?? 'Mission'),
-    missions:          String(baseVocab.missions ?? 'Missions'),
-    exutoire:          String(baseVocab.exutoire ?? 'Site'),
-    exutoires:         String(baseVocab.exutoires ?? 'Sites'),
-    depot:             String(baseVocab.depot ?? 'Dépôt'),
-    client:            String(baseVocab.client ?? 'Client'),
-    tour:              String(baseVocab.tour ?? 'Tournée'),
-    tours:              String(baseVocab.tours ?? 'Tournées'),
-    binSize:           String(baseVocab.binSize ?? 'Taille'),
-    wasteType:         String(baseVocab.wasteType ?? 'Type'),
-    optimize:          String(baseVocab.optimize ?? 'Optimiser'),
-    collect:           String(baseVocab.collect ?? 'Collecter'),
+    tradeName: row.tradeName,
+    tradeDescription: row.tradeDescription,
+    tradeIcon: row.tradeIcon,
+    driver: String(baseVocab.driver ?? 'Chauffeur'),
+    drivers: String(baseVocab.drivers ?? 'Chauffeurs'),
+    vehicle: String(baseVocab.vehicle ?? 'Véhicule'),
+    vehicles: String(baseVocab.vehicles ?? 'Véhicules'),
+    mission: String(baseVocab.mission ?? 'Mission'),
+    missions: String(baseVocab.missions ?? 'Missions'),
+    exutoire: String(baseVocab.exutoire ?? 'Site'),
+    exutoires: String(baseVocab.exutoires ?? 'Sites'),
+    depot: String(baseVocab.depot ?? 'Dépôt'),
+    client: String(baseVocab.client ?? 'Client'),
+    tour: String(baseVocab.tour ?? 'Tournée'),
+    tours: String(baseVocab.tours ?? 'Tournées'),
+    binSize: String(baseVocab.binSize ?? 'Taille'),
+    wasteType: String(baseVocab.wasteType ?? 'Type'),
+    optimize: String(baseVocab.optimize ?? 'Optimiser'),
+    collect: String(baseVocab.collect ?? 'Collecter'),
     missionTypeLabels: (baseVocab.missionTypeLabels as TradeVocabulary['missionTypeLabels']) ?? {},
-    missionTypeIcons:  (baseVocab.missionTypeIcons as TradeVocabulary['missionTypeIcons']) ?? {},
+    missionTypeIcons: (baseVocab.missionTypeIcons as TradeVocabulary['missionTypeIcons']) ?? {},
   }
 
   return {
-    id:                  row.tradeKey,
+    id: row.tradeKey,
     vocabulary,
     enabledMissionTypes: Array.isArray(row.enabledMissionTypes)
-      ? row.enabledMissionTypes as MissionType[]
+      ? (row.enabledMissionTypes as MissionType[])
       : [],
   }
 }
@@ -70,7 +76,9 @@ export async function loadCustomTradesFromDb(): Promise<void> {
     loaded = true
     log.info('Custom trades loaded', { count: rows.length })
   } catch (err) {
-    log.error('Failed to load custom trades', { err: err instanceof Error ? err.message : String(err) })
+    log.error('Failed to load custom trades', {
+      err: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
@@ -79,11 +87,17 @@ export async function loadCustomTradesFromDb(): Promise<void> {
 // tenants fell back to the default trade's vocabulary and mission types. The instance that made
 // the change applies it directly; the others re-read the row when told.
 let announcing = false
-onBust('trades', tradeKey => { if (!announcing) void refreshCustomTrade(tradeKey) })
+onBust('trades', tradeKey => {
+  if (!announcing) void refreshCustomTrade(tradeKey)
+})
 
 function announce(tradeKey: string): void {
   announcing = true
-  try { bust('trades', tradeKey) } finally { announcing = false }
+  try {
+    bust('trades', tradeKey)
+  } finally {
+    announcing = false
+  }
 }
 
 /** Re-reads one custom trade from the database into this process's registry (drops it if gone). */
@@ -93,7 +107,10 @@ export async function refreshCustomTrade(tradeKey: string): Promise<void> {
     if (row) registerCustomTrade(row.tradeKey, customTradeRowToConfig(row))
     else unregisterCustomTrade(tradeKey)
   } catch (err) {
-    log.warn('Failed to refresh custom trade', { tradeKey, err: err instanceof Error ? err.message : String(err) })
+    log.warn('Failed to refresh custom trade', {
+      tradeKey,
+      err: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
