@@ -53,7 +53,7 @@ export default function PortalPage() {
   const due = data.invoices.filter(i => i.kind === 'INVOICE' && ['ISSUED', 'SENT', 'PARTIALLY_PAID', 'OVERDUE'].includes(i.status))
   const toAnswer = data.quotes.filter(q => q.status === 'SENT')
   return (
-    <div className="min-h-dvh bg-surface-50 text-surface-900">
+    <div className="relative z-10 min-h-dvh bg-surface-50 text-surface-900">
       <header className="border-b border-surface-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <div>
