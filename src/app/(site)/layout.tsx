@@ -49,7 +49,7 @@ export const viewport: Viewport = {
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={geist.variable}>
+    <html lang="fr" className={geist.variable} data-scroll-behavior="smooth">
       <body className="bg-paper font-sans text-ink">
         <a
           href="#contenu"
