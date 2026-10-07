@@ -50,6 +50,63 @@ interface RouteOptions<B> {
   /** Drivers are refused unless explicitly allowed (they also go through the middleware allowlist). */
   allowDriver?: boolean
   schema?: ZodType<B>
+  /** `false` for calls that change nothing worth tracing (previews, read markers). */
+  audit?: boolean
+}
+
+// ─── Audit trail ───────────────────────────────────────────────────────────────
+// Every successful change made through a business route is traced: who, what, when, on what.
+// Before this, only drivers, missions, users and vehicles were — an invoice could be issued,
+// credited or paid, a price changed or an API key's webhook edited without leaving any trace.
+
+const AUDIT_SKIP = /\/(preview|simulate|read|preferences)$/
+const SECRET_KEY = /pass|secret|token|key|signature|authorization/i
+const SINGULAR: Record<string, string> = {
+  invoices: 'invoice', payments: 'payment', quotes: 'quote', orders: 'order', contracts: 'contract', containers: 'container',
+  'container-types': 'container_type', clients: 'client', 'client-contacts': 'client_contact', materials: 'material',
+  'price-lists': 'price_list', 'price-rules': 'price_rule', weighings: 'weighing', documents: 'document',
+  'webhook-endpoints': 'webhook_endpoint', 'webhook-deliveries': 'webhook_delivery', 'portal-requests': 'portal_request',
+  'portal-users': 'portal_user', 'maintenance-plans': 'maintenance_plan', 'vehicle-defects': 'vehicle_defect',
+  'vehicle-unavailability': 'vehicle_unavailability', missions: 'mission',
+}
+const VERB: Record<string, string> = { POST: 'create', PUT: 'update', PATCH: 'update', DELETE: 'delete' }
+
+/** `POST /api/invoices/[id]/issue` → `invoice.issue`; `PUT /api/quotes/[id]` → `quote.update`. */
+export function auditActionOf(method: string, routeName: string): { action: string; entityType: string } {
+  const parts = routeName.replace(/^\/api\//, '').split('/')
+  const resource = SINGULAR[parts[0]] ?? parts[0].replace(/s$/, '').replace(/-/g, '_')
+  const last = parts[parts.length - 1]
+  const sub = parts.length > 1 && !last.startsWith('[') ? last.replace(/-/g, '_') : null
+  const entityType = resource.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('')
+  return { action: `${resource}.${sub ?? VERB[method] ?? method.toLowerCase()}`, entityType }
+}
+
+/** What was sent, without secrets and without long texts — enough to understand the change. */
+function auditChanges(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {}
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+    if (SECRET_KEY.test(k)) { out[k] = '[masqué]'; continue }
+    if (typeof v === 'string') out[k] = v.length > 200 ? `${v.slice(0, 200)}…` : v
+    else if (typeof v === 'number' || typeof v === 'boolean' || v === null) out[k] = v
+    else if (Array.isArray(v)) out[k] = `[${v.length} élément(s)]`
+    else out[k] = '{…}'
+  }
+  return out
+}
+
+function recordAudit<B>(opts: RouteOptions<B>, method: string, tenantId: string, userId: string, params: Record<string, string>, body: B, out: unknown): void {
+  if (method === 'GET' || method === 'HEAD' || opts.audit === false || AUDIT_SKIP.test(opts.name)) return
+  if (process.env.USE_MOCK_DATA !== 'false') return
+  const { action, entityType } = auditActionOf(method, opts.name)
+  const result = (out && typeof out === 'object' ? out : {}) as Record<string, unknown>
+  const nested = Object.values(result).find(v => v && typeof v === 'object' && typeof (v as { id?: unknown }).id === 'string') as { id: string } | undefined
+  const entityId = params.id ?? (typeof result.id === 'string' ? result.id : nested?.id) ?? ''
+  const number = typeof result.number === 'string' ? { number: result.number } : {}
+  const db = getTenantDb(tenantId)
+  void db.auditLog.create({
+    data: { userId: userId || 'system', action, entityType, entityId, changes: { ...auditChanges(body), ...number } } as Parameters<typeof db.auditLog.create>[0]['data'],
+  }).catch(() => undefined) // the trace must never fail the action it traces
 }
 
 /**
@@ -112,8 +169,10 @@ export function apiRoute<B = undefined>(
       const out = await fn({ req, tenantId, userId, role, db: getTenantDb(tenantId), body, params })
       if (out instanceof NextResponse) {
         status = out.status
+        if (status < 400) recordAudit(opts, req.method, tenantId, userId, params, body, undefined)
         return out
       }
+      recordAudit(opts, req.method, tenantId, userId, params, body, out)
       return NextResponse.json(out ?? { ok: true })
     } catch (err) {
       if (err instanceof ApiError) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }                        from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { ExutoireSchema }                                    from '@/lib/schemas'
 import { createLogger }                                      from '@/lib/logger'
 import { getTenantId, getRequestContext }                     from '@/lib/data/context'
@@ -60,6 +61,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     const ok = await deleteExutoire(tenantId, id)
     if (!ok) return NextResponse.json({ error: 'Exutoire introuvable' }, { status: 404 })
     await redisCache.invalidateAll('exutoires', tenantId)
+    auditAsync(req, 'exutoire.delete', 'Exutoire', id, {})
     return NextResponse.json({ ok: true })
   } catch (err) {
     log.error('DELETE failed', { id, err: err instanceof Error ? err.message : String(err) })

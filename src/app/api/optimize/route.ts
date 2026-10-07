@@ -1,3 +1,4 @@
+import { auditAsync } from '@/lib/audit'
 import { NextRequest, NextResponse }   from 'next/server'
 import { OptimizeRequestSchema }        from '@/lib/schemas'
 import { createLogger }                 from '@/lib/logger'
@@ -204,6 +205,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       const result = await runVRP(missions, drivers, allExutoires, date, syncOptions)
 
+      auditAsync(req, 'optimization.run', 'Plan', date, { planned: result.stats.assignedMissions, total: result.stats.totalMissions, unassigned: result.unassignedMissions.length })
       void maybeSendOptimizationPush(db, tenantId, date, result.stats.assignedMissions, missions.length)
       void import('@/lib/events/outbound').then(({ emitBusinessEvent }) => emitBusinessEvent(tenantId, 'route.optimized', {
         date, assignedMissions: result.stats.assignedMissions, totalMissions: result.stats.totalMissions, unassigned: result.unassignedMissions.length,

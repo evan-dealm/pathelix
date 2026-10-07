@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { SiteCreateSchema } from '@/lib/crm/schemas'
 import { isApiKeyRequest } from '@/lib/apiKeyAuth'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
@@ -100,6 +101,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       include: { clientSites: { include: { client: { select: { id: true, name: true } } } } },
     })
     void redisCache.invalidateAll('sites', tenantId)
+    auditAsync(req, 'site.create', 'Site', site.id, { name: site.name })
     return NextResponse.json(site, { status: 201 })
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

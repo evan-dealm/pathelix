@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { SiteUpdateSchema } from '@/lib/crm/schemas'
 import { isApiKeyRequest } from '@/lib/apiKeyAuth'
 import { getRequestContext } from '@/lib/data/context'
@@ -55,6 +56,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       })
     })
     void redisCache.invalidateAll('sites', tenantId)
+    auditAsync(req, 'site.update', 'Site', id, { fields: Object.keys(parsed.data) })
     return NextResponse.json(updated)
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
@@ -73,6 +75,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!existing) return NextResponse.json({ error: 'Site introuvable' }, { status: 404 })
     await db.site.update({ where: { id }, data: { archived: true } })
     void redisCache.invalidateAll('sites', tenantId)
+    auditAsync(req, 'site.delete', 'Site', id, {})
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

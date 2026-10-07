@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { ClientUpdateSchema } from '@/lib/crm/schemas'
 import { isApiKeyRequest } from '@/lib/apiKeyAuth'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
@@ -77,6 +78,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       })
     })
     void redisCache.invalidateAll('clients', tenantId)
+    auditAsync(req, 'client.update', 'Client', id, { fields: Object.keys(parsed.data) })
     return NextResponse.json(updated)
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
@@ -95,6 +97,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!existing) return NextResponse.json({ error: 'Client introuvable' }, { status: 404 })
     await db.client.update({ where: { id }, data: { archived: true } })
     void redisCache.invalidateAll('clients', tenantId)
+    auditAsync(req, 'client.delete', 'Client', id, {})
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

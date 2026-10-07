@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { isApiKeyRequest } from '@/lib/apiKeyAuth'
 import { assertTenantDrivers, ForeignTenantRefError } from '@/lib/tenantRefs'
 import { hasPermission } from '@/lib/permissions'
@@ -169,6 +170,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       driverCount: plans.length,
       totalMissions: plans.reduce((sum, p) => sum + (p.missions?.length ?? 0), 0),
     })
+    auditAsync(req, 'plan.save', 'Plan', plans[0]?.date ?? '', { routes: plans.length, missions: plans.reduce((sum, p) => sum + (p.missions?.length ?? 0), 0) })
 
     return NextResponse.json({ saved: plans.length })
   } catch (err) {
@@ -194,6 +196,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     const result = await getTenantDb(tenantId).plan.deleteMany({ where: { date } })
     void redisCache.invalidate('plans', tenantId, date)
     log.info('Plans purged', { tenantId, date, count: result.count })
+    auditAsync(req, 'plan.delete_day', 'Plan', date, { deleted: result.count })
     return NextResponse.json({ ok: true, deleted: result.count })
   } catch (err) {
     log.error('DELETE failed', { err: err instanceof Error ? err.message : String(err) })

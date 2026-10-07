@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { TenantSettingsSchema }      from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
@@ -120,6 +121,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
 
     void redisCache.invalidate('settings', tenantId)
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/settings', method: 'PUT', status: '200' })
+    auditAsync(req, 'settings.update', 'TenantSettings', tenantId, { fields: Object.keys(parsed.data) })
     return NextResponse.json(settings)
   } catch (err) {
     log.error('PUT failed', { err: err instanceof Error ? err.message : String(err) })

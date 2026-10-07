@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { ExutoireSchema }            from '@/lib/schemas'
 import { createLogger }              from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const exutoire = await createExutoire(tenantId, parsed.data)
 
     await redisCache.invalidateAll('exutoires', tenantId)
+    auditAsync(req, 'exutoire.create', 'Exutoire', exutoire.id, { name: exutoire.name })
     return NextResponse.json(exutoire, { status: 201, headers: { 'Cache-Control': 'no-cache' } })
   } catch (err) {
     log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })

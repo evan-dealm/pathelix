@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auditAsync } from '@/lib/audit'
 import { z } from 'zod'
 import { randomBytes } from 'crypto'
 import { getTenantDb } from '@/lib/tenantDb'
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   })
 
   log.info('API key created', { tenantId, keyId: key.id, name: key.name, by: userId })
+  auditAsync(req, 'api_key.create', 'ApiKey', key.id, { name: key.name, scopes: parsed.data.scopes })
 
   return NextResponse.json({
     ...key,
@@ -90,5 +92,6 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
 
   invalidateApiKeyCache()
   log.info('API key revoked', { tenantId, keyId: id, by: userId })
+  auditAsync(req, 'api_key.revoke', 'ApiKey', id ?? '', {})
   return NextResponse.json({ ok: true })
 }
