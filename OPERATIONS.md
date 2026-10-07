@@ -215,8 +215,16 @@ Levée du HALT : ces 6 étapes validées, établissements réels inscrits, Sentr
 - **Next.js 16** (`middleware` → `proxy`) : compile et passe les tests sur une branche dédiée ;
   différé car `middleware.ts` porte l'auth et l'isolation — à faire avec une revue dédiée.
   `next lint` est déprécié (migration : `npx @next/codemod@canary next-lint-to-eslint-cli .`).
-- **AI Engine OCR** (`ai-engine/`, Python, GPU) : code en place, pas de service de déploiement.
-- **PTAC** : l'optimiseur contraint le volume des bennes, pas le poids total transporté.
+- **OCR des tickets de pesée** (`ai-engine/`, Tesseract, CPU) : service optionnel du compose
+  (`docker compose --profile ocr up`, `AI_CALLBACK_SECRET` requis). Sans lui, l'application
+  chauffeur masque la lecture du ticket et le poids se saisit à la main.
+- **PTAC / charge utile** : pris en compte par l'optimiseur quand le véhicule a ses chiffres
+  (charge utile ou PTAC et tare) et la mission un poids connu ou estimé ; un poids inconnu n'est
+  jamais inventé (seule la tare de la benne compte) et un véhicule sans chiffres n'a pas de limite
+  de poids — renseigner les véhicules pour que la contrainte joue.
+- **Langues** : l'interface est en français uniquement. `next-intl` et `src/messages/{fr,en}.json`
+  sont en place mais aucun écran ne les utilise encore ; une traduction demande de sortir les
+  libellés de chaque composant.
 - **Dépendances** : `npm audit --omit=dev` signale une chaîne modérée via `swagger-ui-react`
   (`remarkable`/`argparse`/`sprintf-js`, déni de service sur du markdown) ; elle ne traite que
   notre propre spécification OpenAPI. Seule « correction » proposée : revenir à la v3 — refusé.
