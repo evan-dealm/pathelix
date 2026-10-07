@@ -1287,11 +1287,7 @@ export default function AdminPage() {
                   ? "Vue d'ensemble"
                   : activeTab === 'missions'
                     ? `${(Array.isArray(missions) ? missions : []).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length} missions`
-                    : activeTab === 'tours'
-                      ? /^\d{4}-\d{2}-\d{2}$/.test(planDate)
-                        ? new Date(`${planDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-                        : planDate
-                      : activeTab === 'drivers'
+                    : activeTab === 'drivers'
                         ? `${(Array.isArray(drivers) ? drivers : []).filter(d => !d.archived).length} ${vocab.drivers.toLowerCase()}`
                         : activeTab === 'catalogue'
                           ? 'Clients, Sites, Produits'
