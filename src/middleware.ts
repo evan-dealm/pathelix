@@ -121,7 +121,34 @@ function requiresAdmin(pathname: string): boolean {
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 
+/**
+ * Reads the request body to its end (and discards it) before the request is handed to a route.
+ *
+ * This middleware runs on the Node.js runtime, where Next 15.5 swaps the consumed request stream
+ * for its buffered copy WITHOUT waiting for the body to be complete. When the middleware answered
+ * before the last chunk had arrived — any body sent in several network chunks: a saved plan, an
+ * import, a photo — the route received the half-read original stream and failed with « Response
+ * body object should not be disturbed or locked »: an HTML 500 on a few percent of such requests.
+ * Once the copy given to the middleware has ended, the whole body is buffered and the swap is safe.
+ */
+async function waitForRequestBody(request: NextRequest): Promise<void> {
+  if (request.method === 'GET' || request.method === 'HEAD' || !request.body) return
+  try {
+    const reader = request.body.getReader()
+    while (!(await reader.read()).done) { /* discard: the route reads Next's buffered copy */ }
+  } catch {
+    // Upload aborted by the client: the route fails on its own, nothing to wait for.
+  }
+}
+
 export async function middleware(request: NextRequest): Promise<NextResponse> {
+  const response = await handleRequest(request)
+  // Only for requests that continue to a route; a refusal (401, 413…) must not wait for an upload.
+  if (response.headers.get('x-middleware-next') === '1') await waitForRequestBody(request)
+  return response
+}
+
+async function handleRequest(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl
 
   const contentLength = request.headers.get('content-length')

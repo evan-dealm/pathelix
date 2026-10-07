@@ -113,6 +113,38 @@ describe('middleware', () => {
     expect((await middleware(makeReq('/api/docs-internal'))).status).toBe(401)
   })
 
+  // On the Node.js runtime Next swaps the request stream for its buffered copy without waiting
+  // for the body: answering before the last chunk made the route fail at random (HTML 500).
+  it('passes a request on only once its whole body has arrived', async () => {
+    mockVerifySession.mockResolvedValue(makeSession())
+    let complete = false
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"notes":"'))
+        await new Promise(resolve => setTimeout(resolve, 40))
+        controller.enqueue(new TextEncoder().encode('late chunk"}'))
+        complete = true
+        controller.close()
+      },
+    })
+    const req = new NextRequest('http://localhost/api/drivers/abc', {
+      method: 'PUT', body, duplex: 'half',
+      headers: { cookie: 'session=tok', 'x-forwarded-for': '1.2.3.4', 'content-type': 'application/json' },
+    } as ConstructorParameters<typeof NextRequest>[1])
+    const res = await middleware(req)
+    expect(res.headers.get('x-middleware-next')).toBe('1')
+    expect(complete).toBe(true)
+  })
+
+  it('does not wait for the upload of a request it refuses', async () => {
+    const body = new ReadableStream<Uint8Array>({ start() { /* never ends */ } })
+    const req = new NextRequest('http://localhost/api/drivers/abc', {
+      method: 'PUT', body, duplex: 'half', headers: { 'x-forwarded-for': '1.2.3.4' },
+    } as ConstructorParameters<typeof NextRequest>[1])
+    const res = await middleware(req)
+    expect(res.status).toBe(401)
+  })
+
   // Megabytes of text could be stored in a note, and bodies above ~100 KB hit an intermittent
   // framework error on routes that do not read them first.
   it('ordinary API routes refuse a body over 100 KB; file, import and plan routes still take large ones', async () => {
