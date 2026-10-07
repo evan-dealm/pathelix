@@ -1,7 +1,7 @@
-import { apiRoute, paged, pagination, unprocessable } from '@/lib/api/route'
+import { apiRoute, paged, pagination } from '@/lib/api/route'
 import { PaymentSchema } from '@/lib/sales/schemas'
 import { assertTenantRefs } from '@/lib/tenantRefs'
-import { refreshPaymentStatus } from '@/lib/sales/invoices'
+import { assertPayable, refreshPaymentStatus } from '@/lib/sales/invoices'
 import { emitBusinessEvent } from '@/lib/events/outbound'
 
 export const GET = apiRoute({ name: '/api/payments', permission: 'manage_billing' }, async ({ db, req }) => {
@@ -20,16 +20,14 @@ export const GET = apiRoute({ name: '/api/payments', permission: 'manage_billing
 
 /**
  * Records a payment received (transfer, cheque…), on an invoice or not yet matched. The
- * invoice's paid amount and status follow (partially paid, paid).
+ * invoice's paid amount and status follow (partially paid, paid). On an invoice, the amount
+ * cannot exceed what remains due — checked under the invoice's row lock, so the same balance
+ * entered twice at the same moment is recorded once.
  */
 export const POST = apiRoute({ name: '/api/payments', permission: 'manage_billing', schema: PaymentSchema }, async ({ db, tenantId, userId, body }) => {
   await assertTenantRefs(db, { clientId: body.clientId, invoiceId: body.invoiceId ?? undefined })
-  if (body.invoiceId) {
-    const inv = await db.invoice.findFirst({ where: { id: body.invoiceId }, select: { clientId: true, status: true, kind: true } })
-    if (!inv || inv.clientId !== body.clientId) throw unprocessable('Cette facture n\'est pas celle de ce client', 'CLIENT_MISMATCH')
-    if (inv.status === 'DRAFT' || inv.status === 'CANCELLED' || inv.kind !== 'INVOICE') throw unprocessable('Paiement possible sur une facture émise uniquement', 'NOT_PAYABLE')
-  }
   const p = await db.$transaction(async tx => {
+    if (body.invoiceId) await assertPayable(tx, body.invoiceId, body.clientId, body.amount)
     const created = await tx.payment.create({
       data: { ...body, invoiceId: body.invoiceId ?? null, method: body.method ?? 'TRANSFER', reference: body.reference ?? '', notes: body.notes ?? '', createdBy: userId } as Parameters<typeof tx.payment.create>[0]['data'],
     })

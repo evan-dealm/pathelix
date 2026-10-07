@@ -24,7 +24,7 @@ export const GET = apiRoute({ name: '/api/invoices', permission: 'manage_billing
   const [rows, total, open] = await Promise.all([
     db.invoice.findMany({ where, skip, take: limit, orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }], include: { client: { select: { id: true, name: true } } } }),
     db.invoice.count({ where }),
-    db.invoice.findMany({ where: { status: { in: ['ISSUED', 'SENT', 'PARTIALLY_PAID'] } }, select: { totalTTC: true, amountPaid: true, dueDate: true } }),
+    db.invoice.findMany({ where: { status: { in: ['ISSUED', 'SENT', 'PARTIALLY_PAID'] } }, select: { totalTTC: true, amountPaid: true, creditedTTC: true, dueDate: true } }),
   ])
   const outstanding = open.reduce((a, i) => a + balanceOf(i), 0)
   const overdue = open.filter(i => i.dueDate && i.dueDate < today).reduce((a, i) => a + balanceOf(i), 0)

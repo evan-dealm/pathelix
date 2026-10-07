@@ -9,14 +9,46 @@ import type { SalesLineInput } from './schemas'
 import { commercialSettings, assertLineRefs } from './quotes'
 
 /** Status shown to people: an unpaid invoice past its due date is overdue. */
-export function effectiveInvoiceStatus(inv: { status: string; dueDate: string | null; totalTTC: number; amountPaid: number }, today = isoDay()): string {
+export function effectiveInvoiceStatus(inv: { status: string; dueDate: string | null; totalTTC: number; amountPaid: number; creditedTTC?: number }, today = isoDay()): string {
   const open = inv.status === 'ISSUED' || inv.status === 'SENT' || inv.status === 'PARTIALLY_PAID'
-  if (open && inv.dueDate && inv.dueDate < today && round2(inv.totalTTC - inv.amountPaid) > 0) return 'OVERDUE'
+  if (open && inv.dueDate && inv.dueDate < today && balanceOf(inv) > 0) return 'OVERDUE'
   return inv.status
 }
 
-export function balanceOf(inv: { totalTTC: number; amountPaid: number }): number {
-  return round2(inv.totalTTC - inv.amountPaid)
+/** What the customer still owes on an invoice: its total, less the credit notes issued against it, less what was paid. */
+export function balanceOf(inv: { totalTTC: number; amountPaid: number; creditedTTC?: number }): number {
+  return round2(inv.totalTTC - (inv.creditedTTC ?? 0) - inv.amountPaid)
+}
+
+const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`
+
+/**
+ * Takes the row lock of an invoice for the rest of the transaction (a no-op update): two
+ * payments, or a payment and a credit note, on the same invoice are then decided one after the
+ * other instead of both reading the same "remaining due".
+ */
+async function lockInvoice(tx: Pick<TenantDb, 'invoice'>, invoiceId: string): Promise<void> {
+  await tx.invoice.updateMany({ where: { id: invoiceId }, data: { updatedAt: new Date() } })
+}
+
+/**
+ * Checks, inside the caller's transaction, that `amount` can be matched with the invoice: it
+ * belongs to the customer, it is an issued invoice, and the amount does not exceed what remains
+ * due. Without this a payment larger than the balance — or the same balance recorded twice by
+ * two people at once — left the invoice "paid" several times over.
+ */
+export async function assertPayable(tx: Pick<TenantDb, 'invoice' | 'payment'>, invoiceId: string, clientId: string, amount: number, ignorePaymentId?: string): Promise<void> {
+  await lockInvoice(tx, invoiceId)
+  const inv = await tx.invoice.findFirst({ where: { id: invoiceId }, select: { clientId: true, status: true, kind: true, totalTTC: true, creditedTTC: true, number: true } })
+  if (!inv || inv.clientId !== clientId) throw new ApiError(422, 'Cette facture n\'est pas celle de ce client', 'CLIENT_MISMATCH')
+  if (inv.status === 'DRAFT' || inv.status === 'CANCELLED' || inv.kind !== 'INVOICE') throw new ApiError(422, 'Paiement possible sur une facture émise uniquement', 'NOT_PAYABLE')
+  const agg = await tx.payment.aggregate({ where: { invoiceId, ...(ignorePaymentId ? { id: { not: ignorePaymentId } } : {}) }, _sum: { amount: true } })
+  const remaining = round2(inv.totalTTC - inv.creditedTTC - (agg._sum.amount ?? 0))
+  if (round2(amount) > remaining) {
+    throw new ApiError(422, remaining <= 0
+      ? `La facture ${inv.number} est déjà soldée. Enregistrez ce paiement sans facture, puis rapprochez-le d'une autre.`
+      : `Ce paiement (${eur(amount)}) dépasse le reste dû de la facture ${inv.number} (${eur(remaining)}). Enregistrez ${eur(remaining)} sur cette facture et l'excédent comme paiement non rapproché.`, 'OVERPAYMENT')
+  }
 }
 
 interface FieldDraft {
@@ -239,6 +271,24 @@ export async function issueInvoice(db: TenantDb, tenantId: string, id: string) {
   const issueDate = isoDay()
   const terms = inv.contract?.paymentTermsDays ?? inv.client.paymentTermsDays ?? 30
   return db.$transaction(async tx => {
+    // Claim the draft first: of several simultaneous "Émettre" on the same draft (double click,
+    // two users), only one finds it still a draft — the others used to each take a new number,
+    // renumbering the invoice and leaving gaps in the legal sequence.
+    const claimed = await tx.invoice.updateMany({ where: { id, status: 'DRAFT' }, data: { status: 'ISSUED' } })
+    if (claimed.count !== 1) throw new ApiError(422, 'Facture déjà émise', 'NOT_DRAFT')
+
+    // A credit note never takes more off an invoice than what is left of it.
+    let creditedAfter: number | null = null
+    if (inv.kind === 'CREDIT_NOTE' && inv.creditedInvoiceId) {
+      await lockInvoice(tx, inv.creditedInvoiceId)
+      const original = await tx.invoice.findFirst({ where: { id: inv.creditedInvoiceId }, select: { totalTTC: true, number: true } })
+      const credited = await tx.invoice.aggregate({ where: { creditedInvoiceId: inv.creditedInvoiceId, kind: 'CREDIT_NOTE', status: { not: 'DRAFT' } }, _sum: { totalTTC: true } })
+      creditedAfter = round2(Math.abs(credited._sum.totalTTC ?? 0))
+      if (original && creditedAfter > round2(original.totalTTC)) {
+        throw new ApiError(422, `Le total des avoirs (${eur(creditedAfter)}) dépasserait le montant de la facture ${original.number} (${eur(original.totalTTC)})`, 'CREDIT_EXCEEDS_INVOICE')
+      }
+    }
+
     const number = await nextNumber(tx, tenantId, inv.kind === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'INVOICE', inv.kind === 'CREDIT_NOTE' ? s.creditNotePrefix : s.invoicePrefix)
     const issued = await tx.invoice.update({
       where: { id },
@@ -247,12 +297,14 @@ export async function issueInvoice(db: TenantDb, tenantId: string, id: string) {
         clientName: inv.client.name, billingAddress: inv.client.billingAddress, clientSiret: inv.client.siret,
       },
     })
-    // A credit note that cancels the whole invoice closes it.
-    if (inv.kind === 'CREDIT_NOTE' && inv.creditedInvoiceId) {
-      const original = await tx.invoice.findFirst({ where: { id: inv.creditedInvoiceId }, select: { totalTTC: true } })
-      const credited = await tx.invoice.aggregate({ where: { creditedInvoiceId: inv.creditedInvoiceId, kind: 'CREDIT_NOTE', status: { not: 'DRAFT' } }, _sum: { totalTTC: true } })
-      if (original && round2(original.totalTTC + (credited._sum.totalTTC ?? 0)) <= 0) {
+    if (inv.kind === 'CREDIT_NOTE' && inv.creditedInvoiceId && creditedAfter !== null) {
+      const original = await tx.invoice.update({ where: { id: inv.creditedInvoiceId }, data: { creditedTTC: creditedAfter }, select: { totalTTC: true } })
+      if (creditedAfter >= round2(original.totalTTC)) {
+        // A credit note that cancels the whole invoice closes it.
         await tx.invoice.update({ where: { id: inv.creditedInvoiceId }, data: { status: 'CANCELLED', cancelledAt: new Date() } })
+      } else {
+        // Partly credited: what was already paid may now cover the rest.
+        await refreshPaymentStatus(tx, inv.creditedInvoiceId)
       }
     }
     return issued
@@ -264,9 +316,15 @@ export async function createCreditNote(db: TenantDb, tenantId: string, userId: s
   const inv = await db.invoice.findFirst({ where: { id: invoiceId }, include: { lines: { orderBy: { position: 'asc' } } } })
   if (!inv) throw new ApiError(404, 'Facture introuvable', 'NOT_FOUND')
   if (inv.kind !== 'INVOICE' || inv.status === 'DRAFT') throw new ApiError(422, 'Un avoir se fait sur une facture émise', 'NOT_ISSUED')
+  if (inv.status === 'CANCELLED') throw new ApiError(422, 'Cette facture est déjà entièrement annulée par un avoir', 'ALREADY_CREDITED')
   const s = await commercialSettings(db, tenantId)
   const src: SalesLineInput[] = lines ?? inv.lines.map(l => ({ label: l.label, quantity: -l.quantity, unit: l.unit as SalesLineInput['unit'], unitPrice: l.unitPrice, discountPct: l.discountPct, vatRate: l.vatRate, explanation: `Avoir sur ${inv.number}` }))
   const built = buildLines(src.map(l => ({ ...l, quantity: -Math.abs(l.quantity) })), s.defaultVatRate)
+  // Said at once rather than at issue time (where it is enforced under a lock).
+  const left = round2(inv.totalTTC - inv.creditedTTC)
+  if (round2(Math.abs(built.totals.totalTTC)) > left) {
+    throw new ApiError(422, `Cet avoir (${eur(Math.abs(built.totals.totalTTC))}) dépasse ce qu'il reste de la facture ${inv.number} (${eur(left)})`, 'CREDIT_EXCEEDS_INVOICE')
+  }
   return db.invoice.create({
     data: {
       kind: 'CREDIT_NOTE', creditedInvoiceId: inv.id, clientId: inv.clientId, orderId: inv.orderId, contractId: inv.contractId, status: 'DRAFT',
@@ -283,11 +341,13 @@ export async function createCreditNote(db: TenantDb, tenantId: string, userId: s
 
 /** Recomputes paid amount and status of an invoice from its payments. */
 export async function refreshPaymentStatus(db: Pick<TenantDb, 'invoice' | 'payment'>, invoiceId: string): Promise<void> {
-  const inv = await db.invoice.findFirst({ where: { id: invoiceId }, select: { status: true, totalTTC: true, sentAt: true } })
+  const inv = await db.invoice.findFirst({ where: { id: invoiceId }, select: { status: true, totalTTC: true, creditedTTC: true, sentAt: true } })
   if (!inv || inv.status === 'DRAFT' || inv.status === 'CANCELLED') return
   const agg = await db.payment.aggregate({ where: { invoiceId }, _sum: { amount: true }, _max: { receivedAt: true } })
   const paid = round2(agg._sum.amount ?? 0)
-  const status = paid <= 0 ? (inv.sentAt ? 'SENT' : 'ISSUED') : paid >= round2(inv.totalTTC) ? 'PAID' : 'PARTIALLY_PAID'
+  // Due = the invoice less its credit notes: a partly credited invoice is paid once the rest is.
+  const due = round2(inv.totalTTC - inv.creditedTTC)
+  const status = paid <= 0 ? (inv.sentAt ? 'SENT' : 'ISSUED') : paid >= due ? 'PAID' : 'PARTIALLY_PAID'
   await db.invoice.update({
     where: { id: invoiceId },
     data: { amountPaid: paid, status, paidAt: status === 'PAID' ? new Date(`${agg._max.receivedAt ?? isoDay()}T12:00:00`) : null },

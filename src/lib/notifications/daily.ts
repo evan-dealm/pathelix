@@ -28,10 +28,10 @@ export async function checkTenant(tenantId: string, today = isoDay()): Promise<n
 
   const overdue = await db.invoice.findMany({
     where: { status: { in: ['ISSUED', 'SENT', 'PARTIALLY_PAID'] }, dueDate: { lt: today } },
-    select: { totalTTC: true, amountPaid: true },
+    select: { totalTTC: true, amountPaid: true, creditedTTC: true },
   })
   if (overdue.length > 0) {
-    const due = overdue.reduce((a, i) => a + i.totalTTC - i.amountPaid, 0)
+    const due = overdue.reduce((a, i) => a + i.totalTTC - i.creditedTTC - i.amountPaid, 0)
     n += await notify(tenantId, { kind: 'INVOICE_OVERDUE', title: `${plural(overdue.length, 'facture en retard', 'factures en retard')} — ${eur(due)} TTC à encaisser`, link: 'billing', dedupeKey: `INVOICE_OVERDUE${day}` })
   }
 

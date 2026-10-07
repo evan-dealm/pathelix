@@ -1,17 +1,14 @@
 import { PaymentAllocateSchema } from '@/lib/sales/schemas'
-import { apiRoute, notFound, unprocessable } from '@/lib/api/route'
-import { refreshPaymentStatus } from '@/lib/sales/invoices'
+import { apiRoute, notFound } from '@/lib/api/route'
+import { assertPayable, refreshPaymentStatus } from '@/lib/sales/invoices'
 
 /** Matches (or unmatches) a payment with an invoice of the same customer — manual reconciliation. */
 export const PUT = apiRoute({ name: '/api/payments/[id]', permission: 'manage_billing', schema: PaymentAllocateSchema }, async ({ db, body, params }) => {
-  const p = await db.payment.findFirst({ where: { id: params.id }, select: { id: true, clientId: true, invoiceId: true } })
+  const p = await db.payment.findFirst({ where: { id: params.id }, select: { id: true, clientId: true, invoiceId: true, amount: true } })
   if (!p) throw notFound('Paiement')
-  if (body.invoiceId) {
-    const inv = await db.invoice.findFirst({ where: { id: body.invoiceId }, select: { clientId: true, status: true, kind: true } })
-    if (!inv || inv.clientId !== p.clientId) throw unprocessable('Cette facture n\'est pas celle de ce client', 'CLIENT_MISMATCH')
-    if (inv.status === 'DRAFT' || inv.status === 'CANCELLED' || inv.kind !== 'INVOICE') throw unprocessable('Paiement possible sur une facture émise uniquement', 'NOT_PAYABLE')
-  }
   return db.$transaction(async tx => {
+    // Same rule as a new payment: never more than what remains due on the invoice.
+    if (body.invoiceId) await assertPayable(tx, body.invoiceId, p.clientId, p.amount, p.id)
     const updated = await tx.payment.update({ where: { id: p.id }, data: { invoiceId: body.invoiceId } })
     if (p.invoiceId) await refreshPaymentStatus(tx, p.invoiceId)
     if (body.invoiceId) await refreshPaymentStatus(tx, body.invoiceId)

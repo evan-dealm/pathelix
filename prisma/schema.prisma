@@ -1188,6 +1188,8 @@ model Invoice {
   totalVAT          Float         @default(0)
   totalTTC          Float         @default(0)
   amountPaid        Float         @default(0)
+  /// Total (TTC, positive) of the credit notes issued against this invoice — what is due is totalTTC − creditedTTC − amountPaid.
+  creditedTTC       Float         @default(0)
   notes             String        @default("")
   sentAt            DateTime?
   paidAt            DateTime?

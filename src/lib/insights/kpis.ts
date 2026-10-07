@@ -82,7 +82,7 @@ export async function computeKpis(db: TenantDb, tenantId: string, from: string, 
       // Issued documents (numbered), credited invoices included — their credit notes net them out.
       db.invoice.aggregate({ where: { issueDate: { gte: from, lte: to }, number: { not: null } }, _sum: { totalHT: true } }),
       db.payment.aggregate({ where: { receivedAt: { gte: from, lte: to } }, _sum: { amount: true } }),
-      db.invoice.findMany({ where: { kind: 'INVOICE', status: { in: ['ISSUED', 'SENT', 'PARTIALLY_PAID'] }, dueDate: { lt: today } }, select: { totalTTC: true, amountPaid: true } }),
+      db.invoice.findMany({ where: { kind: 'INVOICE', status: { in: ['ISSUED', 'SENT', 'PARTIALLY_PAID'] }, dueDate: { lt: today } }, select: { totalTTC: true, amountPaid: true, creditedTTC: true } }),
       db.mission.findMany({ where: { date: { gte: from, lte: to }, completedAt: { not: null }, archived: false }, select: { id: true } }),
     ])
     const billed = doneMissions.length
@@ -92,7 +92,7 @@ export async function computeKpis(db: TenantDb, tenantId: string, from: string, 
     out.money = {
       invoicedHT: r2(invoiced._sum.totalHT ?? 0),
       collected: r2(collected._sum.amount ?? 0),
-      overdueTTC: r2(overdue.reduce((a, i) => a + i.totalTTC - i.amountPaid, 0)),
+      overdueTTC: r2(overdue.reduce((a, i) => a + i.totalTTC - i.creditedTTC - i.amountPaid, 0)),
       unbilledDone: doneMissions.filter(m => !billed.has(m.id)).length,
     }
   }
