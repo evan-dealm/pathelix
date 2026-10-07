@@ -136,7 +136,7 @@ export const useOptimizationStore = create<OptimizationState>((set, _get) => ({
               stopTimers()
               set({
                 isOptimizing: false, progress: 0,
-                error: 'Serveur de calcul indisponible (aucun worker actif). Vérifiez que le service Ryzen est démarré.',
+                error: 'Serveur de calcul indisponible. Réessayez dans un instant ; si le problème persiste, contactez votre administrateur.',
               })
             }
             return

@@ -55,6 +55,9 @@ export async function enqueueVrpJob(
   return job.id
 }
 
+/** A worker being restarted is absent for a few seconds: not yet a lost job. */
+const ORPHAN_GRACE_MS = 15_000
+
 export async function getVrpJobStatus(jobId: string): Promise<{
   status:   'waiting' | 'active' | 'completed' | 'failed' | 'unknown'
   result?:  VrpJobResult
@@ -75,6 +78,12 @@ export async function getVrpJobStatus(jobId: string): Promise<{
     return { status: 'failed', error: job.failedReason ?? 'Erreur inconnue' }
   }
   if (state === 'active') {
+    // Held by a worker that no longer exists (crash, stop): nothing will finish this job until a
+    // worker is back AND its lock has expired. Say so instead of a progress bar frozen for minutes.
+    if (job.processedOn && Date.now() - job.processedOn > ORPHAN_GRACE_MS && !(await hasActiveVrpWorker())) {
+      return { status: 'failed', error: 'Le serveur de calcul s\'est arrêté pendant l\'optimisation. Relancez-la.' }
+    }
+
     const reportedProgress = typeof job.progress === 'number' ? job.progress : 5
 
     let progress = reportedProgress

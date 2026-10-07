@@ -132,6 +132,36 @@ describe('getVrpJobStatus', () => {
   })
 })
 
+describe('getVrpJobStatus — job orphaned by a dead worker', () => {
+  const setWorkers = (workers: unknown[]) => {
+    (mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi.fn().mockResolvedValue(workers)
+  }
+
+  it('reports the failure when the job is active but no worker is left to finish it', async () => {
+    // The progress bar used to stay frozen at 92 % for ten minutes.
+    const { getVrpJobStatus } = await import('@/lib/queue/vrpQueue')
+    mockJob.getState.mockResolvedValue('active')
+    mockJob.processedOn = Date.now() - 40_000
+    mockQueue.getJob.mockResolvedValue(mockJob)
+    setWorkers([])
+    const status = await getVrpJobStatus('job-123')
+    expect(status.status).toBe('failed')
+    expect(status.error).toMatch(/serveur de calcul s'est arrêté/i)
+  })
+
+  it('keeps waiting while a worker is connected, and during the first seconds of a job', async () => {
+    const { getVrpJobStatus } = await import('@/lib/queue/vrpQueue')
+    mockJob.getState.mockResolvedValue('active')
+    mockQueue.getJob.mockResolvedValue(mockJob)
+    mockJob.processedOn = Date.now() - 40_000
+    setWorkers([{ id: 'w1' }])
+    expect((await getVrpJobStatus('job-123')).status).toBe('active')
+    mockJob.processedOn = Date.now() - 3_000
+    setWorkers([])
+    expect((await getVrpJobStatus('job-123')).status).toBe('active')
+  })
+})
+
 describe('hasActiveVrpWorker', () => {
   it('reports no worker (instead of hanging) when listing workers fails or stalls', async () => {
     const { hasActiveVrpWorker } = await import('@/lib/queue/vrpQueue')

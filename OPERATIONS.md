@@ -136,6 +136,7 @@ dimensionné) ; disque > 85 % (photos, WAL) ; optimisation > 120 s.
 | Toutes les API en 500, `/api/ready` 503 | PostgreSQL | `docker compose logs postgres`, `docker compose restart postgres` |
 | `/api/optimize` répond `mode: "sync"` | Redis ou worker VRP absent | `docker compose ps worker redis` ; relancer |
 | Optimisations lentes, qualité de tournée en baisse, `routingSource: haversine` | Valhalla indisponible (le circuit breaker coupe après échecs répétés) | `curl http://valhalla:8002/status`, relancer `valhalla` |
+| Optimisation « Le serveur de calcul s'est arrêté pendant l'optimisation » | Worker VRP arrêté en plein calcul, aucun worker connecté | `docker compose ps worker` ; relancer puis relancer l'optimisation. Si le worker redémarre seul, le calcul interrompu est repris automatiquement à l'expiration de son verrou (environ 5 min) |
 | PDF « Service de génération PDF indisponible » | `worker-pdf` arrêté | `docker compose restart worker-pdf` |
 | Scan de ticket « Service OCR indisponible » | Redis absent, file OCR pleine (200) ou AI Engine non déployé | Vérifier Redis ; l'AI Engine n'est pas orchestré par défaut |
 | Missions récurrentes absentes | `worker-recurring` arrêté | relancer ; il rattrape au démarrage |
