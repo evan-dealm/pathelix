@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { latestPositions, speedHistory } from '@/lib/positions'
+import { latestPositions, speedHistory, type SpeedPoint } from '@/lib/positions'
 import { getDriver } from '@/lib/data/drivers'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { getTenantDb } from '@/lib/tenantDb'
@@ -44,21 +44,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   // Read from the database every GPS source writes to — any instance sees every position.
-  const db = getTenantDb(tenantHeader)
   const since = new Date(Date.now() - POSITION_MAX_AGE_MS)
-  const settings = await db.tenantSettings.findUnique({ where: { tenantId: tenantHeader }, select: { timezone: true } })
-  const timeZone = settings?.timezone || 'Europe/Paris'
+  // The live map polls every 15 s and only draws positions: `history=0` skips the day's speeds.
+  const withHistory = searchParams.get('history') !== '0'
+  const timeZoneOf = async () => {
+    const settings = await getTenantDb(tenantHeader).tenantSettings.findUnique({ where: { tenantId: tenantHeader }, select: { timezone: true } })
+    return settings?.timezone || 'Europe/Paris'
+  }
   if (driverId) {
 
     const driver = await getDriver(tenantHeader, driverId)
     if (!driver) {
       return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
     }
-    const [positions, history] = await Promise.all([latestPositions(db, { since, driverIds: [driverId] }), speedHistory(db, date, timeZone, [driverId])])
+    const [positions, history] = await Promise.all([
+      latestPositions(tenantHeader, { since, driverIds: [driverId] }),
+      withHistory ? speedHistory(tenantHeader, date, await timeZoneOf(), [driverId]) : Promise.resolve({} as Record<string, SpeedPoint[]>),
+    ])
     return NextResponse.json({ positions, history: { [driverId]: history[driverId] ?? [] } })
   }
 
-  const [positions, history] = await Promise.all([latestPositions(db, { since }), speedHistory(db, date, timeZone)])
+  const [positions, history] = await Promise.all([
+    latestPositions(tenantHeader, { since }),
+    withHistory ? speedHistory(tenantHeader, date, await timeZoneOf()) : Promise.resolve({} as Record<string, SpeedPoint[]>),
+  ])
   return NextResponse.json({ positions, history })
 }
 

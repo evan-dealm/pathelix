@@ -16,7 +16,8 @@ export function useDriverPositions(date: string, intervalMs: number = 15_000) {
 
   const fetchPositions = useCallback(async () => {
     try {
-      const res = await fetch(`/api/driver-position?date=${date}`)
+      // Positions only: the day's speed history is for the telematics tab, not the map.
+      const res = await fetch(`/api/driver-position?date=${date}&history=0`)
       if (!res.ok) return
       const data = await res.json()
       if (Array.isArray(data.positions)) {

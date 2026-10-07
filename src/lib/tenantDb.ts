@@ -28,9 +28,13 @@
  * - Filters inside `include`/`select` (e.g. `include: { missions: { where: {...} } }`) — the
  *   injected top-level `where` does not reach into a relation's own `where`. Audited: zero
  *   `include: { <relation>: { where: ... } }` usages exist anywhere in `src/` today.
- * - `$queryRaw`/`$queryRawUnsafe`/`$executeRaw(Unsafe)` — bypass the extension entirely. Only 4
- *   usages exist in the whole codebase, all `SELECT 1` health checks with zero tenant data
- *   involved (`/api/health`, `/api/ready`, `/api/status`, `/api/superadmin/system-health`).
+ * - `$queryRaw`/`$queryRawUnsafe`/`$executeRaw(Unsafe)` — bypass the extension entirely. Usages:
+ *   `SELECT 1` health checks with zero tenant data (`/api/health`, `/api/ready`, `/api/status`,
+ *   `/api/superadmin/system-health`); a row lock on a plan already read through the scoped
+ *   client (`/api/driver-status/update`); and the two GPS reads of `src/lib/positions.ts`, which
+ *   carry `"tenantId" = <bound parameter>` on every table they touch (pinned by
+ *   `positions.test.ts`, isolation checked on a real database). Any new raw query on tenant data
+ *   must do the same and be added to this list.
  * - `ClientSite` — has no `tenantId` column of its own (scoped only transitively via
  *   `clientId`/`siteId`, both of which belong to a tenant); left out of `TENANT_SCOPED_MODELS`
  *   on purpose, since injecting a `tenantId` filter into a model that has no such column would

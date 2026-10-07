@@ -1,37 +1,49 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { TenantDb } from '@/lib/tenantDb'
+
+// The SQL itself (latest row per driver, local-day grouping, tenant isolation) is exercised on a
+// real PostgreSQL by .manualtest/positions-flow.ts; these tests pin what surrounds it.
+const queryRaw = vi.hoisted(() => vi.fn(async (_sql: string, _values: unknown[]) => [] as unknown[]))
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: { $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => queryRaw(strings.join('?'), values) },
+}))
+
 import { latestPositions, speedHistory } from '../positions'
 
-type Row = { driverId: string; latitude?: number; longitude?: number; speedKmh: number | null; recordedAt: Date }
-const findMany = vi.fn(async (_args: unknown) => [] as Row[])
-const db = { driverPosition: { findMany } } as unknown as TenantDb
-
 beforeEach(() => { vi.clearAllMocks() })
+const lastCall = () => ({ sql: queryRaw.mock.calls[0][0], values: queryRaw.mock.calls[0][1] })
 
 describe('latestPositions', () => {
-  it('asks the database for the newest row of each driver since the cut-off', async () => {
-    const since = new Date('2026-10-07T00:00:00Z')
-    await latestPositions(db, { since })
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { recordedAt: { gte: since } },
-      orderBy: { recordedAt: 'desc' },
-      distinct: ['driverId'],
-    }))
+  it('always filters on the tenant, as a bound parameter, on both tables', async () => {
+    await latestPositions('tenant-a', { since: new Date('2026-10-07T00:00:00Z') })
+    const { sql, values } = lastCall()
+    expect(sql).toContain('"tenantId" = ?')
+    expect(sql).toContain('d."tenantId" = ?')
+    expect(values.filter(v => v === 'tenant-a')).toHaveLength(2)
+    expect(sql).not.toContain('tenant-a')
   })
 
-  it('restricts to the requested drivers', async () => {
-    await latestPositions(db, { since: new Date(0), driverIds: ['d1'] })
-    const args = findMany.mock.calls[0][0] as { where: { driverId?: unknown } }
-    expect(args.where.driverId).toEqual({ in: ['d1'] })
+  it('takes one row per driver straight from the index, never the whole window', async () => {
+    await latestPositions('tenant-a', { since: new Date('2026-10-07T00:00:00Z') })
+    const { sql, values } = lastCall()
+    expect(sql).toMatch(/ORDER BY "recordedAt" DESC\s+LIMIT 1/)
+    expect(values).toContain('2026-10-07T00:00:00.000Z')
+  })
+
+  it('all drivers by default, only the requested ones otherwise', async () => {
+    await latestPositions('tenant-a', { since: new Date(0) })
+    expect(lastCall().values).toEqual(expect.arrayContaining([true, []]))
+    queryRaw.mockClear()
+    await latestPositions('tenant-a', { since: new Date(0), driverIds: ['d1'] })
+    expect(lastCall().values).toEqual(expect.arrayContaining([false, ['d1']]))
   })
 
   it('maps rows to the shape the live map reads; a stopped truck has ignition off', async () => {
     const at = new Date('2026-10-07T08:30:00Z')
-    findMany.mockResolvedValueOnce([
+    queryRaw.mockResolvedValueOnce([
       { driverId: 'd1', latitude: 45.9, longitude: 6.1, speedKmh: 42, recordedAt: at },
       { driverId: 'd2', latitude: 46, longitude: 6.2, speedKmh: null, recordedAt: at },
     ])
-    expect(await latestPositions(db, { since: new Date(0) })).toEqual([
+    expect(await latestPositions('tenant-a', { since: new Date(0) })).toEqual([
       { driverId: 'd1', lat: 45.9, lng: 6.1, speedKmh: 42, ignition: true, updatedAt: at.getTime() },
       { driverId: 'd2', lat: 46, lng: 6.2, speedKmh: 0, ignition: false, updatedAt: at.getTime() },
     ])
@@ -39,49 +51,42 @@ describe('latestPositions', () => {
 })
 
 describe('speedHistory', () => {
-  it('plots minutes on the tenant clock, not the server clock (07:15 UTC is 09:15 in Paris in summer)', async () => {
-    findMany.mockResolvedValueOnce([{ driverId: 'd1', speedKmh: 50, recordedAt: new Date('2026-07-01T07:15:20Z') }])
-    expect(await speedHistory(db, '2026-07-01', 'Europe/Paris')).toEqual({ d1: [{ minuteOfDay: 9 * 60 + 15, speedKmh: 50 }] })
+  it('groups in the database on the tenant clock and filters on the tenant', async () => {
+    await speedHistory('tenant-a', '2026-07-01', 'Europe/Paris', ['d1'])
+    const { sql, values } = lastCall()
+    expect(sql).toContain('"tenantId" = ?')
+    expect(sql).toContain('GROUP BY "driverId", minute')
+    expect(values).toEqual(expect.arrayContaining(['tenant-a', 'Europe/Paris', '2026-07-01', false, ['d1']]))
   })
 
-  it('keeps the readings of the local day only: 23:30 UTC the day before is 01:30 local, 22:30 UTC is tomorrow', async () => {
-    findMany.mockResolvedValueOnce([
-      { driverId: 'd1', speedKmh: 30, recordedAt: new Date('2026-06-30T21:30:00Z') }, // 23:30 on 30 June → out
-      { driverId: 'd1', speedKmh: 31, recordedAt: new Date('2026-06-30T23:30:00Z') }, // 01:30 on 1 July → in
-      { driverId: 'd1', speedKmh: 32, recordedAt: new Date('2026-07-01T22:30:00Z') }, // 00:30 on 2 July → out
-    ])
-    expect(await speedHistory(db, '2026-07-01', 'Europe/Paris')).toEqual({ d1: [{ minuteOfDay: 90, speedKmh: 31 }] })
+  it('narrows the scan to a window wide enough for any time zone', async () => {
+    await speedHistory('tenant-a', '2026-07-01', 'Europe/Paris')
+    const dates = lastCall().values.filter((v): v is string => typeof v === 'string' && v.endsWith('Z')).map(v => Date.parse(v))
+    expect(Math.min(...dates)).toBeLessThanOrEqual(Date.parse('2026-06-30T12:00:00Z'))
+    expect(Math.max(...dates)).toBeGreaterThanOrEqual(Date.parse('2026-07-02T12:00:00Z'))
   })
 
-  it('keeps the last reading of each minute, sorted, per driver', async () => {
-    findMany.mockResolvedValueOnce([
-      { driverId: 'd1', speedKmh: 10, recordedAt: new Date('2026-01-15T08:00:05Z') },
-      { driverId: 'd2', speedKmh: 70, recordedAt: new Date('2026-01-15T08:00:10Z') },
-      { driverId: 'd1', speedKmh: 20, recordedAt: new Date('2026-01-15T08:00:45Z') },
-      { driverId: 'd1', speedKmh: 0, recordedAt: new Date('2026-01-15T08:01:00Z') },
+  it('returns the points per driver, in the order the database sorted them', async () => {
+    queryRaw.mockResolvedValueOnce([
+      { driverId: 'd1', minute: 540, speedKmh: 20 },
+      { driverId: 'd1', minute: 541, speedKmh: 0 },
+      { driverId: 'd2', minute: 540, speedKmh: 70 },
     ])
-    expect(await speedHistory(db, '2026-01-15', 'Europe/Paris')).toEqual({
-      d1: [{ minuteOfDay: 9 * 60, speedKmh: 20 }, { minuteOfDay: 9 * 60 + 1, speedKmh: 0 }],
-      d2: [{ minuteOfDay: 9 * 60, speedKmh: 70 }],
+    expect(await speedHistory('tenant-a', '2026-01-15', 'Europe/Paris')).toEqual({
+      d1: [{ minuteOfDay: 540, speedKmh: 20 }, { minuteOfDay: 541, speedKmh: 0 }],
+      d2: [{ minuteOfDay: 540, speedKmh: 70 }],
     })
   })
 
-  it('queries a window wide enough for any time zone and never unbounded', async () => {
-    await speedHistory(db, '2026-07-01', 'Europe/Paris', ['d1'])
-    const args = findMany.mock.calls[0][0] as { where: { recordedAt: { gte: Date; lt: Date }; driverId: unknown }; take: number }
-    expect(args.where.recordedAt.gte.getTime()).toBeLessThanOrEqual(Date.parse('2026-06-30T22:00:00Z'))
-    expect(args.where.recordedAt.lt.getTime()).toBeGreaterThanOrEqual(Date.parse('2026-07-01T22:00:00Z'))
-    expect(args.where.driverId).toEqual({ in: ['d1'] })
-    expect(args.take).toBeGreaterThan(0)
-  })
-
   it('falls back to Paris time on an unknown zone instead of failing the map', async () => {
-    findMany.mockResolvedValueOnce([{ driverId: 'd1', speedKmh: 50, recordedAt: new Date('2026-07-01T07:15:00Z') }])
-    expect(await speedHistory(db, '2026-07-01', 'Not/AZone')).toEqual({ d1: [{ minuteOfDay: 9 * 60 + 15, speedKmh: 50 }] })
+    await speedHistory('tenant-a', '2026-07-01', 'Not/AZone')
+    expect(lastCall().values).toContain('Europe/Paris')
+    expect(lastCall().values).not.toContain('Not/AZone')
   })
 
   it('returns nothing for a malformed date without querying', async () => {
-    expect(await speedHistory(db, 'nope', 'Europe/Paris')).toEqual({})
-    expect(findMany).not.toHaveBeenCalled()
+    expect(await speedHistory('tenant-a', 'nope', 'Europe/Paris')).toEqual({})
+    expect(await speedHistory('tenant-a', "2026-07-01'; DROP TABLE x; --", 'Europe/Paris')).toEqual({})
+    expect(queryRaw).not.toHaveBeenCalled()
   })
 })

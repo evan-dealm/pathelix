@@ -10,7 +10,8 @@ const mockFindFirst = vi.fn()
 const mockVerifySession = vi.fn()
 const mockGetDriver = vi.fn()
 const mockEmitEvent = vi.fn()
-const mockPositionFindMany = vi.fn()
+const mockLatestPositions = vi.fn()
+const mockSpeedHistory = vi.fn()
 const mockPositionCreateMany = vi.fn(async (_args: unknown) => ({ count: 1 }))
 
 vi.mock('@/lib/tenantDb', () => ({
@@ -19,12 +20,13 @@ vi.mock('@/lib/tenantDb', () => ({
       findMany:  (args: unknown) => mockFindMany(args),
       findFirst: (args: unknown) => mockFindFirst(args),
     },
-    driverPosition: {
-      createMany: (args: unknown) => mockPositionCreateMany(args),
-      findMany:   (args: unknown) => mockPositionFindMany(args),
-    },
+    driverPosition: { createMany: (args: unknown) => mockPositionCreateMany(args) },
     tenantSettings: { findUnique: vi.fn(async () => ({ timezone: 'Europe/Paris' })) },
   }),
+}))
+vi.mock('@/lib/positions', () => ({
+  latestPositions: (...args: unknown[]) => mockLatestPositions(...args),
+  speedHistory:    (...args: unknown[]) => mockSpeedHistory(...args),
 }))
 vi.mock('@/lib/session', () => ({
   SESSION_COOKIE: 'session',
@@ -64,22 +66,34 @@ describe('GET /api/driver-position — positions lues en base sous volume', () =
     vi.clearAllMocks()
     mockVerifySession.mockResolvedValue(ADMIN_SESSION)
     mockFindMany.mockResolvedValue(DRIVER_IDS.map(id => ({ id })))
-    mockPositionFindMany.mockResolvedValue(
-      DRIVER_IDS.map((id, i) => ({ driverId: id, latitude: 45.7 + i * 0.001, longitude: 4.8, speedKmh: 50, recordedAt: new Date() })),
+    mockLatestPositions.mockResolvedValue(
+      DRIVER_IDS.map((id, i) => ({ driverId: id, lat: 45.7 + i * 0.001, lng: 4.8, speedKmh: 50, ignition: true, updatedAt: Date.now() })),
     )
+    mockSpeedHistory.mockResolvedValue({})
   })
 
   // Positions come from the table shared by every instance; the cost must not grow with the fleet.
-  it('une requête GET lit 150 chauffeurs en 2 requêtes (dernières positions + historique), pas une par chauffeur', async () => {
+  it('une requête GET lit 150 chauffeurs en 2 lectures (dernières positions + historique), pas une par chauffeur', async () => {
     await GET(makeGetReq())
-    expect(mockPositionFindMany).toHaveBeenCalledTimes(2)
+    expect(mockLatestPositions).toHaveBeenCalledTimes(1)
+    expect(mockLatestPositions).toHaveBeenCalledWith('tenant-perf', expect.objectContaining({ since: expect.any(Date) }))
+    expect(mockSpeedHistory).toHaveBeenCalledTimes(1)
+    expect(mockSpeedHistory).toHaveBeenCalledWith('tenant-perf', '2026-06-19', 'Europe/Paris')
     expect(mockFindMany).not.toHaveBeenCalled()
+  })
+
+  // The live map polls every 15 s and never draws the speed graph.
+  it("history=0 : la carte ne paie pas l'historique de la journée", async () => {
+    const res = await GET(new NextRequest('http://localhost/api/driver-position?date=2026-06-19&history=0', { headers: { Cookie: 'session=token' } }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).positions).toHaveLength(150)
+    expect(mockSpeedHistory).not.toHaveBeenCalled()
   })
 
   it('30 requêtes GET simultanées répondent toutes 200', async () => {
     const results = await Promise.all(Array.from({ length: 30 }, () => GET(makeGetReq())))
     expect(results.every(r => r.status === 200)).toBe(true)
-    expect(mockPositionFindMany).toHaveBeenCalledTimes(60)
+    expect(mockLatestPositions).toHaveBeenCalledTimes(30)
   })
 
   it('réponse GET contient positions des 150 chauffeurs', async () => {
