@@ -29,8 +29,9 @@ Modèle de sécurité, contrôles en place et risques résiduels. Vérifié cont
 - Session : JWT HMAC-SHA256 (Web Crypto) en cookie `HttpOnly`, `SameSite=Strict`, `Secure`,
   24 h. Charge : `sub`, `role`, `tenantId`, `driverRef`, `trade`, `sv`.
 - **Révocation** : chaque jeton porte la `sessionVersion` de l'utilisateur ; changement de mot de
-  passe, de rôle ou suppression l'incrémente. Le middleware vérifie la version (cache 30 s,
-  invalidé immédiatement sur l'instance qui révoque — cache partagé entre middleware et routes).
+  passe, de rôle, suppression **ou déconnexion** l'incrémente. Le middleware vérifie la version
+  (cache 30 s, invalidé sur toutes les instances via Redis). Se déconnecter invalide donc le jeton
+  côté serveur — et déconnecte tous les appareils de l'utilisateur ; le portail client fait de même.
 - **Connexion** : bcrypt ; seuls les **échecs** sont comptés — 20/min par IP, 10/15 min par compte
   (tentative réservée avant la vérification, rendue en cas de succès : une agence derrière une même
   IP ou une tablette partagée ne se bloque jamais) ; temps de réponse
@@ -76,8 +77,17 @@ désactive les actions correspondantes.
 - **Suivi client** (`/track/<jeton>`) : jeton opaque aléatoire, à durée limitée, qui ne donne
   accès qu'au suivi de sa mission (pas une session).
 - Impressions (feuilles de route) : contenu échappé — pas d'injection HTML via un nom de client.
-- Journal d'audit des mutations sensibles, conservé `AUDIT_RETENTION_DAYS` (365 j) ; positions
-  GPS purgées après `POSITION_RETENTION_DAYS` (30 j).
+- Journal d'audit (qui, quoi, quand, sur quoi), lisible par les administrateurs seulement,
+  conservé `AUDIT_RETENTION_DAYS` (365 j). Y sont tracés : utilisateurs et permissions, chauffeurs,
+  véhicules, missions, clients, sites, exutoires, tournées enregistrées ou supprimées, lancements
+  d'optimisation, devis, commandes, contrats, tarifs, factures (création, émission, envoi, avoir),
+  paiements, bennes (création, déplacement, changement d'état), pesées, documents, clés API,
+  points de livraison webhook, utilisateurs et demandes du portail, paramètres. Les valeurs
+  secrètes sont masquées. Non tracés : les lectures, les actions du chauffeur sur sa tournée
+  (elles sont dans l'historique du plan) et les connexions (journal applicatif).
+- Positions GPS purgées après `POSITION_RETENTION_DAYS` (30 j).
+- Corps de requête : 5 Mo au plus, et 100 Ko pour les routes qui ne reçoivent ni fichier, ni
+  photo, ni import, ni plan.
 
 ## 5. Entrées externes
 
@@ -100,7 +110,7 @@ désactive les actions correspondantes.
 | CSP avec `'unsafe-inline'` (scripts, styles) | Requis par Next.js sans nonces ; les contenus utilisateur sont échappés. Passage aux nonces possible |
 | DNS rebinding entre contrôle SSRF et connexion | Endpoints configurés par un admin ; une résolution épinglée fermerait le risque |
 | Caches de révocation/suspension par process (30 s) | Invalidés sur toutes les instances via Redis (`src/lib/cacheBus.ts`) ; sans Redis ou si la publication échoue, une autre instance garde l'entrée jusqu'à son TTL (30 s) |
-| Pas de Row-Level Security PostgreSQL | L'extension `getTenantDb` est la barrière ; RLS (politiques par modèle + transaction posant `app.tenant_id`) est conçue mais coûterait une transaction par requête — à mesurer en charge avant décision |
+| Pas de Row-Level Security PostgreSQL | Réévalué avant le pilote (octobre 2026) et **non introduit maintenant**. RLS exige que chaque requête s'exécute dans une transaction posant `app.tenant_id` (pool de connexions partagé) : ~200 routes, 6 workers, les agrégats transverses et les requêtes SQL directes devraient tous changer de mode d'accès, avec un coût mesurable par requête — un chantier dont une régression (requête sans contexte = zéro ligne ou erreur) se verrait chez le client pilote. La barrière reste `getTenantDb` (fail-closed, références étrangères vérifiées, accès brut interdit par ESLint), contrôlée par des attaques réelles entre deux organisations sur l'application lancée : 19 types d'objets en lecture / modification / suppression par identifiant, 33 créations par référence, en-têtes usurpés — toutes refusées. RLS reste la bonne défense en profondeur à ajouter après le pilote, table par table, en commençant par factures, paiements et documents |
 | Dépendance `swagger-ui-react` (chaîne modérée) | N'interprète que notre propre spécification |
 | Trackdéchets | HALT appliqué dans le code — voir OPERATIONS.md §8 |
 

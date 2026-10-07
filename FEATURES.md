@@ -39,7 +39,7 @@ m³, entretiens, carburant. **Exutoires** — horaires, jours de fermeture, déc
 de service. **Récurrentes** — modèles générant les missions automatiquement.
 
 **Utilisateurs** — comptes admin/exploitant/chauffeur, permissions fines, réinitialisation de
-mot de passe (révoque les sessions). **Audit** — journal filtrable des opérations sensibles.
+mot de passe (révoque les sessions). **Audit** — journal filtrable (administrateurs) de qui a fait quoi : utilisateurs, missions, tournées, bennes, devis, factures, paiements, clés API, paramètres…
 **Télématique** — positions en direct (application ou boîtiers).
 
 **Paramètres** — secteur d'activité (vocabulaire), heure de départ, vitesse, pondérations de
