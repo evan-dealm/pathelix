@@ -1,14 +1,10 @@
 'use client'
 
-import { useState, useEffect, FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, FormEvent } from 'react'
 import Image from 'next/image'
 import { BRAND_LOGO_SRC } from '@/lib/branding'
 
 export default function LoginPage() {
-  const router    = useRouter()
-
-  useEffect(() => { router.prefetch('/admin') }, [router])
   const [email, setEmail]       = useState('')
   const [pwd, setPwd]           = useState('')
   const [error, setError]       = useState('')
@@ -34,7 +30,9 @@ export default function LoginPage() {
       }
       const data = await res.json()
       setNavigating(true)
-      router.push(data.redirectTo || '/admin')
+      // Full navigation, not router.push: the router may hold a prefetch of /admin made before
+      // the session existed (a redirect back to /login), which left this screen loading forever.
+      window.location.assign(data.redirectTo || '/admin')
     } catch {
       setError('Erreur réseau — réessayez')
     } finally {
