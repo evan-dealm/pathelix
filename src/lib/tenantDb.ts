@@ -132,6 +132,22 @@ const READ_OR_DELETE_WHERE_OPS = new Set([
 ])
 
 const CREATE_OPS = new Set(['create', 'createMany', 'createManyAndReturn'])
+const READ_OPS = new Set(['findFirst', 'findFirstOrThrow', 'findMany', 'findUnique', 'findUniqueOrThrow', 'count', 'aggregate', 'groupBy'])
+
+/**
+ * Drops the cached mission lists of a tenant (on every instance, through the cache bus). Called
+ * right after the write and once more shortly after: a write inside a transaction is only
+ * visible to readers once committed, and a list re-read in between would cache the old state.
+ */
+function dropMissionLists(tenantId: string): void {
+  const drop = () => {
+    void import('./redisCache')
+      .then(({ redisCache }) => redisCache.invalidateAll('missions', tenantId))
+      .catch(() => undefined)
+  }
+  drop()
+  setTimeout(drop, 1_500).unref?.()
+}
 
 /**
  * A plain top-level merge (not an `AND`-wrapper) is correct here: Prisma treats every key on a
@@ -196,6 +212,15 @@ export function getTenantDb(tenantId: string) {
             )
           }
 
+          if (model === 'Mission' && !READ_OPS.has(operation)) {
+            // The Missions screen reads a per-tenant list cached for up to a minute, and only
+            // the missions routes dropped it. A mission created by an accepted portal request,
+            // an order, an import or a recurring template — or finished by its driver — stayed
+            // missing or out of date on that screen until the cache expired.
+            const result = await query(args)
+            dropMissionLists(tenantId)
+            return result
+          }
           return query(args)
         },
       },

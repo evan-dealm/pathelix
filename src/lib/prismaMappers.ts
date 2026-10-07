@@ -89,6 +89,10 @@ export function prismaRowToMission(row: Record<string, unknown>): Mission {
     needsGeocode:         (r.needsGeocode as boolean) ?? false,
     weightKg:             (r.weightKg as number | null) ?? undefined,
     weightSource:         (['WEIGHED', 'DECLARED', 'ESTIMATED'] as const).find(v => v === r.weightSource),
+    // When the mission was done or cancelled: the office list and API clients need it (it was
+    // selected from the database and then dropped here).
+    ...(row.completedAt instanceof Date ? { completedAt: row.completedAt.toISOString() } : typeof row.completedAt === 'string' ? { completedAt: row.completedAt } : {}),
+    ...(row.cancelledAt instanceof Date ? { cancelledAt: row.cancelledAt.toISOString() } : typeof row.cancelledAt === 'string' ? { cancelledAt: row.cancelledAt } : {}),
     weightUncertaintyKg:  (r.weightUncertaintyKg as number | null) ?? undefined,
     binTareKg:            (r.binTareKg as number | null) ?? undefined,
     materialId:           (r.materialId as string) || undefined,
