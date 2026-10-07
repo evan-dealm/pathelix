@@ -1,30 +1,20 @@
 /**
- * Scenario: GPS ingestion — 150 drivers posting position every 10s
+ * Scenario: GPS ingestion — every driver's phone posting its position.
  *
- * Simulates the hottest path at 150-driver scale.
- * Each VU = 1 driver. 150 VUs run for 2 minutes,
- * each posting their GPS position every 10 seconds.
+ * One virtual user = one driver with its own session. The driver app posts every 30 s; this
+ * scenario posts every 10 s, i.e. three times the real traffic of the simulated fleet.
+ * Each post is written to PostgreSQL before the 200.
  *
- * Expected: p95 < 200ms, 0 errors, DB queries stay cached.
- *
- * Run:
- *   k6 run -e BASE_URL=http://localhost:3000 \
- *          -e AUTH_TOKEN=<session-cookie> \
- *          load-tests/scenarios/gps-ingestion.js
+ *   k6 run -e BASE_URL=http://localhost:3000 load-tests/scenarios/gps-ingestion.js
  */
-import http  from 'k6/http'
+import http from 'k6/http'
 import { check, sleep } from 'k6'
-import { Trend, Rate } from 'k6/metrics'
-import { BASE_URL, authHeaders, DRIVER_COUNT } from '../k6-config.js'
+import { Rate } from 'k6/metrics'
+import { BASE_URL, DRIVER_COUNT, driverFor, randomLat, randomLng } from '../k6-config.js'
 
 export const options = {
   scenarios: {
-    gps_flood: {
-      executor:          'constant-vus',
-      vus:               DRIVER_COUNT,
-      duration:          '2m',
-      gracefulStop:      '10s',
-    },
+    gps_flood: { executor: 'constant-vus', vus: DRIVER_COUNT, duration: __ENV.DURATION || '2m', gracefulStop: '10s' },
   },
   thresholds: {
     'http_req_duration{name:gps_post}': ['p(50)<100', 'p(95)<400', 'p(99)<1000'],
@@ -33,49 +23,27 @@ export const options = {
   },
 }
 
-const latency   = new Trend('gps_post_latency')
-const successRt = new Rate('gps_post_ok')
-
-// Lyon area bounding box — realistic GPS drift
-function jitter(base, range) { return base + (Math.random() - 0.5) * range }
+const postOk = new Rate('gps_post_ok')
 
 export default function () {
-  const vu      = __VU
-  const driverId = `load-driver-${String(vu).padStart(3, '0')}`
-  const lat      = jitter(45.75, 0.5)
-  const lng      = jitter(4.83,  0.5)
+  const driver = driverFor(__VU)
+  // Spread the fleet over the 10 s period instead of 150 simultaneous posts.
+  if (__ITER === 0) sleep(Math.random() * 10)
 
-  const payload = JSON.stringify({
-    driverId,
-    latitude:  lat,
-    longitude: lng,
+  const res = http.post(`${BASE_URL}/api/driver-position`, JSON.stringify({
+    driverId:  driver.id,
+    latitude:  randomLat(),
+    longitude: randomLng(),
     speedKmh:  Math.floor(Math.random() * 90),
     timestamp: new Date().toISOString(),
-  })
-
-  const res = http.post(
-    `${BASE_URL}/api/driver-position`,
-    payload,
-    {
-      headers: authHeaders(),
-      tags:    { name: 'gps_post' },
-    },
-  )
+  }), { headers: driver.headers, tags: { name: 'gps_post' } })
 
   const ok = check(res, {
-    'status 200':  r => r.status === 200,
-    'body ok=true': r => {
-      try { return JSON.parse(r.body).ok === true } catch { return false }
-    },
+    'status 200':   r => r.status === 200,
+    'body ok=true': r => { try { return JSON.parse(r.body).ok === true } catch (_e) { return false } },
   })
+  postOk.add(ok)
+  if (!ok && __ITER < 2) console.error(`[driver ${driver.id}] POST ${res.status}: ${String(res.body).slice(0, 160)}`)
 
-  latency.add(res.timings.duration)
-  successRt.add(ok)
-
-  if (!ok) {
-    console.error(`[VU ${vu}] POST failed: status=${res.status} body=${res.body?.slice(0, 200)}`)
-  }
-
-  // Driver apps post every 10s
   sleep(10)
 }

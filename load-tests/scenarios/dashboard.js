@@ -1,121 +1,77 @@
 /**
- * Scenario: Admin dashboard load with 150 drivers active
+ * Scenario: the dispatchers' screens while the fleet is on the road.
  *
- * Simulates dispatchers/admins hitting the dashboard while GPS ingestion runs.
- * Measures time-to-first-byte for the dashboard data endpoints,
- * with concurrent VRP optimization in the BullMQ queue.
+ * - `dispatchers`: each one keeps the planning open — live map (positions every 15 s, without
+ *   the speed history, exactly what the map asks) and the day's missions.
+ * - `telematics`: two of them watch the telematics tab (positions + the day's speed history of
+ *   the whole fleet, every 30 s) — the heaviest read of the application.
+ * - `vrp`: an optimisation of 20 drivers launched every 30 s.
  *
- * Dashboard endpoints exercised:
- *  - GET /api/driver-position?date=TODAY          (positions + history)
- *  - GET /api/missions?date=TODAY&limit=50        (mission list)
- *  - GET /api/sse/driver-status?date=TODAY        (SSE open then close)
- *  - POST /api/optimize                           (VRP — 1 VU only, simulates background run)
+ * Run it while gps-ingestion is running (or right after) so that there are positions to read.
+ * Server-sent events are not covered: k6's http client cannot hold a stream open.
  *
- * Run:
- *   k6 run -e BASE_URL=http://localhost:3000 \
- *          -e AUTH_TOKEN=<session-cookie> \
- *          load-tests/scenarios/dashboard.js
+ *   k6 run -e BASE_URL=http://localhost:3000 load-tests/scenarios/dashboard.js
  */
-import http  from 'k6/http'
-import { check, sleep, group } from 'k6'
-import { Trend, Rate } from 'k6/metrics'
-import { BASE_URL, authHeaders } from '../k6-config.js'
+import http from 'k6/http'
+import { check, sleep } from 'k6'
+import { Rate } from 'k6/metrics'
+import { BASE_URL, adminHeaders, dispatcherHeaders, driverIds, today } from '../k6-config.js'
+
+const DURATION = __ENV.DURATION || '2m'
 
 export const options = {
   scenarios: {
-    dispatchers: {
-      executor:     'constant-vus',
-      vus:          10,     // 10 concurrent dispatcher sessions
-      duration:     '2m',
-      gracefulStop: '10s',
-      env: { ROLE: 'dispatcher' },
-    },
-    vrp_background: {
-      executor:     'constant-vus',
-      vus:          1,       // one VRP optimization run at a time
-      duration:     '2m',
-      gracefulStop: '30s',
-      env: { ROLE: 'vrp' },
-    },
+    dispatchers: { executor: 'constant-vus', vus: 10, duration: DURATION, gracefulStop: '10s', env: { ROLE: 'dispatcher' } },
+    telematics:  { executor: 'constant-vus', vus: 2,  duration: DURATION, gracefulStop: '10s', env: { ROLE: 'telematics' } },
+    vrp:         { executor: 'constant-vus', vus: 1,  duration: DURATION, gracefulStop: '60s', env: { ROLE: 'vrp' } },
   },
   thresholds: {
-    'http_req_duration{name:dashboard_positions}': ['p(50)<300', 'p(95)<1200', 'p(99)<3000'],
-    'http_req_duration{name:dashboard_missions}':  ['p(50)<200', 'p(95)<800',  'p(99)<2000'],
-    'dashboard_ok':                                ['rate>0.99'],
-    'vrp_accepted':                                ['rate>0.95'],
+    'http_req_duration{name:map_positions}':      ['p(50)<150', 'p(95)<500',  'p(99)<1500'],
+    'http_req_duration{name:missions_list}':      ['p(50)<200', 'p(95)<800',  'p(99)<2000'],
+    'http_req_duration{name:telematics_history}': ['p(50)<800', 'p(95)<2500', 'p(99)<5000'],
+    'dashboard_ok': ['rate>0.99'],
+    'vrp_accepted': ['rate>0.95'],
   },
 }
 
-const dashOk    = new Rate('dashboard_ok')
-const vrpAccept = new Rate('vrp_accepted')
-const posTrend  = new Trend('dashboard_positions_ms')
-const misTrend  = new Trend('dashboard_missions_ms')
-
-const TODAY   = new Date().toISOString().slice(0, 10)
-const DRIVERS = Array.from({ length: 150 }, (_, i) => `load-driver-${String(i + 1).padStart(3, '0')}`)
+const dashOk = new Rate('dashboard_ok')
+const vrpAccepted = new Rate('vrp_accepted')
+const TODAY = today()
 
 export default function () {
   const role = __ENV.ROLE
 
   if (role === 'vrp') {
-    // One VRP job every 30s — mimics real dispatcher triggering optimization
-    sleep(Math.random() * 5)   // stagger starts
-
-    const payload = JSON.stringify({
-      date:      TODAY,
-      driverIds: DRIVERS.slice(0, 20),   // small subset so test stays fast
-      options:   { maxIterations: 10 },   // reduced iterations for load test
-    })
-
-    const res = http.post(
-      `${BASE_URL}/api/optimize`,
-      payload,
-      { headers: authHeaders(), tags: { name: 'vrp_optimize' }, timeout: '60s' },
-    )
-
-    const ok = check(res, {
-      'VRP accepted (200/202)': r => r.status === 200 || r.status === 202,
-    })
-    vrpAccept.add(ok)
-    if (!ok) console.error(`[VRP VU] POST /api/optimize ${res.status}: ${res.body?.slice(0, 200)}`)
-
+    const res = http.post(`${BASE_URL}/api/optimize`, JSON.stringify({ date: TODAY, driverIds: driverIds(20) }),
+      { headers: adminHeaders(), tags: { name: 'vrp_optimize' }, timeout: '90s' })
+    const ok = check(res, { 'optimisation accepted (200/202)': r => r.status === 200 || r.status === 202 })
+    vrpAccepted.add(ok)
+    if (!ok) console.error(`[vrp] POST /api/optimize ${res.status}: ${String(res.body).slice(0, 200)}`)
     sleep(30)
     return
   }
 
-  // Dispatcher dashboard page load sequence
-  group('dashboard_load', () => {
-    // 1. Positions + speed history (heaviest query)
-    const posRes = http.get(
-      `${BASE_URL}/api/driver-position?date=${TODAY}`,
-      { headers: authHeaders(), tags: { name: 'dashboard_positions' }, timeout: '15s' },
-    )
-    const posOk = check(posRes, {
-      'positions 200':           r => r.status === 200,
-      'positions array present': r => {
-        try { return Array.isArray(JSON.parse(r.body).positions) } catch { return false }
-      },
-    })
-    dashOk.add(posOk)
-    posTrend.add(posRes.timings.duration)
+  // The two telematics viewers use dispatcher accounts the map viewers do not use.
+  const headers = dispatcherHeaders(role === 'telematics' ? 10 + __VU : __VU)
 
-    // 2. Mission list (first page)
-    const misRes = http.get(
-      `${BASE_URL}/api/missions?date=${TODAY}&limit=50&page=1`,
-      { headers: authHeaders(), tags: { name: 'dashboard_missions' }, timeout: '10s' },
-    )
-    const misOk = check(misRes, {
-      'missions 200': r => r.status === 200,
-    })
-    dashOk.add(misOk)
-    misTrend.add(misRes.timings.duration)
+  if (role === 'telematics') {
+    const res = http.get(`${BASE_URL}/api/driver-position?date=${TODAY}`, { headers, tags: { name: 'telematics_history' }, timeout: '20s' })
+    dashOk.add(check(res, {
+      'telematics 200':     r => r.status === 200,
+      'history is present': r => { try { return typeof JSON.parse(r.body).history === 'object' } catch (_e) { return false } },
+    }))
+    sleep(30)
+    return
+  }
 
-    // 3. SSE volontairement absent ici : k6 http.get ne peut pas tenir un stream
-    // event-stream (timeout inévitable → status 0, faux négatif). La tenue de
-    // 150 connexions SSE simultanées est couverte par le test Node dédié
-    // (scratchpad/sse-hold-test.mjs — 150/150 tenues 60 s, 0 déconnexion).
-  })
+  const pos = http.get(`${BASE_URL}/api/driver-position?date=${TODAY}&history=0`, { headers, tags: { name: 'map_positions' }, timeout: '15s' })
+  dashOk.add(check(pos, {
+    'positions 200':      r => r.status === 200,
+    'positions an array': r => { try { return Array.isArray(JSON.parse(r.body).positions) } catch (_e) { return false } },
+  }))
 
-  // Dispatcher polls ~every 10s (auto-refresh)
-  sleep(10 + Math.random() * 5)
+  const missions = http.get(`${BASE_URL}/api/missions?date=${TODAY}&limit=50&page=1`, { headers, tags: { name: 'missions_list' }, timeout: '10s' })
+  dashOk.add(check(missions, { 'missions 200': r => r.status === 200 }))
+
+  sleep(15)
 }

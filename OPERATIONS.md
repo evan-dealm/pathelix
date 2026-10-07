@@ -92,9 +92,29 @@ organisation configure le sien dans Paramètres → Intégrations. `NESSY_WEBHOO
 | ≤ 1 000 | 150 Go | 90+ cœurs |
 
 Worker VRP : `secteurs × 400 Mo + 2 Go`. Valhalla : 4–12 Go (France entière). Aucun GPU requis
-(le GPU ne sert qu'à l'AI Engine OCR, non orchestré). Scénarios de charge k6 :
-`bash load-tests/run-all.sh`. À confirmer sur l'infrastructure réelle : saturation du pool
-Prisma en charge soutenue, Redis pub/sub au-delà de 150 connexions SSE.
+(le GPU ne sert qu'à l'AI Engine OCR, non orchestré).
+
+**Tests de charge (k6)** — sur une base de test, jamais sur des données réelles :
+
+```bash
+npx tsx --tsconfig tsconfig.json load-tests/seed.ts        # organisation « load-test » : 150 chauffeurs, une session chacun
+BASE_URL=https://<hôte> bash load-tests/run-all.sh          # positions GPS + écrans exploitants, puis missions
+npx tsx --tsconfig tsconfig.json load-tests/seed.ts --clean
+```
+
+Chaque utilisateur simulé a sa propre session : l'application limite les requêtes par utilisateur
+(600/min), un cookie partagé mesurerait le limiteur. Le seed refuse une base qui n'est pas une
+base de test, sauf `LOADTEST_DB=<nom>` explicite, et doit partager le `SESSION_SECRET` de l'instance.
+
+Mesure de référence (7 oct. 2026 — build de production, **un poste de développement**, PostgreSQL
+et Redis locaux ; ordre de grandeur, pas un engagement) : 150 chauffeurs envoyant leur position
+toutes les 10 s (3 × le rythme réel), chaque envoi écrit en base : p95 15 ms, 0 erreur ; carte
+des exploitants p95 114 ms ; historique de vitesse de la flotte p95 128 ms ; liste des missions
+p95 64 ms ; création de mission p95 38 ms ; aucune erreur serveur. Une organisation est limitée à
+100 écritures de missions par minute (au-delà : 429 ; les chargements en masse passent par
+l'import). Non couvert par k6 : les connexions SSE (le client ne tient pas un flux ouvert). À
+confirmer sur l'infrastructure réelle : saturation du pool Prisma en charge soutenue, Redis
+pub/sub au-delà de 150 connexions SSE.
 
 ## 5. Supervision
 

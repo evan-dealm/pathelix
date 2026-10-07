@@ -43,3 +43,6 @@ load-tests/results/
 
 # ─── Uploaded files (tenant-namespaced, served by /api/files) ──────────────────
 /data/
+
+# k6 sessions minted by load-tests/seed.ts
+load-tests/.tokens.json
