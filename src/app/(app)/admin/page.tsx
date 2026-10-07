@@ -1277,18 +1277,20 @@ export default function AdminPage() {
           {}
           <header className="h-14 flex-shrink-0 flex items-center gap-3 px-5 border-b border-surface-200 z-20 topbar-bg">
             <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-base font-semibold text-surface-900 capitalize truncate">
+              <h1 className="text-base font-semibold text-surface-900 first-letter:uppercase truncate">
                 {NAV_ITEMS.find(n => n.id === activeTab)?.label || 'Dashboard'}
               </h1>
-              {/* On a phone the title needs the room: the context line only shows from 640px up. */}
-              <span className="hidden sm:inline text-surface-300 text-sm">/</span>
-              <span className="hidden sm:inline text-surface-400 text-sm truncate">
+              {/* On a phone the title needs the room: the context line only shows from 640px up.
+                  The « / » separator belongs to the context line, so a tab without one shows none. */}
+              <span className="hidden sm:inline empty:sm:hidden text-surface-400 text-sm truncate before:content-['/'] before:mr-2 before:text-surface-300">
                 {activeTab === 'dashboard'
                   ? "Vue d'ensemble"
                   : activeTab === 'missions'
                     ? `${(Array.isArray(missions) ? missions : []).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length} missions`
                     : activeTab === 'tours'
-                      ? planDate
+                      ? /^\d{4}-\d{2}-\d{2}$/.test(planDate)
+                        ? new Date(`${planDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                        : planDate
                       : activeTab === 'drivers'
                         ? `${(Array.isArray(drivers) ? drivers : []).filter(d => !d.archived).length} ${vocab.drivers.toLowerCase()}`
                         : activeTab === 'catalogue'

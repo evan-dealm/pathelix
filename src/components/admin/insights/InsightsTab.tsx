@@ -93,7 +93,7 @@ function KpiView({ from, to }: { from: string; to: string }) {
           <Stat label="Interventions par tournée" value={num(c.tours.missionsPerTour)} sub={`${num(c.tours.count)} tournées`}><Delta cur={c.tours.missionsPerTour} prev={p.tours.missionsPerTour} /></Stat>
           <Stat label="Kilomètres" value={num(c.tours.km, ' km')} sub={c.tours.kmMeasured ? `dont ${num(c.tours.kmMeasured)} km mesurés` : 'estimés (aucun relevé GPS)'}><Delta cur={c.tours.km} prev={p.tours.km} better="down" /></Stat>
           <Stat label="Heures de tournée" value={num(c.tours.hours, ' h')} />
-          <Stat label="Tonnage pesé" value={num(c.tonnage.tonnes, ' t')} sub={`${c.tonnage.tickets} tickets${c.tonnage.pendingReview ? ` · ${c.tonnage.pendingReview} à vérifier` : ''}`}><Delta cur={c.tonnage.tonnes} prev={p.tonnage.tonnes} /></Stat>
+          <Stat label="Tonnage pesé" value={num(c.tonnage.tonnes, ' t')} sub={`${c.tonnage.tickets} ticket${c.tonnage.tickets > 1 ? 's' : ''}${c.tonnage.pendingReview ? ` · ${c.tonnage.pendingReview} à vérifier` : ''}`}><Delta cur={c.tonnage.tonnes} prev={p.tonnage.tonnes} /></Stat>
           <Stat label="Bennes chez les clients" value={num(c.bins.utilisationPct, ' %')} sub={`${c.bins.atCustomers}/${c.bins.total} · ${num(c.bins.avgDaysOnSite)} j en moyenne`} />
         </dl>
       </section>
