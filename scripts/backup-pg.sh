@@ -1,124 +1,68 @@
 #!/usr/bin/env bash
-# ─── backup-pg.sh — Sauvegarde PostgreSQL locale rotative ─────────────────────
+# ─── backup-pg.sh — Sauvegarde PostgreSQL rotative ────────────────────────────
 #
 # Usage :
 #   ./scripts/backup-pg.sh
 #
-# Configuration via variables d'environnement (ou .env chargé ci-dessous) :
-#   DATABASE_URL  — PostgreSQL connection string (requis)
-#   BACKUP_DIR    — Répertoire de sauvegarde (défaut: /var/backups/pathelix)
-#   BACKUP_KEEP   — Nombre de jours à conserver (défaut: 7)
+# Configuration (variables d'environnement ; une variable déjà définie l'emporte sur .env) :
+#   DATABASE_URL  — base à sauvegarder (requis)
+#   BACKUP_DIR    — répertoire des sauvegardes (défaut : /var/backups/pathelix)
+#   BACKUP_KEEP   — jours de conservation (défaut : 7)
+#   PG_CONTAINER  — conteneur PostgreSQL dans lequel lancer pg_dump. Par défaut : pg_dump de
+#                   l'hôte s'il est installé, sinon le service `postgres` de docker compose.
 #
-# Installation comme CRON quotidien à 02:00 :
-#   crontab -e
+# Cron quotidien à 02:00 :
 #   0 2 * * * /opt/pathelix/scripts/backup-pg.sh >> /var/log/pathelix-backup.log 2>&1
 #
-# Rotation : conserve BACKUP_KEEP fichiers, supprime les plus anciens.
-# Format fichier : pathelix_YYYY-MM-DD_HHmm.sql.gz
+# Fichier produit : pathelix_AAAA-MM-JJ_HHMM.dump (format « custom » de pg_dump, compressé).
+# Le fichier n'apparaît sous ce nom qu'une fois le dump terminé ET relu par pg_restore :
+# un dump interrompu ne laisse jamais un fichier qui ressemble à une sauvegarde.
 
 set -euo pipefail
 
-# ─── Chargement de l'environnement ───────────────────────────────────────────
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-
-# Charger .env si présent (priorité aux variables déjà définies dans l'env)
-if [[ -f "$ROOT_DIR/.env" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "$ROOT_DIR/.env"
-  set +a
-fi
-
-# ─── Configuration ────────────────────────────────────────────────────────────
+# shellcheck source=scripts/pg-common.sh
+source "$SCRIPT_DIR/pg-common.sh"
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/pathelix}"
 BACKUP_KEEP="${BACKUP_KEEP:-7}"
-TIMESTAMP="$(date +%Y-%m-%d_%H%M)"
-FILENAME="pathelix_${TIMESTAMP}.sql.gz"
+FILENAME="pathelix_$(date +%Y-%m-%d_%H%M).dump"
 BACKUP_PATH="${BACKUP_DIR}/${FILENAME}"
+PARTIAL="${BACKUP_PATH}.partial"
 
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "[ERROR] DATABASE_URL non défini. Export ou .env requis." >&2
-  exit 1
-fi
+pg_load_target
+pg_pick_runner
 
-# ─── Extraction des paramètres de connexion depuis DATABASE_URL ───────────────
-# Format attendu : postgresql://user:password@host:port/dbname[?params]
-
-DB_URL_CLEAN="${DATABASE_URL%%\?*}"   # supprimer les query params
-DB_PROTO="${DB_URL_CLEAN%%://*}"      # postgresql ou postgres
-DB_REST="${DB_URL_CLEAN#*://}"        # user:password@host:port/dbname
-DB_USER="${DB_REST%%:*}"
-DB_REST2="${DB_REST#*:}"
-DB_PASSWORD="${DB_REST2%%@*}"
-DB_REST3="${DB_REST2#*@}"
-DB_HOST="${DB_REST3%%:*}"
-DB_REST4="${DB_REST3#*:}"
-DB_PORT="${DB_REST4%%/*}"
-DB_NAME="${DB_REST4#*/}"
-
-if [[ -z "$DB_NAME" || -z "$DB_HOST" ]]; then
-  echo "[ERROR] Impossible de parser DATABASE_URL : $DATABASE_URL" >&2
-  exit 1
-fi
-
-echo "[INFO] $(date -Iseconds) — Démarrage backup PostgreSQL"
-echo "[INFO] Base: ${DB_NAME} @ ${DB_HOST}:${DB_PORT}"
-echo "[INFO] Destination: ${BACKUP_PATH}"
-
-# ─── Création du répertoire de sauvegarde ────────────────────────────────────
+echo "[INFO] $(date -Iseconds) — Sauvegarde de ${DB_NAME} (${PG_WHERE})"
+echo "[INFO] Destination : ${BACKUP_PATH}"
 
 mkdir -p "$BACKUP_DIR"
-chmod 750 "$BACKUP_DIR"
+chmod 750 "$BACKUP_DIR" 2>/dev/null || true
+trap 'rm -f "$PARTIAL"' EXIT
 
-# ─── Dump + compression ───────────────────────────────────────────────────────
-
-PGPASSWORD="$DB_PASSWORD" pg_dump \
-  --host="$DB_HOST" \
-  --port="${DB_PORT:-5432}" \
-  --username="$DB_USER" \
-  --dbname="$DB_NAME" \
-  --format=plain \
-  --no-password \
-  --verbose \
-  2>> "${BACKUP_DIR}/backup.log" \
-| gzip -9 > "$BACKUP_PATH"
-
-if [[ $? -ne 0 ]] || [[ ! -s "$BACKUP_PATH" ]]; then
-  echo "[ERROR] Échec du dump — fichier vide ou erreur pg_dump" >&2
-  rm -f "$BACKUP_PATH"
+if ! pg_run pg_dump $(pg_conn_args "$DB_NAME") --format=custom --no-owner --no-privileges > "$PARTIAL"; then
+  echo "[ERROR] pg_dump a échoué — aucune sauvegarde créée" >&2
   exit 2
 fi
 
-BACKUP_SIZE="$(du -sh "$BACKUP_PATH" | cut -f1)"
-echo "[OK] Backup créé : ${FILENAME} (${BACKUP_SIZE})"
+# Relecture complète de la table des matières : détecte un fichier tronqué ou illisible.
+OBJECTS="$(pg_run pg_restore --list < "$PARTIAL" | grep -c 'TABLE DATA' || true)"
+if [[ ! -s "$PARTIAL" || "${OBJECTS:-0}" -eq 0 ]]; then
+  echo "[ERROR] Sauvegarde illisible ou vide (aucune table) — abandonnée" >&2
+  exit 2
+fi
 
-# ─── Rotation : suppression des fichiers plus anciens que BACKUP_KEEP jours ──
+mv "$PARTIAL" "$BACKUP_PATH"
+echo "[OK] ${FILENAME} — $(du -sh "$BACKUP_PATH" | cut -f1), ${OBJECTS} tables"
 
+# ─── Rotation (les anciens .sql.gz de la version précédente du script suivent la même règle) ──
 DELETED=0
 while IFS= read -r -d '' old_file; do
   rm -f "$old_file"
   DELETED=$((DELETED + 1))
   echo "[ROTATE] Supprimé : $(basename "$old_file")"
-done < <(find "$BACKUP_DIR" -maxdepth 1 -name "pathelix_*.sql.gz" \
-           -mtime +"$BACKUP_KEEP" -print0)
+done < <(find "$BACKUP_DIR" -maxdepth 1 \( -name 'pathelix_*.dump' -o -name 'pathelix_*.sql.gz' \) -mtime +"$BACKUP_KEEP" -print0)
 
-echo "[INFO] Rotation : ${DELETED} fichier(s) supprimé(s)"
-
-# ─── Vérification intégrité (test décompression partielle) ───────────────────
-
-if gzip -t "$BACKUP_PATH" 2>/dev/null; then
-  echo "[OK] Intégrité vérifiée : ${FILENAME}"
-else
-  echo "[WARN] Intégrité suspecte : ${FILENAME} — vérifiez manuellement" >&2
-fi
-
-# ─── Résumé ───────────────────────────────────────────────────────────────────
-
-TOTAL_BACKUPS="$(find "$BACKUP_DIR" -maxdepth 1 -name "pathelix_*.sql.gz" | wc -l)"
-TOTAL_SIZE="$(du -sh "$BACKUP_DIR" | cut -f1)"
-
-echo "[INFO] Total : ${TOTAL_BACKUPS} backup(s) conservé(s) — ${TOTAL_SIZE} sur disque"
-echo "[INFO] $(date -Iseconds) — Backup terminé avec succès"
+TOTAL="$(find "$BACKUP_DIR" -maxdepth 1 \( -name 'pathelix_*.dump' -o -name 'pathelix_*.sql.gz' \) | wc -l)"
+echo "[INFO] Rotation : ${DELETED} supprimé(s), ${TOTAL} sauvegarde(s) conservée(s)"
+echo "[INFO] $(date -Iseconds) — Terminé"

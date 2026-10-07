@@ -127,9 +127,46 @@ révoquée : idem.
 
 ## 7. Sauvegardes
 
-`scripts/backup-pg.sh` — dump PostgreSQL rotatif (défaut 7 jours dans `/var/backups/pathelix`),
-à installer en cron quotidien. Restauration : `scripts/restore-pg.sh`. Sauvegarder aussi le volume
-`photo_storage`. Toujours faire un dump avant une migration.
+**Base de données** — `scripts/backup-pg.sh`, en cron quotidien :
+
+```bash
+0 2 * * * /opt/pathelix/scripts/backup-pg.sh >> /var/log/pathelix-backup.log 2>&1
+```
+
+Produit `pathelix_AAAA-MM-JJ_HHMM.dump` (format `pg_dump` compressé) dans `BACKUP_DIR`
+(défaut `/var/backups/pathelix`), conserve `BACKUP_KEEP` jours (défaut 7). Le fichier ne prend son
+nom qu'une fois le dump terminé et relu : un dump interrompu ne laisse rien qui ressemble à une
+sauvegarde, et le script sort en erreur (à surveiller dans le journal du cron). Les outils
+PostgreSQL sont pris sur l'hôte s'ils y sont, sinon dans le conteneur `postgres` du compose —
+rien à installer sur un déploiement Docker. La base visée est `DATABASE_URL` ; une valeur exportée
+l'emporte sur `.env`. **Copier les sauvegardes hors du serveur** (le script ne le fait pas).
+
+**Restauration** — arrêter l'application et les workers, puis :
+
+```bash
+docker compose stop app worker worker-pdf worker-ml worker-recurring worker-retention worker-business
+./scripts/restore-pg.sh /var/backups/pathelix/pathelix_2026-10-07_0200.dump   # demande le nom de la base
+npx prisma migrate deploy        # si la sauvegarde est plus ancienne que le code
+docker compose start app worker worker-pdf worker-ml worker-recurring worker-retention worker-business
+```
+
+La sauvegarde est chargée dans une base neuve, en une transaction ; la base en service n'est
+renommée (`<base>_avant_<date>`, conservée) qu'une fois ce chargement réussi, et la base restaurée
+prend son nom. Un fichier tronqué ou un chargement en échec ne modifie rien. Pour annuler :
+renommer les deux bases dans l'autre sens ; supprimer `<base>_avant_<date>` une fois la
+restauration validée. Le compte PostgreSQL doit pouvoir créer et renommer des bases (c'est le cas
+du compte du compose ; sur une base managée, utiliser la restauration du fournisseur).
+
+Procédure vérifiée sur une base réelle (64 tables, index, contraintes et historique des migrations
+identiques après restauration ; base endommagée remplacée et conservée de côté ; refus d'un fichier
+tronqué). **À rejouer sur votre infrastructure avant la mise en service**, puis périodiquement :
+une sauvegarde jamais restaurée n'en est pas une.
+
+**Fichiers** (photos, signatures, bons, PDF de factures) — ils ne sont pas dans la base :
+`STORAGE_DRIVER=local` → sauvegarder le volume `photo_storage` (`UPLOAD_DIR`) en même temps que la
+base ; `STORAGE_DRIVER=s3` → activer le versionnement et la réplication du bucket.
+
+Toujours faire une sauvegarde avant une mise à jour comportant une migration.
 
 Données personnelles : positions GPS purgées après `POSITION_RETENTION_DAYS`, journal d'audit après
 `AUDIT_RETENTION_DAYS`.
