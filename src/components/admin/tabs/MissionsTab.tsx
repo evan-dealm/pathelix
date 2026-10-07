@@ -427,7 +427,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
                             {col.key === 'assigned' && assignmentMap.get(m.id) && (
                               <div className="text-[10px] text-green-500 font-semibold mt-1 truncate">{assignmentMap.get(m.id)!.name}</div>
                             )}
-                            <div className="flex gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex gap-1 mt-1.5 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                               <button type="button" onClick={e => { e.stopPropagation(); onEdit(m) }} className="text-[10px] text-brand-500 hover:underline">Modifier</button>
                               <button type="button" onClick={e => { e.stopPropagation(); onDuplicate(m.id) }} className="text-[10px] text-surface-400 hover:underline">Dupliquer</button>
                             </div>
@@ -558,7 +558,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
                       {m.binSizeM3 ? <div className="text-surface-300 text-[10px]">{m.binSizeM3} m³</div> : null}
                     </td>
                     <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         <Btn onClick={() => onEdit(m)} variant="ghost" size="xs" title="Modifier">✏</Btn>
                         <Btn onClick={() => onDuplicate(m.id)} variant="ghost" size="xs" title="Dupliquer">⎘</Btn>
                         <Btn onClick={() => archiveMission(m.id)} variant="warning" size="xs" title="Archiver">📁</Btn>

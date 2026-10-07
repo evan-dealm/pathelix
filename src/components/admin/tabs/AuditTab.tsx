@@ -40,7 +40,7 @@ const ENTITY_TYPES = [
 
 function actionBadge(action: string) {
   const cfg: Record<string, { cls: string; label: string }> = {
-    create: { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Creation' },
+    create: { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Création' },
     update: { cls: 'bg-blue-50 text-blue-700 border-blue-200', label: 'Modification' },
     delete: { cls: 'bg-red-50 text-red-700 border-red-200', label: 'Suppression' },
     assign: { cls: 'bg-violet-50 text-violet-700 border-violet-200', label: 'Assignation' },

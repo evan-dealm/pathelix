@@ -12,20 +12,20 @@ const log = createLogger('/api/integrations')
 
 const INTEGRATION_TYPES = [
 
-  { type: 'trimble',         name: 'Trimble Maps',         description: 'Calcul de routes poids-lourds (restrictions, peages)', category: 'routing' },
+  { type: 'trimble',         name: 'Trimble Maps',         description: 'Calcul de routes poids-lourds (restrictions, péages)', category: 'routing' },
   { type: 'here',            name: 'HERE Truck Routing',   description: 'Routage PL avec trafic temps reel et zones ZFE', category: 'routing' },
 
   { type: 'geotab',          name: 'Geotab',               description: 'Telematique universelle — positions GPS et donnees moteur via boitier OBD', category: 'telemetry' },
   { type: 'samsara',         name: 'Samsara',              description: 'GPS + cameras embarquees + suivi temperature', category: 'telemetry' },
-  { type: 'obd',             name: 'OBD generique',        description: 'Positions GPS/vitesse depuis un boitier OBD generique, un token webhook par tenant', category: 'telemetry' },
+  { type: 'obd',             name: 'OBD générique',        description: 'Positions GPS/vitesse depuis un boîtier OBD générique, un token webhook par tenant', category: 'telemetry' },
 
-  { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Reception automatique des missions depuis Nessy via webhook HMAC-SHA256', category: 'erp' },
+  { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Réception automatique des missions depuis Nessy via webhook HMAC-SHA256', category: 'erp' },
 
-  { type: 'slack',           name: 'Slack',                description: 'Notifications tournees et alertes anomalies dans vos canaux', category: 'notifications' },
+  { type: 'slack',           name: 'Slack',                description: 'Notifications de tournées et alertes anomalies dans vos canaux', category: 'notifications' },
   { type: 'teams',           name: 'Microsoft Teams',      description: 'Notifications dans Teams via webhook', category: 'notifications' },
   { type: 'twilio_sms',      name: 'SMS (Twilio)',         description: 'Notifier vos clients par SMS : "Votre benne arrive dans 30 min"', category: 'notifications' },
 
-  { type: 'custom_webhook',  name: 'Webhook personnalise', description: 'Envoyer des evenements vers n\'importe quelle URL', category: 'custom' },
+  { type: 'custom_webhook',  name: 'Webhook personnalisé', description: 'Envoyer des événements vers n\'importe quelle URL', category: 'custom' },
 ] as const
 
 const IntegrationConfigSchema = z.object({

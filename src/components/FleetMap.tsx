@@ -653,7 +653,7 @@ function FleetMapInner({
         <div className="absolute bottom-4 left-3 z-[999] bg-gray-950/90 border border-gray-800 rounded-lg px-3 py-2.5 space-y-0.5 max-w-[190px] max-h-[45vh] overflow-y-auto"
              style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
           <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>{activeRoutes.length} tournees</span>
+            <span>{activeRoutes.length} tournées</span>
             {hasIsolation && (
               <button
                 onClick={(e) => { e.stopPropagation(); clearIsolation() }}

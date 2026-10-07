@@ -437,7 +437,7 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
                       })()}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         <a
                           href={`/driver/${d.id}`}
                           target="_blank"

@@ -137,6 +137,13 @@ export default async function globalSetup() {
       const found = await prisma.user.findFirst({ where: { email } })
       if (!found) await prisma.user.create({ data: { tenantId: tenant.id, email, passwordHash, role: 'DISPATCHER', firstName, lastName: 'Test' } })
     }
+    // One archived mission: the Missions tab only shows its « Archives » section when there is one.
+    const archived = await prisma.mission.findFirst({ where: { tenantId: tenant.id, archived: true } })
+    if (!archived) {
+      await prisma.mission.create({
+        data: { tenantId: tenant.id, type: 'RETIRER', date: today, address: '9 rue des Archives, 75003 Paris', latitude: 48.86, longitude: 2.36, estimatedDurationMin: 20, clientName: 'Client archivé', archived: true },
+      })
+    }
     // A real route for today (first driver, the day's first two missions).
     const todays = await prisma.mission.findMany({
       where: { tenantId: tenant.id, date: today, archived: false, type: { not: { in: ['VIDER', 'PAUSE'] } } },

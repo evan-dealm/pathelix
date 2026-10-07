@@ -128,11 +128,11 @@ const FULL_MARKETPLACE: Array<{ type: string; name: string; description: string;
   { type: 'here',            name: 'HERE Truck Routing',   description: 'Routage PL avec trafic temps réel et zones ZFE', category: 'routing' },
   { type: 'geotab',          name: 'Geotab',               description: 'Télématique universelle — positions GPS et données moteur via boîtier OBD', category: 'telemetry' },
   { type: 'samsara',         name: 'Samsara',              description: 'GPS + cameras embarquees + suivi temperature', category: 'telemetry' },
-  { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Reception automatique des missions depuis l\'ERP Nessy', category: 'erp' },
+  { type: 'nessy',           name: 'Nessy (Webhook)',      description: 'Réception automatique des missions depuis l\'ERP Nessy', category: 'erp' },
   { type: 'slack',           name: 'Slack',                description: 'Notifications tournées et alertes anomalies dans vos canaux', category: 'notifications' },
   { type: 'teams',           name: 'Microsoft Teams',      description: 'Notifications dans Teams via webhook', category: 'notifications' },
   { type: 'twilio_sms',      name: 'SMS (Twilio)',         description: 'Notifier vos clients par SMS : "Votre benne arrive dans 30 min"', category: 'notifications' },
-  { type: 'custom_webhook',  name: 'Webhook personnalise', description: 'Envoyer des événements vers n\'importe quelle URL', category: 'custom' },
+  { type: 'custom_webhook',  name: 'Webhook personnalisé', description: 'Envoyer des événements vers n\'importe quelle URL', category: 'custom' },
 ]
 
 export function IntegrationsPanel() {

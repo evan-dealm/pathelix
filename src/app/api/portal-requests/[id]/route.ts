@@ -33,6 +33,18 @@ export const PUT = apiRoute({ name: '/api/portal-requests/[id]', permission: 'ma
       } as Parameters<typeof db.mission.create>[0]['data'],
     })
     missionId = m.id
+    // Two people accepting the same request at the same moment both passed the check above
+    // and each created a mission. The request is linked only if it still has none; the one
+    // who arrives second takes its mission back.
+    const linked = await db.portalRequest.updateMany({
+      where: { id: r.id, missionId: null },
+      data: { status: body.status, response: body.response ?? r.response, handledBy: userId, missionId },
+    })
+    if (linked.count === 0) {
+      await db.mission.deleteMany({ where: { id: m.id } })
+      throw conflict('Une mission a déjà été créée pour cette demande', 'ALREADY_PLANNED')
+    }
+    return db.portalRequest.findFirst({ where: { id: r.id } })
   }
   return db.portalRequest.update({ where: { id: r.id }, data: { status: body.status, response: body.response ?? r.response, handledBy: userId, missionId } })
 })

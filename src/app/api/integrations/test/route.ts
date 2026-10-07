@@ -108,7 +108,7 @@ async function testOSRM(config: Record<string, unknown>): Promise<TestResult> {
     if (data.code === 'Ok') {
       return {
         ok: true,
-        message: `OSRM operationnel — point le plus proche trouve`,
+        message: `OSRM opérationnel — point le plus proche trouvé`,
         details: { waypoint: data.waypoints?.[0]?.name },
       }
     }
@@ -214,7 +214,7 @@ async function testTwilio(config: Record<string, unknown>): Promise<TestResult> 
   const token = String(config.authToken ?? '')
   const from = String(config.fromNumber ?? '')
   if (!sid || !token) return { ok: false, message: 'Account SID et Auth Token requis' }
-  if (!from) return { ok: false, message: 'Numero expediteur requis' }
+  if (!from) return { ok: false, message: 'Numéro d’expéditeur requis' }
 
   try {
     const controller = new AbortController()

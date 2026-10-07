@@ -43,7 +43,8 @@ test.describe('MissionDetailModal', () => {
     await openFirstMissionDetail(page)
     const dialog = modalDialog(page)
     const typeBadge = dialog.locator('span, div').filter({
-      hasText: /POSER|RETIRER|ECHANGER|VIDER|Poser|Retirer|Échanger|Vider/i,
+      // Labels come from the trade vocabulary (« Pose », « Retrait », « Échange »…).
+      hasText: /POSER|RETIRER|ECHANGER|VIDER|Pose|Retrait|Retirer|Échange|Vider/i,
     }).first()
     await expect(typeBadge).toBeVisible({ timeout: 5_000 })
   })

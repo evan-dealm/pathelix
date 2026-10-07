@@ -51,7 +51,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (!fromStr || !toStr) {
     return NextResponse.json(
-      { error: 'Parametres requis : from=lat,lng&to=lat,lng' },
+      { error: 'Paramètres requis : from=lat,lng&to=lat,lng' },
       { status: 400 },
     )
   }

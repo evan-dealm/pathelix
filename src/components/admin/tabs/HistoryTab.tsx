@@ -177,7 +177,7 @@ export function HistoryTab({ tourDate }: { tourDate: string }) {
                 value={labelInput}
                 onChange={e => setLabelInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSave() }}
-                placeholder={`Tournee du ${tourDate}...`}
+                placeholder={`Tournée du ${tourDate}…`}
                 className="flex-1 bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 placeholder-surface-400 text-sm focus:outline-none focus:border-[#0055A4] transition-colors"
                 autoFocus
               />

@@ -157,7 +157,7 @@ function ClientsPanel({ readOnly = false }: { readOnly?: boolean }) {
                   <td className="px-4 py-3 text-surface-400 text-xs">{c.clientSites?.length || 0} site{(c.clientSites?.length || 0) !== 1 ? 's' : ''}</td>
                   {!readOnly && (
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         <Btn onClick={() => setModal({ kind: 'edit', client: c })} variant="ghost" size="xs">Modifier</Btn>
                         <Btn onClick={() => handleDelete(c.id)} variant="danger" size="xs">Archiver</Btn>
                       </div>
@@ -381,7 +381,7 @@ function SitesPanel({ readOnly = false }: { readOnly?: boolean }) {
                   <td className="px-4 py-3 text-surface-400 text-xs max-w-[150px] truncate">{s.accessNotes || '—'}</td>
                   {!readOnly && (
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         <Btn onClick={() => setModal({ kind: 'edit', site: s })} variant="ghost" size="xs">Modifier</Btn>
                         <Btn onClick={() => handleDelete(s.id)} variant="danger" size="xs">Archiver</Btn>
                       </div>
@@ -619,7 +619,7 @@ function ProductsPanel({ readOnly = false }: { readOnly?: boolean }) {
                   <td className="px-4 py-3 text-surface-500 text-xs">{p.defaultExutoire?.name || '—'}</td>
                   {!readOnly && (
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         <Btn onClick={() => setModal({ kind: 'edit', product: p })} variant="ghost" size="xs">Modifier</Btn>
                         <Btn onClick={() => handleDelete(p.id)} variant="danger" size="xs">Archiver</Btn>
                       </div>

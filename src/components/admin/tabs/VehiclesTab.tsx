@@ -559,7 +559,7 @@ export function VehiclesTab() {
         ) : filtered.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-surface-400 gap-2">
             <div className="text-3xl">🚛</div>
-            <div className="text-sm">Aucun véhicule trouve</div>
+            <div className="text-sm">Aucun véhicule trouvé</div>
           </div>
         ) : (
           <>
@@ -635,7 +635,7 @@ export function VehiclesTab() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         <Btn onClick={() => setMaintenanceVehicle({ id: v.id, name: v.immatriculation })} variant="ghost" size="xs" title="Historique entretien">🔧</Btn>
                         <Btn onClick={() => setFuelVehicle({ id: v.id, name: v.immatriculation })} variant="ghost" size="xs" title="Historique carburant">⛽</Btn>
                         <Btn onClick={() => openEdit(v)} variant="ghost" size="xs">Modifier</Btn>

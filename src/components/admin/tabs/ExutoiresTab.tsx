@@ -235,7 +235,7 @@ export function ExutoiresTab() {
                   </td>
                   <td className="px-4 py-3 text-surface-500 text-xs whitespace-nowrap">{e.serviceTimeMin} min</td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       <Btn onClick={() => setModal({ kind: 'edit', ex: e })} variant="ghost" size="xs">✏ Modifier</Btn>
                       <Btn onClick={() => handleDelete(e.id)} variant="danger" size="xs" disabled={deleting === e.id}>
                         {deleting === e.id ? '…' : '✕ Supprimer'}

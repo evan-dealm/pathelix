@@ -303,7 +303,7 @@ export function SettingsTab() {
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault()
     setPwdError('')
-    if (newPwd.length < 6)    { setPwdError('Min. 6 caractères'); return }
+    if (newPwd.length < 12)   { setPwdError('12 caractères au minimum'); return }
     if (newPwd !== confirmPwd) { setPwdError('Les mots de passe ne correspondent pas'); return }
     setPwdStatus('saving')
     try {
@@ -859,7 +859,7 @@ export function SettingsTab() {
                 <div className="relative">
                   <input type={showNew ? 'text' : 'password'} value={newPwd}
                     onChange={e => setNewPwd(e.target.value)} required minLength={6}
-                    placeholder="Min. 6 caractères" className={inp} />
+                    placeholder="12 caractères au minimum" className={inp} />
                   <button type="button" onClick={() => setShowNew(v => !v)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-500 text-[10px]">
                     {showNew ? 'Cacher' : 'Voir'}

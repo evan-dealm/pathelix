@@ -259,13 +259,15 @@ export function UsersTab() {
     })
   }, [users, debouncedSearch, roleFilter])
 
+  // Shown in words: the stored codes (DISPATCHER…) mean nothing to the people using the screen.
+  const ROLE_LABEL: Record<string, string> = { ADMIN: "Administrateur", DISPATCHER: "Exploitant", DRIVER: "Chauffeur" }
   const roleBadge = (role: string) => {
     const cls = {
       ADMIN: 'bg-violet-50 text-violet-700 border-violet-200',
       DISPATCHER: 'bg-blue-50 text-blue-700 border-blue-200',
       DRIVER: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     }[role] || 'bg-surface-100 text-surface-500 border-surface-200'
-    return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${cls}`}>{role}</span>
+    return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${cls}`}>{ROLE_LABEL[role] ?? role}</span>
   }
 
   const activeDrivers = drivers.filter(d => !d.archived)
@@ -281,8 +283,8 @@ export function UsersTab() {
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} title="Filtrer par rôle"
           className="bg-surface-100 border border-surface-200 rounded-lg px-2 py-1 text-surface-900 text-xs focus:outline-none focus:border-[#0055A4]">
           <option value="all">Tous les rôles</option>
-          <option value="ADMIN">Admin</option>
-          <option value="DISPATCHER">Dispatcher</option>
+          <option value="ADMIN">Administrateur</option>
+          <option value="DISPATCHER">Exploitant</option>
           <option value="DRIVER">Chauffeur</option>
         </select>
         <div className="ml-auto">
@@ -298,7 +300,7 @@ export function UsersTab() {
         ) : filtered.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-surface-400 gap-2">
             <div className="text-3xl">👤</div>
-            <div className="text-sm">Aucun utilisateur trouve</div>
+            <div className="text-sm">Aucun utilisateur trouvé</div>
           </div>
         ) : (
           <>
@@ -313,7 +315,7 @@ export function UsersTab() {
                     </div>
                     {roleBadge(u.role)}
                   </div>
-                  <div className="text-surface-400 text-[10px]">Cree le {new Date(u.createdAt).toLocaleDateString('fr-FR')}</div>
+                  <div className="text-surface-400 text-[10px]">Créé le {new Date(u.createdAt).toLocaleDateString('fr-FR')}</div>
                   <div className="flex items-center gap-1 pt-1">
                     <Btn onClick={() => openEdit(u)} variant="ghost" size="xs">Modifier</Btn>
                     <Btn onClick={() => handleDelete(u.id)} variant="danger" size="xs" disabled={deleting === u.id}>
@@ -328,7 +330,7 @@ export function UsersTab() {
             <table className="w-full text-sm border-collapse hidden md:table">
               <thead className="sticky top-0 bg-surface-50 z-10">
                 <tr>
-                  {['Email', 'Nom', 'Prenom', 'Role', 'Date creation', 'Actions'].map(h => (
+                  {['E-mail', 'Nom', 'Prénom', 'Rôle', 'Créé le', 'Actions'].map(h => (
                     <th key={h} className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -338,14 +340,13 @@ export function UsersTab() {
                   <tr key={u.id} className="border-b border-surface-100 hover:bg-surface-50 transition-colors group">
                     <td className="px-4 py-3">
                       <div className="text-surface-900 font-semibold text-sm">{u.email}</div>
-                      <div className="text-surface-300 text-[10px] font-mono">{u.id}</div>
                     </td>
                     <td className="px-4 py-3 text-surface-600 text-sm">{u.lastName}</td>
                     <td className="px-4 py-3 text-surface-600 text-sm">{u.firstName}</td>
                     <td className="px-4 py-3">{roleBadge(u.role)}</td>
                     <td className="px-4 py-3 text-surface-400 text-xs">{new Date(u.createdAt).toLocaleDateString('fr-FR')}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         <Btn onClick={() => openEdit(u)} variant="ghost" size="xs">Modifier</Btn>
                         <Btn onClick={() => handleDelete(u.id)} variant="danger" size="xs" disabled={deleting === u.id}>
                           {deleting === u.id ? '...' : 'Supprimer'}
@@ -371,14 +372,14 @@ export function UsersTab() {
               <Input value={form.password} onChange={v => setForm(f => ({ ...f, password: v }))} placeholder={modal.kind === 'new' ? 'Min. 12 caractères' : 'Optionnel'} type="password" />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Prenom *">
+              <Field label="Prénom *">
                 <Input value={form.firstName} onChange={v => setForm(f => ({ ...f, firstName: v }))} placeholder="Jean" />
               </Field>
               <Field label="Nom *">
                 <Input value={form.lastName} onChange={v => setForm(f => ({ ...f, lastName: v }))} placeholder="Dupont" />
               </Field>
             </div>
-            <Field label="Role">
+            <Field label="Rôle">
               <SelectInput value={form.role} onChange={v => setForm(f => ({ ...f, role: v as UserForm['role'] }))} options={[
                 { value: 'ADMIN', label: 'Administrateur' },
                 { value: 'DISPATCHER', label: 'Dispatcher' },

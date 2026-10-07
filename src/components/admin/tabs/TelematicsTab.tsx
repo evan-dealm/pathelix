@@ -192,19 +192,27 @@ export function TelematicsTab({ date }: Props) {
       <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center gap-6 text-center">
         <div className="text-5xl">📡</div>
         <div>
-          <p className="text-surface-900 font-semibold text-lg mb-1">Aucune donnee de suivi</p>
+          <p className="text-surface-900 font-semibold text-lg mb-1">Aucune donnée de suivi</p>
           <p className="text-surface-400 text-sm max-w-md">
             Les positions GPS des chauffeurs apparaissent ici automatiquement quand ils ouvrent
             l&apos;application mobile. Chaque chauffeur envoie sa position toutes les 30 secondes.
           </p>
+          <button
+            type="button"
+            onClick={() => { void fetchData() }}
+            className="mt-3 text-xs text-surface-600 hover:text-surface-900 border border-surface-200 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            Actualiser
+          </button>
+          <span className="ml-2 text-[10px] text-surface-400">Auto 30s</span>
         </div>
 
         <div className="bg-white border border-surface-200 rounded-xl p-5 text-left w-full max-w-lg">
-          <p className="text-surface-500 text-xs font-semibold uppercase tracking-wider mb-3">Comment ca fonctionne</p>
+          <p className="text-surface-500 text-xs font-semibold uppercase tracking-wider mb-3">Comment ça fonctionne</p>
           <div className="space-y-2 text-xs text-surface-600">
             <div className="flex items-start gap-2">
               <span className="text-brand-500 font-bold shrink-0">1.</span>
-              <span>Le chauffeur ouvre sa page sur son téléphone (<code className="text-surface-500">/driver/[id]</code>)</span>
+              <span>Le chauffeur se connecte à Pathélix sur son téléphone : sa tournée s’ouvre</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-brand-500 font-bold shrink-0">2.</span>
