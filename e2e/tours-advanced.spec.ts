@@ -24,12 +24,11 @@ test.describe('Tours Tab — Advanced', () => {
     const optimizeBtn = page.locator('button:has-text("Optimiser")').first()
     await expect(optimizeBtn).toBeVisible({ timeout: 10_000 })
     await optimizeBtn.click()
-    await page.waitForTimeout(500)
-    const spinner = page.locator('[class*="animate-spin"]').first()
-    const btnDisabled = await optimizeBtn.isDisabled().catch(() => false)
-    const spinnerVisible = await spinner.isVisible({ timeout: 3_000 }).catch(() => false)
-    expect(btnDisabled || spinnerVisible).toBe(true)
-    await page.waitForTimeout(5000)
+    // A small plan is solved in well under a second, so the spinner cannot be relied upon:
+    // what the dispatcher must always get is the outcome next to the button.
+    await expect(page.locator('[role="tabpanel"]').getByText(/\d+\/\d+ missions · score \d+\/100/).first())
+      .toBeVisible({ timeout: 30_000 })
+    await expect(optimizeBtn).toBeEnabled()
   })
 
   test('optimization weight panel shows distance toggle', async ({ page }) => {
@@ -60,11 +59,9 @@ test.describe('Tours Tab — Advanced', () => {
     const optimizeBtn = page.locator('button:has-text("Optimiser")').first()
     await expect(optimizeBtn).toBeVisible({ timeout: 10_000 })
     await optimizeBtn.click()
-    const progressBar = page.locator('[role="progressbar"], progress, [class*="progress"]').first()
-    const visible = await progressBar.isVisible({ timeout: 5_000 }).catch(() => false)
-    const disabled = await optimizeBtn.isDisabled({ timeout: 1_000 }).catch(() => false)
-    expect(visible || disabled).toBe(true)
-    await page.waitForTimeout(5000)
+    // Progress is only on screen while the solver runs (instant here); the end of the run is
+    // always announced.
+    await expect(page.getByText(/Optimisation terminée : \d+\/\d+ missions/).first()).toBeVisible({ timeout: 30_000 })
   })
 
   test('tour metrics display shows duration', async ({ page }) => {
@@ -122,20 +119,22 @@ test.describe('Tours Tab — Advanced', () => {
     await expect(printBtn).toBeEnabled()
   })
 
-  test('pool view mode "Liste" is clickable', async ({ page }) => {
-    const listeBtn = page.locator('[role="tabpanel"] button:has-text("Liste")').first()
-    await expect(listeBtn).toBeVisible({ timeout: 10_000 })
-    await listeBtn.click()
-    await page.waitForTimeout(300)
-    await expect(page.locator('[role="tabpanel"]').first()).toBeVisible()
+  // The mission pool and its Jour / Semaine / Mois views live on the dashboard.
+  test('pool view mode "Jour" is clickable', async ({ page }) => {
+    await navigateToTab(page, 'dashboard')
+    const jourBtn = page.locator('#tabpanel-dashboard button:has-text("Jour"):visible').first()
+    await expect(jourBtn).toBeVisible({ timeout: 10_000 })
+    await jourBtn.click()
+    await expect(page.locator('#tabpanel-dashboard')).toBeVisible()
   })
 
   test('pool view mode "Semaine" is clickable', async ({ page }) => {
-    const semaineBtn = page.locator('[role="tabpanel"] button:has-text("Semaine")').first()
+    await navigateToTab(page, 'dashboard')
+    const semaineBtn = page.locator('#tabpanel-dashboard button:has-text("Semaine"):visible').first()
     await expect(semaineBtn).toBeVisible({ timeout: 10_000 })
     await semaineBtn.click()
-    await page.waitForTimeout(300)
-    await expect(page.locator('[role="tabpanel"]').first()).toBeVisible()
+    // The week view shows the seven day columns.
+    await expect(page.locator('#tabpanel-dashboard').getByText(/^LUN$/i).first()).toBeVisible({ timeout: 5_000 })
   })
 
   test('move down button exists for assigned missions', async ({ page }) => {

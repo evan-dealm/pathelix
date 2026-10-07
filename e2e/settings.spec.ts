@@ -49,16 +49,17 @@ test.describe('Settings Tab', () => {
   test('password change form has password inputs', async ({ page }) => {
     const pwdInputs = page.locator('[role="tabpanel"] input[type="password"]')
     const count = await pwdInputs.count()
-    expect(count).toBeGreaterThanOrEqual(2)
+    expect(count).toBeGreaterThanOrEqual(3)
     await pwdInputs.first().fill('short')
     await pwdInputs.nth(1).fill('short')
     const changeBtn = page.locator('[role="tabpanel"] button[type="submit"]:has-text("Modifier")').first()
     await expect(changeBtn).toBeVisible({ timeout: 5_000 })
+    // Current, new and confirmation are all required before the form can be sent.
+    await expect(changeBtn).toBeDisabled()
+    await pwdInputs.nth(2).fill('short')
     await changeBtn.click()
-    await page.waitForTimeout(500)
-    // Short password should trigger validation error
-    const errorMsg = page.locator('[role="tabpanel"] [class*="red"], [role="tabpanel"] [role="alert"]').first()
-    await expect(errorMsg).toBeVisible({ timeout: 5_000 })
+    // A short password is refused with the rule, before any request.
+    await expect(page.locator('[role="tabpanel"]').getByText('12 caractères au minimum')).toBeVisible({ timeout: 5_000 })
   })
 
   test('holidays section exists', async ({ page }) => {
@@ -69,6 +70,10 @@ test.describe('Settings Tab', () => {
   test('holiday add button exists', async ({ page }) => {
     const addBtn = page.locator('[role="tabpanel"] button:has-text("Ajouter")').first()
     await expect(addBtn).toBeVisible({ timeout: 8_000 })
+    // Disabled until the holiday has a date and a label.
+    await expect(addBtn).toBeDisabled()
+    await page.locator('[role="tabpanel"] input[type="date"]:not(#purge-plans-date)').first().fill('2027-05-01')
+    await page.locator('[role="tabpanel"]').getByPlaceholder('Ex : Noël').fill('Fête du Travail')
     await expect(addBtn).toBeEnabled()
   })
 
@@ -78,23 +83,24 @@ test.describe('Settings Tab', () => {
     await expect(exportBtn).toBeEnabled()
   })
 
-  test('danger zone buttons exist', async ({ page }) => {
-    const purgeBtn = page.locator('[role="tabpanel"] button:has-text("Purger les logs")').first()
-    await expect(purgeBtn).toBeVisible({ timeout: 5_000 })
-    await expect(purgeBtn).toBeEnabled()
+  test('admin zone: plans are erased per date, the audit log cannot be purged by hand', async ({ page }) => {
+    const panel = page.locator('[role="tabpanel"]')
+    await expect(panel.locator('button:has-text("Archiver toutes les missions")')).toBeEnabled({ timeout: 5_000 })
+    // Erasing plans is offered for one chosen day (today by default), never for everything.
+    await expect(panel.locator('#purge-plans-date')).toHaveValue(/^d{4}-d{2}-d{2}$/)
+    await expect(panel.locator('button:has-text("Effacer les tournées de cette date")')).toBeEnabled()
+    // The manual purge of the audit log was removed on purpose (365-day retention only).
+    await expect(panel.locator('button:has-text("Purger les logs")')).toHaveCount(0)
   })
 
-  test('danger zone buttons have confirmations', async ({ page }) => {
-    let dialogShown = false
+  test('admin zone buttons ask for confirmation', async ({ page }) => {
+    let message = ''
     page.on('dialog', async dialog => {
-      dialogShown = true
+      message = dialog.message()
       await dialog.dismiss()
     })
-    const purgeBtn = page.locator('[role="tabpanel"] button:has-text("Purger les logs")').first()
-    await expect(purgeBtn).toBeVisible({ timeout: 5_000 })
-    await purgeBtn.click()
-    await page.waitForTimeout(500)
-    expect(dialogShown).toBe(true)
+    await page.locator('[role="tabpanel"] button:has-text("Archiver toutes les missions")').click()
+    await expect.poll(() => message).toMatch(/Archiver TOUTES les missions/)
   })
 
   test('integrations sub-tab exists and is clickable', async ({ page }) => {

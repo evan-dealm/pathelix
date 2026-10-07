@@ -504,9 +504,10 @@ test.describe('Missions — Advanced Features', () => {
       await editBtn.click()
       await page.waitForTimeout(500)
 
-      const formTitle = page.locator('text=/Modifier mission|Nouvelle mission|Depuis le catalogue|Saisie manuelle/i').first()
-      const hasModal = await formTitle.isVisible({ timeout: 3000 }).catch(() => false)
-      expect(hasModal).toBeTruthy()
+      // Scoped to the dialog: the same words also exist in hidden desktop markup.
+      const form = page.locator('[role="dialog"]').filter({ hasText: /Modifier la mission/ })
+      await expect(form).toBeVisible({ timeout: 3000 })
+      await expect(form.getByText('Saisie manuelle')).toBeVisible()
       await closeModal(page)
     }
   })

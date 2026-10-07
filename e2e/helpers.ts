@@ -77,7 +77,9 @@ export async function navigateToTab(page: Page, tabName: string) {
   const label = labelMap[key] || tabName
 
   const tab = page.locator(`nav[aria-label="Navigation principale"] button[title="${label}"]`).first()
-  const fallback = page.locator(`nav button:has-text("${label}")`).first()
+  // `:visible` matters on mobile: the sidebar button is still in the DOM (hidden) and comes
+  // first, while the one a user can tap is in the bottom navigation bar.
+  const fallback = page.locator(`nav button:has-text("${label}"):visible`).first()
 
   // Each tab's content div carries id="tabpanel-{tabName}" (see src/app/admin/page.tsx) — the
   // same key already used in labelMap above. The click can silently no-op if it lands before

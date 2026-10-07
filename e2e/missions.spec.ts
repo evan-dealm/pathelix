@@ -17,9 +17,8 @@ test.describe('Missions Tab', () => {
   test('missions tab loads with counter', async ({ page }) => {
     const panel = page.locator('[role="tabpanel"]').first()
     await expect(panel).toBeVisible()
-    // Counter badge shows total missions
-    const counter = panel.locator('span, div').filter({ hasText: /^\d+$/ }).first()
-    await expect(counter).toBeVisible({ timeout: 5_000 })
+    // The toolbar counter reads « shown/total » (e.g. 9/9).
+    await expect(panel.getByText(/^\d+\/\d+$/).first()).toBeVisible({ timeout: 5_000 })
   })
 
   test('search input filters missions', async ({ page }) => {
@@ -104,12 +103,17 @@ test.describe('Missions Tab', () => {
   })
 
   test('pagination controls work', async ({ page }) => {
-    const nextBtn = page.locator('[role="tabpanel"] button[aria-label*="suivant" i], [role="tabpanel"] button:has-text(">")').first()
-    await expect(nextBtn).toBeVisible({ timeout: 5_000 })
-    if (!(await nextBtn.isDisabled())) {
-      await nextBtn.click()
-      await page.waitForTimeout(300)
-      await expect(page.locator('[role="tabpanel"]').first()).toBeVisible()
+    const panel = page.locator('[role="tabpanel"]').first()
+    const shown = Number(((await panel.getByText(/^\d+\/\d+$/).first().textContent()) ?? '').split('/')[0])
+    const range = panel.getByText(/^\d+-\d+ sur \d+$/).first()
+    if (await range.isVisible().catch(() => false)) {
+      // More than one page: « > » moves to the next range.
+      const before = await range.textContent()
+      await panel.getByRole('button', { name: '>', exact: true }).click()
+      await expect(range).not.toHaveText(before ?? '')
+    } else {
+      // A single page has no pager, and every counted mission is a row of the table.
+      await expect(panel.locator('tbody tr')).toHaveCount(shown)
     }
   })
 
@@ -123,13 +127,19 @@ test.describe('Missions Tab', () => {
     await expect(rows.first()).toBeVisible({ timeout: 5_000 })
   })
 
-  test('archive section toggle works', async ({ page }) => {
-    const archiveToggle = page.locator('button:has-text("Archives")').first()
+  test('an archived mission is listed under Archives and can be restored', async ({ page }) => {
+    // The Archives section only exists once something is archived: go through the real flow.
+    const panel = page.locator('[role="tabpanel"]').first()
+    const rows = panel.locator('tbody tr')
+    const before = await rows.count()
+    await rows.first().locator('button[title="Archiver"]').click()
+    await expect(rows).toHaveCount(before - 1)
+    const archiveToggle = panel.locator('button:has-text("Archives (")').first()
     await expect(archiveToggle).toBeVisible({ timeout: 5_000 })
     await archiveToggle.click()
-    await page.waitForTimeout(300)
-    await expect(page.locator('[role="tabpanel"]').first()).toBeVisible()
-    await archiveToggle.click()
-    await page.waitForTimeout(300)
+    const restore = panel.locator('button[title="Restaurer"]').first()
+    await expect(restore).toBeVisible({ timeout: 5_000 })
+    await restore.click()
+    await expect(rows).toHaveCount(before)
   })
 })

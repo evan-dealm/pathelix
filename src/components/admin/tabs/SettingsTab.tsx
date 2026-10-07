@@ -858,7 +858,7 @@ export function SettingsTab() {
                 <label className={lbl}>Nouveau mot de passe</label>
                 <div className="relative">
                   <input type={showNew ? 'text' : 'password'} value={newPwd}
-                    onChange={e => setNewPwd(e.target.value)} required minLength={6}
+                    onChange={e => setNewPwd(e.target.value)} required
                     placeholder="12 caractères au minimum" className={inp} />
                   <button type="button" onClick={() => setShowNew(v => !v)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-500 text-[10px]">

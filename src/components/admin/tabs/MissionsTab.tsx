@@ -162,7 +162,7 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
   function SortTh({ k, label }: { k: typeof sortKey; label: string }) {
     return (
       <th className="text-left text-surface-400 text-[11px] uppercase tracking-wider px-4 py-2.5 border-b border-surface-200 font-normal whitespace-nowrap">
-        <button type="button" onClick={() => toggleSort(k)} className="flex items-center gap-0.5 hover:text-surface-600 transition-colors">
+        <button type="button" onClick={() => toggleSort(k)} className="flex items-center gap-0.5 uppercase tracking-wider hover:text-surface-600 transition-colors">
           {label}{sortKey === k ? (sortAsc ? ' ↑' : ' ↓') : ''}
         </button>
       </th>
