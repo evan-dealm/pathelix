@@ -70,6 +70,9 @@ offres.
 |---|---|
 | `/` | Site vitrine : accueil (redirige un utilisateur connecté vers son espace) |
 | `/produit`, `/metiers`, `/securite` | Site vitrine : produit par module, métiers servis, sécurité |
+| `/metiers/<métier>`, `/fonctionnalites/<module>` | Site vitrine : une page par métier et par module (contenu dans `src/lib/site/content`) |
+| `/guides`, `/guides/<guide>`, `/comparatifs/<sujet>`, `/glossaire`, `/tarifs` | Site vitrine : guides pratiques, comparatifs, vocabulaire du métier, mode de tarification |
+| `/llms.txt`, `/sitemap.xml`, `/robots.txt` | Plan du site pour les assistants IA et les moteurs de recherche |
 | `/contact` | Demande de démonstration (enregistrée, lue dans Superadmin → Demandes de démo) |
 | `/mentions-legales`, `/confidentialite` | Pages légales du site |
 | `/login` | Connexion |

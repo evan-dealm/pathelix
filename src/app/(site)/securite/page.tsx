@@ -90,6 +90,7 @@ export default function SecuritePage() {
   return (
     <>
       <PageIntro
+        crumb={{ href: '/securite', label: 'Sécurité' }}
         title="Ce qui protège vos données."
         lead="Cette page décrit des mécanismes en place dans le produit, pas des intentions. Elle ne mentionne aucune certification, parce que Pathélix n’en détient pas à ce jour."
       />

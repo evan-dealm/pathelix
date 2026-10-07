@@ -21,6 +21,7 @@ export default function ProduitPage() {
   return (
     <>
       <PageIntro
+        crumb={{ href: '/produit', label: 'Produit' }}
         title="Le produit, module par module."
         lead="Pathélix couvre l’exploitation de bout en bout : de la demande du client à la facture, en passant par le planning, la tournée et le téléphone du chauffeur."
       />

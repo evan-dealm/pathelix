@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { CtaBand } from '@/components/site/CtaBand'
 import { PageIntro } from '@/components/site/PageIntro'
 
@@ -16,9 +17,17 @@ export const metadata: Metadata = {
   },
 }
 
-const TRADES: Array<{ id: string; name: string; title: string; text: string; points: string[] }> = [
+const TRADES: Array<{
+  id: string
+  name: string
+  title: string
+  text: string
+  points: string[]
+  more?: string
+}> = [
   {
     id: 'bennes',
+    more: '/metiers/location-de-bennes',
     name: 'Location de bennes',
     title: 'Pose, rotation, enlèvement : le quotidien, sans tableau blanc.',
     text: 'Une benne posée devra être échangée ou retirée, une benne pleine part à l’exutoire avant le chantier suivant. Pathélix planifie ces enchaînements et garde la trace de chaque benne.',
@@ -32,6 +41,7 @@ const TRADES: Array<{ id: string; name: string; title: string; text: string; poi
   },
   {
     id: 'collecte',
+    more: '/metiers/collecte-de-dechets',
     name: 'Collecte',
     title: 'Des tournées régulières, et de la place pour l’imprévu.',
     text: 'Les passages récurrents se génèrent seuls. Les demandes du jour s’ajoutent, et la tournée se recalcule sans défaire ce qui est déjà fait.',
@@ -58,6 +68,7 @@ const TRADES: Array<{ id: string; name: string; title: string; text: string; poi
   },
   {
     id: 'recyclage',
+    more: '/metiers/recyclage',
     name: 'Recyclage',
     title: 'Des matières, des poids, des preuves.',
     text: 'Ce qui entre et ce qui sort se mesure. Les pesées remontent du terrain, se rattachent aux missions et alimentent la facturation et les statistiques.',
@@ -75,6 +86,7 @@ export default function MetiersPage() {
   return (
     <>
       <PageIntro
+        crumb={{ href: '/metiers', label: 'Métiers' }}
         title="Conçu pour les métiers de la benne et de la collecte."
         lead="Pathélix a été pensé d’abord pour les loueurs de bennes et les collecteurs de déchets. Les règles du métier sont dans le produit, pas dans un paramétrage à inventer."
       />
@@ -98,6 +110,13 @@ export default function MetiersPage() {
                 {trade.title}
               </h2>
               <p className="t-body mt-5 max-w-[32rem] text-graphite">{trade.text}</p>
+              {trade.more && (
+                <p className="mt-5">
+                  <Link href={trade.more} className="link text-[0.9375rem]">
+                    {trade.name} : la page complète
+                  </Link>
+                </p>
+              )}
             </div>
             <ul className="self-start border-t border-ink/15">
               {trade.points.map(point => (

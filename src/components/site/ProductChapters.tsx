@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { StaticImageData } from 'next/image'
 import dashboard from '@/assets/site/dashboard.png'
 import missions from '@/assets/site/missions.png'
@@ -13,6 +14,8 @@ interface Chapter {
   title: string
   lead: string
   points: string[]
+  /** Page that covers the module in depth. */
+  more?: string
   visual?:
     | { kind: 'capture'; src: StaticImageData; alt: string; caption: string; position: string }
     | { kind: 'clip' }
@@ -61,6 +64,7 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 'planning',
+    more: '/fonctionnalites/planning-chauffeurs',
     nav: 'Planning',
     title: 'La journée et la semaine, chauffeur par chauffeur.',
     lead: 'Le planning se lit comme un diagramme de Gantt : une ligne par chauffeur, un bloc par mission, les trajets entre les deux.',
@@ -81,6 +85,7 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 'optimisation',
+    more: '/fonctionnalites/optimisation-de-tournees',
     nav: 'Optimisation',
     title: 'Des tournées calculées avec vos contraintes.',
     lead: 'Priorités, créneaux, capacité des camions, exutoires, taille des bennes, compétences, dépendances, temps de conduite, charge utile : le calcul tient compte de tout cela à la fois.',
@@ -102,6 +107,7 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 'terrain',
+    more: '/fonctionnalites/application-chauffeur',
     nav: 'Terrain',
     title: 'L’application du chauffeur.',
     lead: 'Elle s’ouvre dans le navigateur du téléphone et fonctionne sans réseau. Ce que fait le chauffeur arrive à l’exploitation dès que la connexion revient, sans doublon.',
@@ -118,6 +124,7 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 'bennes',
+    more: '/fonctionnalites/parc-de-bennes',
     nav: 'Bennes',
     title: 'Le parc de bennes.',
     lead: 'Chaque benne a un numéro, un type et un QR code à imprimer. Vous savez laquelle est disponible, laquelle est chez un client, laquelle est pleine.',
@@ -130,6 +137,7 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 'commercial',
+    more: '/fonctionnalites/facturation-et-pesees',
     nav: 'Commercial',
     title: 'Devis, commandes, factures.',
     lead: 'Le devis accepté devient commande, la commande crée ses missions, ce qui a été réalisé devient ligne de facture. Personne ne ressaisit.',
@@ -144,6 +152,7 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 'portail',
+    more: '/fonctionnalites/portail-client',
     nav: 'Portail client',
     title: 'L’espace de vos clients.',
     lead: 'Vos clients demandent une rotation, un enlèvement ou une benne supplémentaire sans téléphoner. Vous validez, la mission est créée.',
@@ -214,6 +223,13 @@ export function ProductChapters() {
                 {chapter.title}
               </h2>
               <p className="t-lead mt-5 max-w-[32rem] text-graphite">{chapter.lead}</p>
+              {chapter.more && (
+                <p className="mt-6">
+                  <Link href={chapter.more} className="link text-[0.9375rem]">
+                    {chapter.nav} : la page détaillée
+                  </Link>
+                </p>
+              )}
             </div>
             <ul className="self-start border-t border-ink/15 lg:mt-2">
               {chapter.points.map(point => (

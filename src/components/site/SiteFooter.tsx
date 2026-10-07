@@ -17,15 +17,31 @@ const COLUMNS: Array<{ title: string; links: FooterLink[] }> = [
   {
     title: 'Produit',
     links: [
-      { href: '/produit', label: 'Produit' },
-      { href: '/metiers', label: 'Métiers' },
-      { href: '/securite', label: 'Sécurité' },
+      { href: '/produit', label: 'Vue d’ensemble' },
+      { href: '/fonctionnalites/optimisation-de-tournees', label: 'Optimisation de tournées' },
+      { href: '/fonctionnalites/planning-chauffeurs', label: 'Planning chauffeurs' },
+      { href: '/fonctionnalites/application-chauffeur', label: 'Application chauffeur' },
+      { href: '/fonctionnalites/parc-de-bennes', label: 'Parc de bennes' },
+      { href: '/fonctionnalites/facturation-et-pesees', label: 'Facturation et pesées' },
+      { href: '/fonctionnalites/portail-client', label: 'Portail client' },
+    ],
+  },
+  {
+    title: 'Métiers',
+    links: [
+      { href: '/metiers/location-de-bennes', label: 'Location de bennes' },
+      { href: '/metiers/collecte-de-dechets', label: 'Collecte de déchets' },
+      { href: '/metiers/recyclage', label: 'Recyclage' },
+      { href: '/tarifs', label: 'Tarifs' },
       { href: '/#film', label: 'Le film' },
     ],
   },
   {
     title: 'Ressources',
     links: [
+      { href: '/guides', label: 'Guides et comparatifs' },
+      { href: '/glossaire', label: 'Glossaire' },
+      { href: '/securite', label: 'Sécurité' },
       { href: '/api-docs', label: 'Référence de l’API', app: true },
       { href: '/status', label: 'État du service', app: true },
       { href: '/help', label: 'Aide', app: true },
@@ -49,7 +65,7 @@ export function SiteFooter() {
       <Orbit className="pointer-events-none absolute -bottom-[38%] -right-[12%] hidden w-[52rem] text-paper/[0.13] md:block" />
 
       <div className="shell-wide relative pb-10 pt-20 lg:pt-28">
-        <div className="grid gap-14 lg:grid-cols-[1.3fr_2fr]">
+        <div className="grid gap-14 xl:grid-cols-[1fr_3fr]">
           <div>
             <Link
               href="/"
@@ -66,7 +82,7 @@ export function SiteFooter() {
 
           <nav
             aria-label="Pied de page"
-            className="grid grid-cols-2 gap-x-8 gap-y-12 sm:grid-cols-3"
+            className="grid grid-cols-2 gap-x-8 gap-y-12 lg:grid-cols-4"
           >
             {COLUMNS.map(col => (
               <div key={col.title}>

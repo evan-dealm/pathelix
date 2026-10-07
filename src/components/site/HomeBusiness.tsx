@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import statistiques from '@/assets/site/statistiques.png'
 import { Capture } from './Capture'
+import { FILM } from '@/lib/site/config'
 import { Film } from './Film'
 import { IntegrationOrbit } from './IntegrationOrbit'
 
@@ -228,6 +229,33 @@ export function FilmSection() {
         <div className="mt-14 lg:mt-20">
           <Film />
         </div>
+
+        {/* The film's content as text: for people who cannot watch it, and for search engines. */}
+        <details className="faq mt-10 border-y border-paper/15">
+          <summary className="flex items-center justify-between gap-6 py-4">
+            <h3 className="text-[0.9375rem] font-medium tracking-[-0.01em]">Le film, en texte</h3>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              className="faq-mark shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.25"
+            >
+              <path d="M8 1.5v13M1.5 8h13" />
+            </svg>
+          </summary>
+          <dl className="max-w-[52rem] pb-6">
+            {FILM.chapters.map(chapter => (
+              <div key={chapter.at} className="py-2.5">
+                <dt className="text-[0.9375rem] font-medium">{chapter.label}</dt>
+                <dd className="t-small mt-1 text-ash">{chapter.text}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
       </div>
     </section>
   )

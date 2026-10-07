@@ -54,7 +54,8 @@ export interface NavItem {
 export const PRIMARY_NAV: NavItem[] = [
   { href: '/produit', label: 'Produit' },
   { href: '/metiers', label: 'Métiers' },
-  { href: '/securite', label: 'Sécurité' },
+  { href: '/guides', label: 'Guides' },
+  { href: '/tarifs', label: 'Tarifs' },
   { href: '/#film', label: 'Le film' },
 ]
 
@@ -70,15 +71,51 @@ export const FILM = {
   },
   chaptersTrack: '/site-media/pathelix-film.chapters.vtt',
   chapters: [
-    { at: 0, label: 'Ouverture' },
-    { at: 22, label: 'Tableau de bord' },
-    { at: 33, label: 'Missions' },
-    { at: 46, label: 'Des missions aux tournées' },
-    { at: 66, label: 'Les tournées sur la carte' },
-    { at: 80, label: 'Une urgence en cours de journée' },
-    { at: 89, label: 'Application chauffeur, sans réseau' },
-    { at: 104, label: 'Statistiques' },
-    { at: 114, label: 'Intégrations' },
+    {
+      at: 0,
+      label: 'Ouverture',
+      text: 'Le logo Pathélix, puis les chiffres d’une journée : 1 053 missions dans le pool, 42 à réaliser aujourd’hui, 6 chauffeurs disponibles, 4 urgences à servir avant midi.',
+    },
+    {
+      at: 22,
+      label: 'Tableau de bord',
+      text: 'Le tableau de bord : indicateurs du jour, pool de missions de la semaine, planning des chauffeurs.',
+    },
+    {
+      at: 33,
+      label: 'Missions',
+      text: 'La liste des missions. Une mission : type, client, adresse, coordonnées GPS, durée, benne.',
+    },
+    {
+      at: 46,
+      label: 'Des missions aux tournées',
+      text: 'Une coordonnée devient un point : 42 missions, 42 points sur la carte, 6 chauffeurs, aucune tournée. Chaque mission a ses contraintes : priorité, créneau, temps de conduite, compétences. L’optimisation sous contraintes relie les points : 6 tournées, 42 missions planifiées.',
+    },
+    {
+      at: 66,
+      label: 'Les tournées sur la carte',
+      text: 'Les tournées optimisées dans Pathélix : chaque chauffeur a la sienne, dans l’ordre calculé, avec sa durée et ses kilomètres.',
+    },
+    {
+      at: 80,
+      label: 'Une urgence en cours de journée',
+      text: 'La journée commence. Une nouvelle mission urgente arrive : ré-optimisation depuis la position réelle des camions, arrêts déjà effectués conservés, nouvelles heures d’arrivée.',
+    },
+    {
+      at: 89,
+      label: 'Application chauffeur, sans réseau',
+      text: 'L’application chauffeur affiche la tournée du jour. Le réseau est perdu : l’application continue de fonctionner. Le client signe, l’action est conservée sur le téléphone. Réseau rétabli : synchronisation automatique, sans doublon, vue en direct par l’exploitant.',
+    },
+    {
+      at: 104,
+      label: 'Statistiques',
+      text: 'Les statistiques : aperçu des sept derniers jours, rapport mensuel en PDF, bilan CO₂, missions des sept prochains jours.',
+    },
+    {
+      at: 114,
+      label: 'Intégrations',
+      text: 'Pathélix s’intègre à vos outils : API REST, ERP, facturation, télématique. Chaque tournée, maîtrisée.',
+    },
   ],
 } as const
 
