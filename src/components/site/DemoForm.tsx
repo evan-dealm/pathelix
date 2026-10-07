@@ -3,22 +3,10 @@
 import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { CONTACT_EMAIL, FLEET_SIZES, FLEET_SIZE_LABELS } from '@/lib/site/config'
+import { validateDemoForm } from '@/lib/site/demoFormValidation'
 
 type FieldName = 'firstName' | 'lastName' | 'company' | 'email' | 'phone' | 'fleetSize' | 'message'
 type Errors = Partial<Record<FieldName, string>>
-const EMAIL_RE = /^[^s@<>"']+@[^s@<>"']+.[^s@<>"']+$/
-
-/** Same rules as DemoRequestSchema (src/lib/site/demoRequest.ts), which the server enforces. */
-function validate(values: Record<string, string>): Errors {
-  const errors: Errors = {}
-  if (!values.firstName) errors.firstName = 'Indiquez votre prénom'
-  if (!values.lastName) errors.lastName = 'Indiquez votre nom'
-  if (!values.company) errors.company = 'Indiquez votre entreprise'
-  if (!values.email) errors.email = 'Indiquez votre e-mail'
-  else if (!EMAIL_RE.test(values.email)) errors.email = 'Adresse e-mail invalide'
-  return errors
-}
-
 type Status =
   { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'failed'; message: string }
 
@@ -42,7 +30,7 @@ export function DemoForm() {
     new FormData(form).forEach((value, key) => {
       if (typeof value === 'string') values[key] = value.trim()
     })
-    const next = validate(values)
+    const next: Errors = validateDemoForm(values)
     if (Object.keys(next).length > 0) {
       setErrors(next)
       form.querySelector<HTMLElement>(`[name="${Object.keys(next)[0]}"]`)?.focus()
