@@ -23,7 +23,6 @@ vi.mock('@/lib/data/exutoires', () => ({
   getAllExutoires: vi.fn(() => Promise.resolve([])),
 }))
 
-
 vi.mock('@/lib/loadShedder', () => ({
   loadShedder: { acquire: vi.fn(() => 'ok'), release: vi.fn() },
   shedResponse: vi.fn(),
@@ -66,14 +65,27 @@ import { getAllDrivers } from '@/lib/data/drivers'
 import { getMissionsByDate } from '@/lib/data/missions'
 
 const DRIVER = {
-  id: 'd-1', firstName: 'Alice', lastName: 'D', sector: 'S1', depotName: 'Depot',
-  depotLat: 45.0, depotLng: 5.0, archived: false,
+  id: 'd-1',
+  firstName: 'Alice',
+  lastName: 'D',
+  sector: 'S1',
+  depotName: 'Depot',
+  depotLat: 45.0,
+  depotLng: 5.0,
+  archived: false,
 }
 
 const MISSION = {
-  id: 'm-1', type: 'POSER' as const, date: '2026-01-06', address: '1 rue test',
-  latitude: 48.86, longitude: 2.33, estimatedDurationMin: 30, maneuverTimeMin: 15,
-  archived: false, needsGeocode: false,
+  id: 'm-1',
+  type: 'POSER' as const,
+  date: '2026-01-06',
+  address: '1 rue test',
+  latitude: 48.86,
+  longitude: 2.33,
+  estimatedDurationMin: 30,
+  maneuverTimeMin: 15,
+  archived: false,
+  needsGeocode: false,
 }
 
 const VRP_RESULT = {

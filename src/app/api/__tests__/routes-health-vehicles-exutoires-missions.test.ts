@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const { mockPrisma } = vi.hoisted(() => {
-
   process.env.USE_MOCK_DATA = 'false'
 
   process.env.NESSY_WEBHOOK_SECRET = 'test-secret-health-ok'
@@ -13,11 +12,11 @@ const { mockPrisma } = vi.hoisted(() => {
     integration: { count: vi.fn(() => Promise.resolve(1)) },
     userPermission: { findMany: vi.fn(() => Promise.resolve([])) },
     vehicle: {
-      findMany:   vi.fn(),
-      findFirst:  vi.fn(),
-      count:      vi.fn(),
-      create:     vi.fn(),
-      update:     vi.fn(),
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
       updateMany: vi.fn(),
     },
   }
@@ -29,36 +28,42 @@ const getTenantDbMock = vi.hoisted(() => vi.fn(() => mockPrisma))
 vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: mockPrisma, getTenantDb: getTenantDbMock }))
 
 vi.mock('@/lib/data/context', () => ({
-  getTenantId:       vi.fn(() => 'tenant-test'),
-  getRequestContext: vi.fn(() => ({ tenantId: 'tenant-test', userId: 'user-1', role: 'admin', requestId: 'req-1', trade: null })),
+  getTenantId: vi.fn(() => 'tenant-test'),
+  getRequestContext: vi.fn(() => ({
+    tenantId: 'tenant-test',
+    userId: 'user-1',
+    role: 'admin',
+    requestId: 'req-1',
+    trade: null,
+  })),
 }))
 
 vi.mock('@/lib/data/exutoires', () => ({
   getAllExutoires: vi.fn(),
-  getExutoire:    vi.fn(),
+  getExutoire: vi.fn(),
   createExutoire: vi.fn(),
   updateExutoire: vi.fn(),
   deleteExutoire: vi.fn(),
 }))
 
 vi.mock('@/lib/data/missions', () => ({
-  getMission:    vi.fn(),
+  getMission: vi.fn(),
   updateMission: vi.fn(),
   deleteMission: vi.fn(),
 }))
 
 vi.mock('@/lib/redisCache', () => ({
   redisCache: {
-    getOrSet:      vi.fn((_ns: string, _t: string, fetcher: () => Promise<unknown>) => fetcher()),
-    invalidate:    vi.fn(),
+    getOrSet: vi.fn((_ns: string, _t: string, fetcher: () => Promise<unknown>) => fetcher()),
+    invalidate: vi.fn(),
     invalidateAll: vi.fn(),
   },
 }))
 
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({
-    info:  vi.fn(),
-    warn:  vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
   }),
@@ -68,12 +73,12 @@ vi.mock('@/lib/metrics', () => ({
   metrics: {
     increment: vi.fn(),
     histogram: vi.fn(),
-    snapshot:  vi.fn(() => ({ counters: {}, histograms: {} })),
+    snapshot: vi.fn(() => ({ counters: {}, histograms: {} })),
   },
   METRIC: {
     API_LATENCY_MS: 'api.latency_ms',
-    API_REQUESTS:   'api.requests',
-    API_ERRORS:     'api.errors',
+    API_REQUESTS: 'api.requests',
+    API_ERRORS: 'api.errors',
   },
 }))
 
@@ -83,30 +88,53 @@ vi.mock('@/lib/circuitBreaker', () => ({
 
 vi.mock('@/lib/session', () => ({
   SESSION_COOKIE: 'session',
-  verifySession:  vi.fn(),
+  verifySession: vi.fn(),
 }))
 
-import { GET as healthGet }                                   from '@/app/api/health/route'
-import { GET as vehiclesGet, POST as vehiclesPost }           from '@/app/api/vehicles/route'
-import { GET as vehicleGet, PUT as vehiclePut, DELETE as vehicleDelete } from '@/app/api/vehicles/[id]/route'
-import { GET as exutoiresGet, POST as exutoiresPost }         from '@/app/api/exutoires/route'
-import { GET as exutoireGet, PUT as exutoirePut, DELETE as exutoireDelete } from '@/app/api/exutoires/[id]/route'
-import { GET as missionGet, PUT as missionPut, DELETE as missionDelete } from '@/app/api/missions/[id]/route'
+import { GET as healthGet } from '@/app/api/health/route'
+import { GET as vehiclesGet, POST as vehiclesPost } from '@/app/api/vehicles/route'
+import {
+  GET as vehicleGet,
+  PUT as vehiclePut,
+  DELETE as vehicleDelete,
+} from '@/app/api/vehicles/[id]/route'
+import { GET as exutoiresGet, POST as exutoiresPost } from '@/app/api/exutoires/route'
+import {
+  GET as exutoireGet,
+  PUT as exutoirePut,
+  DELETE as exutoireDelete,
+} from '@/app/api/exutoires/[id]/route'
+import {
+  GET as missionGet,
+  PUT as missionPut,
+  DELETE as missionDelete,
+} from '@/app/api/missions/[id]/route'
 
 import { getTenantId, getRequestContext } from '@/lib/data/context'
-import { getAllExutoires, getExutoire, createExutoire, updateExutoire, deleteExutoire } from '@/lib/data/exutoires'
+import {
+  getAllExutoires,
+  getExutoire,
+  createExutoire,
+  updateExutoire,
+  deleteExutoire,
+} from '@/lib/data/exutoires'
 import { getMission, updateMission, deleteMission } from '@/lib/data/missions'
 import { verifySession } from '@/lib/session'
 import { getAllCircuitStates } from '@/lib/circuitBreaker'
 
 function makeRequest(
   url: string,
-  opts: { method?: string; body?: unknown; headers?: Record<string, string>; cookies?: Record<string, string> } = {},
+  opts: {
+    method?: string
+    body?: unknown
+    headers?: Record<string, string>
+    cookies?: Record<string, string>
+  } = {},
 ): NextRequest {
   const init = {
-    method:  opts.method ?? 'GET',
+    method: opts.method ?? 'GET',
     headers: { 'Content-Type': 'application/json', ...opts.headers },
-    body:    opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   }
   const req = new NextRequest(url, init)
 
@@ -123,7 +151,9 @@ function makeIdParams(id: string): { params: Promise<{ id: string }> } {
 }
 
 describe('GET /api/health', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('returns basic status for unauthenticated request (200)', async () => {
     vi.mocked(verifySession).mockResolvedValue(null)
@@ -139,7 +169,11 @@ describe('GET /api/health', () => {
   })
 
   it('returns detailed info for authenticated request (200)', async () => {
-    vi.mocked(verifySession).mockResolvedValue({ tenantId: 'tenant-test', role: 'admin', email: 'a@b.c' } as never)
+    vi.mocked(verifySession).mockResolvedValue({
+      tenantId: 'tenant-test',
+      role: 'admin',
+      email: 'a@b.c',
+    } as never)
 
     const req = makeRequest('http://localhost:3000/api/health', {
       cookies: { session: 'valid-token' },
@@ -154,7 +188,11 @@ describe('GET /api/health', () => {
   })
 
   it('returns 503 when circuit breaker is OPEN (authenticated)', async () => {
-    vi.mocked(verifySession).mockResolvedValue({ tenantId: 'tenant-test', role: 'admin', email: 'a@b.c' } as never)
+    vi.mocked(verifySession).mockResolvedValue({
+      tenantId: 'tenant-test',
+      role: 'admin',
+      email: 'a@b.c',
+    } as never)
     vi.mocked(getAllCircuitStates).mockReturnValue({ geocoding: 'OPEN' })
 
     const req = makeRequest('http://localhost:3000/api/health', {
@@ -182,11 +220,17 @@ describe('GET /api/health', () => {
 
   it('includes valhalla:unconfigured when VALHALLA_URL is not set', async () => {
     delete process.env.VALHALLA_URL
-    vi.mocked(verifySession).mockResolvedValue({ tenantId: 'tenant-test', role: 'admin', email: 'a@b.c' } as never)
+    vi.mocked(verifySession).mockResolvedValue({
+      tenantId: 'tenant-test',
+      role: 'admin',
+      email: 'a@b.c',
+    } as never)
     vi.mocked(getAllCircuitStates).mockReturnValue({})
 
-    const req = makeRequest('http://localhost:3000/api/health', { cookies: { session: 'valid-token' } })
-    const res  = await healthGet(req)
+    const req = makeRequest('http://localhost:3000/api/health', {
+      cookies: { session: 'valid-token' },
+    })
+    const res = await healthGet(req)
     const json = await res.json()
 
     expect(res.status).toBe(200)
@@ -195,12 +239,23 @@ describe('GET /api/health', () => {
 
   it('returns 503 when VALHALLA_URL is set but unreachable (authenticated)', async () => {
     process.env.VALHALLA_URL = 'http://valhalla:8002'
-    vi.mocked(verifySession).mockResolvedValue({ tenantId: 'tenant-test', role: 'admin', email: 'a@b.c' } as never)
+    vi.mocked(verifySession).mockResolvedValue({
+      tenantId: 'tenant-test',
+      role: 'admin',
+      email: 'a@b.c',
+    } as never)
     vi.mocked(getAllCircuitStates).mockReturnValue({})
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('Connection refused') }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('Connection refused')
+      }),
+    )
 
-    const req = makeRequest('http://localhost:3000/api/health', { cookies: { session: 'valid-token' } })
-    const res  = await healthGet(req)
+    const req = makeRequest('http://localhost:3000/api/health', {
+      cookies: { session: 'valid-token' },
+    })
+    const res = await healthGet(req)
     const json = await res.json()
 
     expect(res.status).toBe(503)
@@ -215,11 +270,17 @@ describe('GET /api/health', () => {
     // A pilot company without Nessy made every probe answer 503 « degraded » forever.
     delete process.env.VALHALLA_URL
     mockPrisma.integration.count.mockResolvedValueOnce(0)
-    vi.mocked(verifySession).mockResolvedValue({ tenantId: 'tenant-test', role: 'admin', email: 'a@b.c' } as never)
+    vi.mocked(verifySession).mockResolvedValue({
+      tenantId: 'tenant-test',
+      role: 'admin',
+      email: 'a@b.c',
+    } as never)
     vi.mocked(getAllCircuitStates).mockReturnValue({})
 
-    const req = makeRequest('http://localhost:3000/api/health', { cookies: { session: 'valid-token' } })
-    const res  = await healthGet(req)
+    const req = makeRequest('http://localhost:3000/api/health', {
+      cookies: { session: 'valid-token' },
+    })
+    const res = await healthGet(req)
     const json = await res.json()
 
     expect(res.status).toBe(200)
@@ -229,7 +290,9 @@ describe('GET /api/health', () => {
 })
 
 describe('GET /api/vehicles', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('returns vehicles with pagination metadata', async () => {
     const vehicles = [
@@ -276,8 +339,15 @@ describe('GET /api/vehicles', () => {
 
     const select = mockPrisma.vehicle.findMany.mock.calls[0][0].select
     expect(select).toMatchObject({
-      type: true, brand: true, model: true, capacityM3: true, maxBins: true,
-      mileageKm: true, nextInspection: true, status: true, notes: true,
+      type: true,
+      brand: true,
+      model: true,
+      capacityM3: true,
+      maxBins: true,
+      mileageKm: true,
+      nextInspection: true,
+      status: true,
+      notes: true,
     })
   })
 
@@ -317,19 +387,30 @@ describe('GET /api/vehicles', () => {
 })
 
 describe('POST /api/vehicles', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   const validBody = {
     licensePlate: 'AB-123-CD',
-    type:         'Ampliroll',
+    type: 'Ampliroll',
   }
 
   it('creates a vehicle with valid input (201)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     const created = { id: 'v-new', ...validBody, tenantId: 'tenant-test' }
     mockPrisma.vehicle.create.mockResolvedValue(created)
 
-    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/vehicles', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await vehiclesPost(req)
     const json = await res.json()
 
@@ -338,30 +419,54 @@ describe('POST /api/vehicles', () => {
   })
 
   it('returns 403 for non-admin/non-dispatcher', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'driver', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'driver',
+      requestId: 'r',
+      trade: null,
+    })
 
-    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/vehicles', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await vehiclesPost(req)
 
     expect(res.status).toBe(403)
   })
 
   it('validates input — rejects missing required fields (422)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
 
-    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: { type: 'Ampliroll' } })
+    const req = makeRequest('http://localhost:3000/api/vehicles', {
+      method: 'POST',
+      body: { type: 'Ampliroll' },
+    })
     const res = await vehiclesPost(req)
 
     expect(res.status).toBe(422)
   })
 
   it('returns 400 for invalid JSON body', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = new NextRequest('http://localhost:3000/api/vehicles', {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    'not valid json{{{',
+      body: 'not valid json{{{',
     })
     const res = await vehiclesPost(req)
 
@@ -369,22 +474,40 @@ describe('POST /api/vehicles', () => {
   })
 
   it('returns 409 for duplicate licensePlate (P2002)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     const err = new Error('Unique constraint') as Error & { code: string }
     err.code = 'P2002'
     mockPrisma.vehicle.create.mockRejectedValue(err)
 
-    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/vehicles', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await vehiclesPost(req)
 
     expect(res.status).toBe(409)
   })
 
   it('returns 500 when prisma throws unexpected error', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     mockPrisma.vehicle.create.mockRejectedValue(new Error('Unknown'))
 
-    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/vehicles', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await vehiclesPost(req)
 
     expect(res.status).toBe(500)
@@ -394,21 +517,45 @@ describe('POST /api/vehicles', () => {
   // Distinct userIds per test — hasPermission() caches its DB lookup per userId for 60s, so
   // reusing the same userId across tests in this file would silently serve a stale cached result.
   it('dispatcher with no custom UserPermission gets the role default (manage_vehicles included, 201)', async () => {
-    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-default', role: 'dispatcher', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValueOnce({
+      tenantId: 'tenant-test',
+      userId: 'disp-default',
+      role: 'dispatcher',
+      requestId: 'r',
+      trade: null,
+    })
     mockPrisma.userPermission.findMany.mockResolvedValueOnce([])
-    mockPrisma.vehicle.create.mockResolvedValue({ id: 'v-new', ...validBody, tenantId: 'tenant-test' })
+    mockPrisma.vehicle.create.mockResolvedValue({
+      id: 'v-new',
+      ...validBody,
+      tenantId: 'tenant-test',
+    })
 
-    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/vehicles', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await vehiclesPost(req)
 
     expect(res.status).toBe(201)
   })
 
   it('dispatcher with manage_vehicles explicitly revoked gets 403', async () => {
-    vi.mocked(getRequestContext).mockReturnValueOnce({ tenantId: 'tenant-test', userId: 'disp-revoked', role: 'dispatcher', requestId: 'r', trade: null })
-    mockPrisma.userPermission.findMany.mockResolvedValueOnce([{ permission: 'manage_missions' }] as never)
+    vi.mocked(getRequestContext).mockReturnValueOnce({
+      tenantId: 'tenant-test',
+      userId: 'disp-revoked',
+      role: 'dispatcher',
+      requestId: 'r',
+      trade: null,
+    })
+    mockPrisma.userPermission.findMany.mockResolvedValueOnce([
+      { permission: 'manage_missions' },
+    ] as never)
 
-    const req = makeRequest('http://localhost:3000/api/vehicles', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/vehicles', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await vehiclesPost(req)
 
     expect(res.status).toBe(403)
@@ -417,10 +564,17 @@ describe('POST /api/vehicles', () => {
 })
 
 describe('GET /api/vehicles/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('returns a vehicle by id', async () => {
-    const vehicle = { id: 'v-1', licensePlate: 'AA-111-BB', type: 'Ampliroll', tenantId: 'tenant-test' }
+    const vehicle = {
+      id: 'v-1',
+      licensePlate: 'AA-111-BB',
+      type: 'Ampliroll',
+      tenantId: 'tenant-test',
+    }
     mockPrisma.vehicle.findFirst.mockResolvedValue(vehicle)
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1')
@@ -451,7 +605,9 @@ describe('GET /api/vehicles/[id]', () => {
 })
 
 describe('PUT /api/vehicles/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('updates a vehicle with valid partial input', async () => {
     const updated = { id: 'v-1', licensePlate: 'AA-111-BB', type: 'Grue', tenantId: 'tenant-test' }
@@ -459,7 +615,7 @@ describe('PUT /api/vehicles/[id]', () => {
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', {
       method: 'PUT',
-      body:   { type: 'Grue' },
+      body: { type: 'Grue' },
     })
     const res = await vehiclePut(req, makeIdParams('v-1'))
     const json = await res.json()
@@ -475,7 +631,7 @@ describe('PUT /api/vehicles/[id]', () => {
 
     const req = makeRequest('http://localhost:3000/api/vehicles/unknown', {
       method: 'PUT',
-      body:   { type: 'Grue' },
+      body: { type: 'Grue' },
     })
     const res = await vehiclePut(req, makeIdParams('unknown'))
 
@@ -489,7 +645,7 @@ describe('PUT /api/vehicles/[id]', () => {
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', {
       method: 'PUT',
-      body:   { licensePlate: 'DUPE' },
+      body: { licensePlate: 'DUPE' },
     })
     const res = await vehiclePut(req, makeIdParams('v-1'))
 
@@ -499,7 +655,7 @@ describe('PUT /api/vehicles/[id]', () => {
   it('returns 422 for invalid data', async () => {
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', {
       method: 'PUT',
-      body:   { capacityM3: -5 },
+      body: { capacityM3: -5 },
     })
     const res = await vehiclePut(req, makeIdParams('v-1'))
 
@@ -508,9 +664,9 @@ describe('PUT /api/vehicles/[id]', () => {
 
   it('returns 400 for invalid JSON body', async () => {
     const req = new NextRequest('http://localhost:3000/api/vehicles/v-1', {
-      method:  'PUT',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body:    'not valid json{{{',
+      body: 'not valid json{{{',
     })
     const res = await vehiclePut(req, makeIdParams('v-1'))
 
@@ -522,7 +678,7 @@ describe('PUT /api/vehicles/[id]', () => {
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', {
       method: 'PUT',
-      body:   { type: 'Grue' },
+      body: { type: 'Grue' },
     })
     const res = await vehiclePut(req, makeIdParams('v-1'))
 
@@ -533,11 +689,17 @@ describe('PUT /api/vehicles/[id]', () => {
   // NO role gate at all before this session's fix — any authenticated role, including driver,
   // could modify any vehicle on the tenant. Distinct userId to avoid hasPermission()'s 60s cache.
   it('driver role (no default permissions) gets 403, vehicle not updated', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-veh-put', role: 'driver', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'driver-veh-put',
+      role: 'driver',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', {
       method: 'PUT',
-      body:   { type: 'Grue' },
+      body: { type: 'Grue' },
     })
     const res = await vehiclePut(req, makeIdParams('v-1'))
 
@@ -547,10 +709,18 @@ describe('PUT /api/vehicles/[id]', () => {
 })
 
 describe('DELETE /api/vehicles/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('soft-deletes a vehicle (archived=true)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     mockPrisma.vehicle.updateMany.mockResolvedValue({ count: 1 })
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', { method: 'DELETE' })
@@ -562,7 +732,7 @@ describe('DELETE /api/vehicles/[id]', () => {
     expect(mockPrisma.vehicle.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: 'v-1' }),
-        data:  { archived: true },
+        data: { archived: true },
       }),
     )
   })
@@ -590,7 +760,13 @@ describe('DELETE /api/vehicles/[id]', () => {
   // driver, could delete (archive) any vehicle on the tenant. Distinct userId to avoid
   // hasPermission()'s 60s cache.
   it('driver role (no default permissions) gets 403, vehicle not deleted', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-veh-del', role: 'driver', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'driver-veh-del',
+      role: 'driver',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = makeRequest('http://localhost:3000/api/vehicles/v-1', { method: 'DELETE' })
     const res = await vehicleDelete(req, makeIdParams('v-1'))
@@ -601,12 +777,14 @@ describe('DELETE /api/vehicles/[id]', () => {
 })
 
 describe('GET /api/exutoires', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('returns exutoires array', async () => {
     const exutoires = [
       { id: 'e-1', name: 'Centre A', address: '1 rue X', lat: 45.76, lng: 4.83 },
-      { id: 'e-2', name: 'Centre B', address: '2 rue Y', lat: 45.70, lng: 4.80 },
+      { id: 'e-2', name: 'Centre B', address: '2 rue Y', lat: 45.7, lng: 4.8 },
     ]
     vi.mocked(getAllExutoires).mockResolvedValue(exutoires as never)
 
@@ -650,26 +828,37 @@ describe('GET /api/exutoires', () => {
 })
 
 describe('POST /api/exutoires', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   const validBody = {
-    name:               'Centre de tri Nord',
-    address:            '10 rue Lyon',
-    lat:                45.764,
-    lng:                4.836,
-    openingHoursOpen:   480,
-    openingHoursClose:  1080,
-    closedDays:         [0, 6],
+    name: 'Centre de tri Nord',
+    address: '10 rue Lyon',
+    lat: 45.764,
+    lng: 4.836,
+    openingHoursOpen: 480,
+    openingHoursClose: 1080,
+    closedDays: [0, 6],
     acceptedWasteTypes: ['DIB', 'Bois'],
-    serviceTimeMin:     15,
+    serviceTimeMin: 15,
   }
 
   it('creates an exutoire with valid input (201)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     const created = { id: 'e-new', ...validBody }
     vi.mocked(createExutoire).mockResolvedValue(created)
 
-    const req = makeRequest('http://localhost:3000/api/exutoires', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/exutoires', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await exutoiresPost(req)
     const json = await res.json()
 
@@ -678,39 +867,72 @@ describe('POST /api/exutoires', () => {
   })
 
   it('returns 403 for non-admin', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'driver', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'driver',
+      requestId: 'r',
+      trade: null,
+    })
 
-    const req = makeRequest('http://localhost:3000/api/exutoires', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/exutoires', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await exutoiresPost(req)
 
     expect(res.status).toBe(403)
   })
 
   it('validates input — rejects missing required fields (422)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
 
-    const req = makeRequest('http://localhost:3000/api/exutoires', { method: 'POST', body: { name: 'X' } })
+    const req = makeRequest('http://localhost:3000/api/exutoires', {
+      method: 'POST',
+      body: { name: 'X' },
+    })
     const res = await exutoiresPost(req)
 
     expect(res.status).toBe(422)
   })
 
   it('validates input — rejects invalid coordinates (422)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
 
-    const req = makeRequest('http://localhost:3000/api/exutoires', { method: 'POST', body: { ...validBody, lat: 95 } })
+    const req = makeRequest('http://localhost:3000/api/exutoires', {
+      method: 'POST',
+      body: { ...validBody, lat: 95 },
+    })
     const res = await exutoiresPost(req)
 
     expect(res.status).toBe(422)
   })
 
   it('returns 400 for invalid JSON body', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = new NextRequest('http://localhost:3000/api/exutoires', {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    'not valid json{{{',
+      body: 'not valid json{{{',
     })
     const res = await exutoiresPost(req)
 
@@ -718,10 +940,19 @@ describe('POST /api/exutoires', () => {
   })
 
   it('returns 500 when data layer throws', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     vi.mocked(createExutoire).mockRejectedValue(new Error('DB down'))
 
-    const req = makeRequest('http://localhost:3000/api/exutoires', { method: 'POST', body: validBody })
+    const req = makeRequest('http://localhost:3000/api/exutoires', {
+      method: 'POST',
+      body: validBody,
+    })
     const res = await exutoiresPost(req)
 
     expect(res.status).toBe(500)
@@ -729,7 +960,9 @@ describe('POST /api/exutoires', () => {
 })
 
 describe('GET /api/exutoires/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('returns an exutoire by id', async () => {
     const exutoire = { id: 'e-1', name: 'Centre A', address: '1 rue X', lat: 45.76, lng: 4.83 }
@@ -763,16 +996,35 @@ describe('GET /api/exutoires/[id]', () => {
 })
 
 describe('PUT /api/exutoires/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('updates an exutoire with valid partial input', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
-    const updated = { id: 'e-1', name: 'Updated', address: '1 rue X', lat: 45.76, lng: 4.83, openingHoursOpen: 420, openingHoursClose: 1080, closedDays: [], acceptedWasteTypes: [], serviceTimeMin: 15 }
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
+    const updated = {
+      id: 'e-1',
+      name: 'Updated',
+      address: '1 rue X',
+      lat: 45.76,
+      lng: 4.83,
+      openingHoursOpen: 420,
+      openingHoursClose: 1080,
+      closedDays: [],
+      acceptedWasteTypes: [],
+      serviceTimeMin: 15,
+    }
     vi.mocked(updateExutoire).mockResolvedValue(updated as never)
 
     const req = makeRequest('http://localhost:3000/api/exutoires/e-1', {
       method: 'PUT',
-      body:   { name: 'Updated' },
+      body: { name: 'Updated' },
     })
     const res = await exutoirePut(req, makeIdParams('e-1'))
     const json = await res.json()
@@ -782,11 +1034,17 @@ describe('PUT /api/exutoires/[id]', () => {
   })
 
   it('returns 403 for non-admin', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'driver', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'driver',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = makeRequest('http://localhost:3000/api/exutoires/e-1', {
       method: 'PUT',
-      body:   { name: 'X' },
+      body: { name: 'X' },
     })
     const res = await exutoirePut(req, makeIdParams('e-1'))
 
@@ -794,12 +1052,18 @@ describe('PUT /api/exutoires/[id]', () => {
   })
 
   it('returns 404 when exutoire not found', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     vi.mocked(updateExutoire).mockResolvedValue(null)
 
     const req = makeRequest('http://localhost:3000/api/exutoires/unknown', {
       method: 'PUT',
-      body:   { name: 'X' },
+      body: { name: 'X' },
     })
     const res = await exutoirePut(req, makeIdParams('unknown'))
 
@@ -807,11 +1071,17 @@ describe('PUT /api/exutoires/[id]', () => {
   })
 
   it('returns 422 for invalid data', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = makeRequest('http://localhost:3000/api/exutoires/e-1', {
       method: 'PUT',
-      body:   { lat: 200 },
+      body: { lat: 200 },
     })
     const res = await exutoirePut(req, makeIdParams('e-1'))
 
@@ -819,12 +1089,18 @@ describe('PUT /api/exutoires/[id]', () => {
   })
 
   it('returns 400 for invalid JSON body', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = new NextRequest('http://localhost:3000/api/exutoires/e-1', {
-      method:  'PUT',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body:    'not valid json{{{',
+      body: 'not valid json{{{',
     })
     const res = await exutoirePut(req, makeIdParams('e-1'))
 
@@ -832,12 +1108,18 @@ describe('PUT /api/exutoires/[id]', () => {
   })
 
   it('returns 500 on data layer error', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     vi.mocked(updateExutoire).mockRejectedValue(new Error('DB down'))
 
     const req = makeRequest('http://localhost:3000/api/exutoires/e-1', {
       method: 'PUT',
-      body:   { name: 'X' },
+      body: { name: 'X' },
     })
     const res = await exutoirePut(req, makeIdParams('e-1'))
 
@@ -846,10 +1128,18 @@ describe('PUT /api/exutoires/[id]', () => {
 })
 
 describe('DELETE /api/exutoires/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('deletes an exutoire successfully', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     vi.mocked(deleteExutoire).mockResolvedValue(true)
 
     const req = makeRequest('http://localhost:3000/api/exutoires/e-1', { method: 'DELETE' })
@@ -861,7 +1151,13 @@ describe('DELETE /api/exutoires/[id]', () => {
   })
 
   it('returns 403 for non-admin', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'driver', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'driver',
+      requestId: 'r',
+      trade: null,
+    })
 
     const req = makeRequest('http://localhost:3000/api/exutoires/e-1', { method: 'DELETE' })
     const res = await exutoireDelete(req, makeIdParams('e-1'))
@@ -870,7 +1166,13 @@ describe('DELETE /api/exutoires/[id]', () => {
   })
 
   it('returns 404 when exutoire not found', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     vi.mocked(deleteExutoire).mockResolvedValue(false)
 
     const req = makeRequest('http://localhost:3000/api/exutoires/unknown', { method: 'DELETE' })
@@ -880,7 +1182,13 @@ describe('DELETE /api/exutoires/[id]', () => {
   })
 
   it('returns 500 on data layer error', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'u', role: 'admin', requestId: 'r', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'u',
+      role: 'admin',
+      requestId: 'r',
+      trade: null,
+    })
     vi.mocked(deleteExutoire).mockRejectedValue(new Error('DB down'))
 
     const req = makeRequest('http://localhost:3000/api/exutoires/e-1', { method: 'DELETE' })
@@ -891,10 +1199,21 @@ describe('DELETE /api/exutoires/[id]', () => {
 })
 
 describe('GET /api/missions/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('returns a mission by id', async () => {
-    const mission = { id: 'm-1', type: 'POSER' as const, date: '2026-03-20', address: '1 rue X', latitude: 45.76, longitude: 4.83, estimatedDurationMin: 30, maneuverTimeMin: 15 }
+    const mission = {
+      id: 'm-1',
+      type: 'POSER' as const,
+      date: '2026-03-20',
+      address: '1 rue X',
+      latitude: 45.76,
+      longitude: 4.83,
+      estimatedDurationMin: 30,
+      maneuverTimeMin: 15,
+    }
     vi.mocked(getMission).mockResolvedValue(mission as never)
 
     const req = makeRequest('http://localhost:3000/api/missions/m-1')
@@ -931,12 +1250,21 @@ describe('PUT /api/missions/[id]', () => {
   })
 
   it('updates a mission with valid partial input', async () => {
-    const updated = { id: 'm-1', type: 'RETIRER' as const, date: '2026-03-20', address: '1 rue X', latitude: 45.76, longitude: 4.83, estimatedDurationMin: 30, maneuverTimeMin: 10 }
+    const updated = {
+      id: 'm-1',
+      type: 'RETIRER' as const,
+      date: '2026-03-20',
+      address: '1 rue X',
+      latitude: 45.76,
+      longitude: 4.83,
+      estimatedDurationMin: 30,
+      maneuverTimeMin: 10,
+    }
     vi.mocked(updateMission).mockResolvedValue(updated as never)
 
     const req = makeRequest('http://localhost:3000/api/missions/m-1', {
       method: 'PUT',
-      body:   { type: 'RETIRER' },
+      body: { type: 'RETIRER' },
     })
     const res = await missionPut(req, makeIdParams('m-1'))
     const json = await res.json()
@@ -950,7 +1278,7 @@ describe('PUT /api/missions/[id]', () => {
 
     const req = makeRequest('http://localhost:3000/api/missions/unknown', {
       method: 'PUT',
-      body:   { type: 'RETIRER' },
+      body: { type: 'RETIRER' },
     })
     const res = await missionPut(req, makeIdParams('unknown'))
 
@@ -960,7 +1288,7 @@ describe('PUT /api/missions/[id]', () => {
   it('returns 422 for invalid data', async () => {
     const req = makeRequest('http://localhost:3000/api/missions/m-1', {
       method: 'PUT',
-      body:   { type: 'INVALID_TYPE' },
+      body: { type: 'INVALID_TYPE' },
     })
     const res = await missionPut(req, makeIdParams('m-1'))
 
@@ -969,9 +1297,9 @@ describe('PUT /api/missions/[id]', () => {
 
   it('returns 400 for invalid JSON body', async () => {
     const req = new NextRequest('http://localhost:3000/api/missions/m-1', {
-      method:  'PUT',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body:    'not valid json{{{',
+      body: 'not valid json{{{',
     })
     const res = await missionPut(req, makeIdParams('m-1'))
 
@@ -983,7 +1311,7 @@ describe('PUT /api/missions/[id]', () => {
 
     const req = makeRequest('http://localhost:3000/api/missions/m-1', {
       method: 'PUT',
-      body:   { address: 'New address' },
+      body: { address: 'New address' },
     })
     const res = await missionPut(req, makeIdParams('m-1'))
 
@@ -992,10 +1320,21 @@ describe('PUT /api/missions/[id]', () => {
 })
 
 describe('DELETE /api/missions/[id]', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('deletes a mission successfully', async () => {
-    const existing = { id: 'm-1', type: 'POSER' as const, date: '2026-03-20', address: '1 rue X', latitude: 45.76, longitude: 4.83, estimatedDurationMin: 30, maneuverTimeMin: 15 }
+    const existing = {
+      id: 'm-1',
+      type: 'POSER' as const,
+      date: '2026-03-20',
+      address: '1 rue X',
+      latitude: 45.76,
+      longitude: 4.83,
+      estimatedDurationMin: 30,
+      maneuverTimeMin: 15,
+    }
     vi.mocked(getMission).mockResolvedValue(existing as never)
     vi.mocked(deleteMission).mockResolvedValue(true)
 

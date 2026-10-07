@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
-vi.hoisted(() => { process.env.USE_MOCK_DATA = 'false' })
+vi.hoisted(() => {
+  process.env.USE_MOCK_DATA = 'false'
+})
 
 const mockCreateMany = vi.hoisted(() => vi.fn())
 
@@ -10,7 +12,10 @@ vi.mock('@/lib/data/context', () => ({
 }))
 
 vi.mock('@/lib/rateLimit', () => ({
-  createTenantRateLimiter: () => ({ check: vi.fn(() => Promise.resolve(true)), headers: vi.fn(() => ({})) }),
+  createTenantRateLimiter: () => ({
+    check: vi.fn(() => Promise.resolve(true)),
+    headers: vi.fn(() => ({})),
+  }),
   createRateLimiter: () => ({ check: vi.fn(() => true), headers: vi.fn(() => ({})) }),
 }))
 
@@ -24,10 +29,10 @@ vi.mock('@/lib/redisCache', () => ({
 
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
-    mission:  { createMany: mockCreateMany },
-    driver:   { createMany: mockCreateMany },
-    client:   { createMany: mockCreateMany },
-    site:     { createMany: mockCreateMany },
+    mission: { createMany: mockCreateMany },
+    driver: { createMany: mockCreateMany },
+    client: { createMany: mockCreateMany },
+    site: { createMany: mockCreateMany },
     exutoire: { createMany: mockCreateMany },
   }),
 }))
@@ -52,23 +57,34 @@ function writtenRows(): Array<Record<string, unknown>> {
 
 beforeEach(() => {
   mockCreateMany.mockReset()
-  mockCreateMany.mockImplementation(async ({ data }: { data: unknown[] }) => ({ count: data.length }))
+  mockCreateMany.mockImplementation(async ({ data }: { data: unknown[] }) => ({
+    count: data.length,
+  }))
 })
 
 describe('POST /api/import — missions: a row is imported only if the planning can show it', () => {
   it('converts the French spreadsheet date DD/MM/YYYY to the stored YYYY-MM-DD', async () => {
     // Stored as typed, « 07/10/2026 » matched no day: the mission existed but appeared nowhere.
-    const res = await POST(makeRequest({ type: 'missions', data: [{ ...MISSION, date: '07/10/2026' }] }))
+    const res = await POST(
+      makeRequest({ type: 'missions', data: [{ ...MISSION, date: '07/10/2026' }] }),
+    )
     const body = await res.json()
     expect(body.imported).toBe(1)
     expect(writtenRows()[0].date).toBe('2026-10-07')
   })
 
   it('refuses a date that is not a real day, and names the line', async () => {
-    const res = await POST(makeRequest({
-      type: 'missions',
-      data: [MISSION, { ...MISSION, date: '2026-02-30' }, { ...MISSION, date: 'demain' }, { ...MISSION, date: '31/04/2026' }],
-    }))
+    const res = await POST(
+      makeRequest({
+        type: 'missions',
+        data: [
+          MISSION,
+          { ...MISSION, date: '2026-02-30' },
+          { ...MISSION, date: 'demain' },
+          { ...MISSION, date: '31/04/2026' },
+        ],
+      }),
+    )
     const body = await res.json()
     expect(body.imported).toBe(1)
     expect(writtenRows()).toHaveLength(1)
@@ -79,7 +95,15 @@ describe('POST /api/import — missions: a row is imported only if the planning 
   })
 
   it('refuses a mission without address', async () => {
-    const res = await POST(makeRequest({ type: 'missions', data: [{ ...MISSION, address: '   ' }, { type: 'POSER', date: '2026-10-07' }] }))
+    const res = await POST(
+      makeRequest({
+        type: 'missions',
+        data: [
+          { ...MISSION, address: '   ' },
+          { type: 'POSER', date: '2026-10-07' },
+        ],
+      }),
+    )
     const body = await res.json()
     expect(body.imported).toBe(0)
     expect(mockCreateMany).not.toHaveBeenCalled()
@@ -87,16 +111,18 @@ describe('POST /api/import — missions: a row is imported only if the planning 
   })
 
   it('refuses a priority outside 1–3 and a negative or absurd duration', async () => {
-    const res = await POST(makeRequest({
-      type: 'missions',
-      data: [
-        { ...MISSION, priority: 9 },
-        { ...MISSION, estimatedDurationMin: -20 },
-        { ...MISSION, estimatedDurationMin: 100000 },
-        { ...MISSION, maneuverTimeMin: -5 },
-        { ...MISSION, priority: '2', estimatedDurationMin: '45' },
-      ],
-    }))
+    const res = await POST(
+      makeRequest({
+        type: 'missions',
+        data: [
+          { ...MISSION, priority: 9 },
+          { ...MISSION, estimatedDurationMin: -20 },
+          { ...MISSION, estimatedDurationMin: 100000 },
+          { ...MISSION, maneuverTimeMin: -5 },
+          { ...MISSION, priority: '2', estimatedDurationMin: '45' },
+        ],
+      }),
+    )
     const body = await res.json()
     expect(body.imported).toBe(1)
     expect(body.totalErrors).toBe(4)
@@ -108,13 +134,20 @@ describe('POST /api/import — missions: a row is imported only if the planning 
   })
 
   it('does not count rejected rows as needing geocoding', async () => {
-    const res = await POST(makeRequest({ type: 'missions', data: [{ ...MISSION, date: 'x' }, MISSION] }))
+    const res = await POST(
+      makeRequest({ type: 'missions', data: [{ ...MISSION, date: 'x' }, MISSION] }),
+    )
     const body = await res.json()
     expect(body.needsGeocode).toBe(1)
   })
 
   it('still defaults a missing date and missing durations', async () => {
-    const res = await POST(makeRequest({ type: 'missions', data: [{ type: 'RETIRER', address: '3 quai Perrache, Lyon' }] }))
+    const res = await POST(
+      makeRequest({
+        type: 'missions',
+        data: [{ type: 'RETIRER', address: '3 quai Perrache, Lyon' }],
+      }),
+    )
     const body = await res.json()
     expect(body.imported).toBe(1)
     expect(writtenRows()[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
@@ -124,10 +157,16 @@ describe('POST /api/import — missions: a row is imported only if the planning 
 
 describe('POST /api/import — other lists: nameless rows are refused, the rest is imported', () => {
   it('drivers need a first and a last name', async () => {
-    const res = await POST(makeRequest({
-      type: 'drivers',
-      data: [{ prenom: 'Alice', nom: 'Martin' }, { prenom: 'Bob' }, { firstName: ' ', lastName: 'Durand' }],
-    }))
+    const res = await POST(
+      makeRequest({
+        type: 'drivers',
+        data: [
+          { prenom: 'Alice', nom: 'Martin' },
+          { prenom: 'Bob' },
+          { firstName: ' ', lastName: 'Durand' },
+        ],
+      }),
+    )
     const body = await res.json()
     expect(body.imported).toBe(1)
     expect(writtenRows()).toHaveLength(1)
@@ -135,8 +174,13 @@ describe('POST /api/import — other lists: nameless rows are refused, the rest 
     expect(body.errors).toEqual(['Ligne 2: prénom et nom requis', 'Ligne 3: prénom et nom requis'])
   })
 
-  it.each(['clients', 'sites', 'exutoires'])('%s need a name', async (type) => {
-    const res = await POST(makeRequest({ type, data: [{ nom: 'Mairie de Voiron', adresse: '1 place' }, { adresse: '2 rue' }] }))
+  it.each(['clients', 'sites', 'exutoires'])('%s need a name', async type => {
+    const res = await POST(
+      makeRequest({
+        type,
+        data: [{ nom: 'Mairie de Voiron', adresse: '1 place' }, { adresse: '2 rue' }],
+      }),
+    )
     const body = await res.json()
     expect(body.imported).toBe(1)
     expect(writtenRows()).toHaveLength(1)

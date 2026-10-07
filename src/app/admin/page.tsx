@@ -10,8 +10,13 @@ import { calcTour, TourResult } from '@/lib/algorithm'
 import { exportTourSheetPdf } from '@/lib/exportPdf'
 
 import {
-  ViewMode, AppTab, MissionModalState, ConfirmOverrideState,
-  SYNTHETIC_TYPES, blankMission, BLANK_DRIVER,
+  ViewMode,
+  AppTab,
+  MissionModalState,
+  ConfirmOverrideState,
+  SYNTHETIC_TYPES,
+  blankMission,
+  BLANK_DRIVER,
 } from '@/components/admin/types'
 import { today, displayShort, logErr, sleep } from '@/components/admin/hooks'
 import { cachedFetch } from '@/lib/clientCache'
@@ -40,34 +45,103 @@ const DynamicLoading = () => (
       <div className="h-7 bg-surface-100 rounded-lg w-24" />
     </div>
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {[0, 1, 2, 3].map(i => <div key={i} className="h-20 bg-surface-100 rounded-xl" />)}
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} className="h-20 bg-surface-100 rounded-xl" />
+      ))}
     </div>
     <div className="h-64 bg-surface-100 rounded-xl" />
     <div className="space-y-2">
-      {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-12 bg-surface-100 rounded-lg" />)}
+      {[0, 1, 2, 3, 4].map(i => (
+        <div key={i} className="h-12 bg-surface-100 rounded-lg" />
+      ))}
     </div>
   </div>
 )
-const DriversTab    = dynamic(() => import('@/components/admin/tabs/DriversTab').then(m => ({ default: m.DriversTab })),    { ssr: false, loading: DynamicLoading })
-const MissionsTab   = dynamic(() => import('@/components/admin/tabs/MissionsTab').then(m => ({ default: m.MissionsTab })),   { ssr: false, loading: DynamicLoading })
-const ExutoiresTab  = dynamic(() => import('@/components/admin/tabs/ExutoiresTab').then(m => ({ default: m.ExutoiresTab })), { ssr: false, loading: DynamicLoading })
-const StatsTab      = dynamic(() => import('@/components/admin/tabs/StatsTab').then(m => ({ default: m.StatsTab })),         { ssr: false, loading: DynamicLoading })
-const ToursTab      = dynamic(() => import('@/components/admin/tabs/ToursTab').then(m => ({ default: m.ToursTab })),         { ssr: false, loading: DynamicLoading })
-const TemplatesTab  = dynamic(() => import('@/components/admin/tabs/TemplatesTab').then(m => ({ default: m.TemplatesTab })), { ssr: false, loading: DynamicLoading })
-const HistoryTab    = dynamic(() => import('@/components/admin/tabs/HistoryTab').then(m => ({ default: m.HistoryTab })),     { ssr: false, loading: DynamicLoading })
-const SettingsTab   = dynamic(() => import('@/components/admin/tabs/SettingsTab').then(m => ({ default: m.SettingsTab })),   { ssr: false, loading: DynamicLoading })
-const UsersTab      = dynamic(() => import('@/components/admin/tabs/UsersTab').then(m => ({ default: m.UsersTab })),         { ssr: false, loading: DynamicLoading })
-const VehiclesTab   = dynamic(() => import('@/components/admin/tabs/VehiclesTab').then(m => ({ default: m.VehiclesTab })),   { ssr: false, loading: DynamicLoading })
-const AuditTab      = dynamic(() => import('@/components/admin/tabs/AuditTab').then(m => ({ default: m.AuditTab })),         { ssr: false, loading: DynamicLoading })
-const TelematicsTab = dynamic(() => import('@/components/admin/tabs/TelematicsTab').then(m => ({ default: m.TelematicsTab })), { ssr: false, loading: DynamicLoading })
-const CatalogueTab  = dynamic(() => import('@/components/admin/tabs/CatalogueTab').then(m => ({ default: m.CatalogueTab })), { ssr: false, loading: DynamicLoading })
-const WeeklyPlanTab = dynamic(() => import('@/components/admin/tabs/WeeklyPlanTab').then(m => ({ default: m.WeeklyPlanTab })), { ssr: false, loading: DynamicLoading })
-const ContainersTab = dynamic(() => import('@/components/admin/containers/ContainersTab').then(m => ({ default: m.ContainersTab })), { ssr: false, loading: DynamicLoading })
-const SalesTab      = dynamic(() => import('@/components/admin/commercial/SalesTab').then(m => ({ default: m.SalesTab })), { ssr: false, loading: DynamicLoading })
-const InsightsTab   = dynamic(() => import('@/components/admin/insights/InsightsTab').then(m => ({ default: m.InsightsTab })), { ssr: false, loading: DynamicLoading })
-const AssignmentWhy = dynamic(() => import('@/components/admin/explain/AssignmentWhy').then(m => ({ default: m.AssignmentWhy })), { ssr: false })
-const SetupChecklist = dynamic(() => import('@/components/admin/onboarding/SetupChecklist').then(m => ({ default: m.SetupChecklist })), { ssr: false })
-const BillingTab    = dynamic(() => import('@/components/admin/commercial/BillingTab').then(m => ({ default: m.BillingTab })), { ssr: false, loading: DynamicLoading })
+const DriversTab = dynamic(
+  () => import('@/components/admin/tabs/DriversTab').then(m => ({ default: m.DriversTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const MissionsTab = dynamic(
+  () => import('@/components/admin/tabs/MissionsTab').then(m => ({ default: m.MissionsTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const ExutoiresTab = dynamic(
+  () => import('@/components/admin/tabs/ExutoiresTab').then(m => ({ default: m.ExutoiresTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const StatsTab = dynamic(
+  () => import('@/components/admin/tabs/StatsTab').then(m => ({ default: m.StatsTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const ToursTab = dynamic(
+  () => import('@/components/admin/tabs/ToursTab').then(m => ({ default: m.ToursTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const TemplatesTab = dynamic(
+  () => import('@/components/admin/tabs/TemplatesTab').then(m => ({ default: m.TemplatesTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const HistoryTab = dynamic(
+  () => import('@/components/admin/tabs/HistoryTab').then(m => ({ default: m.HistoryTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const SettingsTab = dynamic(
+  () => import('@/components/admin/tabs/SettingsTab').then(m => ({ default: m.SettingsTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const UsersTab = dynamic(
+  () => import('@/components/admin/tabs/UsersTab').then(m => ({ default: m.UsersTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const VehiclesTab = dynamic(
+  () => import('@/components/admin/tabs/VehiclesTab').then(m => ({ default: m.VehiclesTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const AuditTab = dynamic(
+  () => import('@/components/admin/tabs/AuditTab').then(m => ({ default: m.AuditTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const TelematicsTab = dynamic(
+  () => import('@/components/admin/tabs/TelematicsTab').then(m => ({ default: m.TelematicsTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const CatalogueTab = dynamic(
+  () => import('@/components/admin/tabs/CatalogueTab').then(m => ({ default: m.CatalogueTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const WeeklyPlanTab = dynamic(
+  () => import('@/components/admin/tabs/WeeklyPlanTab').then(m => ({ default: m.WeeklyPlanTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const ContainersTab = dynamic(
+  () =>
+    import('@/components/admin/containers/ContainersTab').then(m => ({ default: m.ContainersTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const SalesTab = dynamic(
+  () => import('@/components/admin/commercial/SalesTab').then(m => ({ default: m.SalesTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const InsightsTab = dynamic(
+  () => import('@/components/admin/insights/InsightsTab').then(m => ({ default: m.InsightsTab })),
+  { ssr: false, loading: DynamicLoading },
+)
+const AssignmentWhy = dynamic(
+  () =>
+    import('@/components/admin/explain/AssignmentWhy').then(m => ({ default: m.AssignmentWhy })),
+  { ssr: false },
+)
+const SetupChecklist = dynamic(
+  () =>
+    import('@/components/admin/onboarding/SetupChecklist').then(m => ({
+      default: m.SetupChecklist,
+    })),
+  { ssr: false },
+)
+const BillingTab = dynamic(
+  () => import('@/components/admin/commercial/BillingTab').then(m => ({ default: m.BillingTab })),
+  { ssr: false, loading: DynamicLoading },
+)
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { NotificationBell } from '@/components/admin/NotificationBell'
@@ -80,40 +154,52 @@ import type { MissionStatus } from '@/lib/missionStatus'
 export default function AdminPage() {
   const { vocab } = useTrade()
 
-  const drivers      = usePlanningStore(s => s.drivers)
-  const missions     = usePlanningStore(s => s.missions)
-  const plans        = usePlanningStore(s => s.plans)
-  const startTimes   = usePlanningStore(s => s.startTimes)
-  const speeds       = usePlanningStore(s => s.speeds)
+  const drivers = usePlanningStore(s => s.drivers)
+  const missions = usePlanningStore(s => s.missions)
+  const plans = usePlanningStore(s => s.plans)
+  const startTimes = usePlanningStore(s => s.startTimes)
+  const speeds = usePlanningStore(s => s.speeds)
   const _lockedPlans = usePlanningStore(s => s.lockedPlans)
 
-  const addMission          = usePlanningStore(s => s.addMission)
-  const updateMission       = usePlanningStore(s => s.updateMission)
-  const removeMission       = usePlanningStore(s => s.removeMission)
-  const addDriver           = usePlanningStore(s => s.addDriver)
-  const updateDriver        = usePlanningStore(s => s.updateDriver)
-  const removeDriver        = usePlanningStore(s => s.removeDriver)
-  const assignToDriver      = usePlanningStore(s => s.assignToDriver)
-  const unassignFromDriver  = usePlanningStore(s => s.unassignFromDriver)
+  const addMission = usePlanningStore(s => s.addMission)
+  const updateMission = usePlanningStore(s => s.updateMission)
+  const removeMission = usePlanningStore(s => s.removeMission)
+  const addDriver = usePlanningStore(s => s.addDriver)
+  const updateDriver = usePlanningStore(s => s.updateDriver)
+  const removeDriver = usePlanningStore(s => s.removeDriver)
+  const assignToDriver = usePlanningStore(s => s.assignToDriver)
+  const unassignFromDriver = usePlanningStore(s => s.unassignFromDriver)
   const updatePlannedMission = usePlanningStore(s => s.updatePlannedMission)
-  const setManualStartMin   = usePlanningStore(s => s.setManualStartMin)
-  const undo                = usePlanningStore(s => s.undo)
-  const redo                = usePlanningStore(s => s.redo)
+  const setManualStartMin = usePlanningStore(s => s.setManualStartMin)
+  const undo = usePlanningStore(s => s.undo)
+  const redo = usePlanningStore(s => s.redo)
   const { success: toastSuccess, error: toastError } = useToast()
-  const isUnavailable    = usePlanningStore(s => s.isUnavailable)
-  const [userRole, setUserRole]           = useState<'admin' | 'dispatcher' | 'driver' | null>(null)
+  const isUnavailable = usePlanningStore(s => s.isUnavailable)
+  const [userRole, setUserRole] = useState<'admin' | 'dispatcher' | 'driver' | null>(null)
   const isAdmin = userRole !== 'dispatcher'
   const { permissions } = usePermissions()
   const [tenantSettings, setTenantSettings] = useState<{
-    defaultSpeedKmh: number; defaultStartTime: string
-    costPerKm: number; fuelCostPerLiter: number; consumptionLPer100: number
-  }>({ defaultSpeedKmh: 50, defaultStartTime: '07:00', costPerKm: 0.35, fuelCostPerLiter: 1.65, consumptionLPer100: 30 })
+    defaultSpeedKmh: number
+    defaultStartTime: string
+    costPerKm: number
+    fuelCostPerLiter: number
+    consumptionLPer100: number
+  }>({
+    defaultSpeedKmh: 50,
+    defaultStartTime: '07:00',
+    costPerKm: 0.35,
+    fuelCostPerLiter: 1.65,
+    consumptionLPer100: 30,
+  })
 
   useEffect(() => {
-
     Promise.all([
-      cachedFetch<SettingsApiResponse>('/api/settings', 120_000).catch(() => null as SettingsApiResponse | null),
-      fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+      cachedFetch<SettingsApiResponse>('/api/settings', 120_000).catch(
+        () => null as SettingsApiResponse | null,
+      ),
+      fetch('/api/auth/me', { cache: 'no-store' })
+        .then(r => r.json())
+        .catch(() => null),
     ]).then(([s, d]) => {
       if (s?.defaultSpeedKmh !== undefined) setTenantSettings(prev => ({ ...prev, ...(s ?? {}) }))
       if (d?.role === 'admin') setUserRole('admin')
@@ -165,17 +251,24 @@ export default function AdminPage() {
         failed++
       }
     }
-    if (failed > 0) throw new Error(`${failed} sur ${missionsList.length} mission(s) n'ont pas pu être importées.`)
+    if (failed > 0)
+      throw new Error(
+        `${failed} sur ${missionsList.length} mission(s) n'ont pas pu être importées.`,
+      )
   }
 
   async function handleDeleteMission(id: string) {
-    if (!confirm('Supprimer cette mission ? Elle sera archivée et retirée des tournées à venir.')) return
+    if (!confirm('Supprimer cette mission ? Elle sera archivée et retirée des tournées à venir.'))
+      return
     const before = (Array.isArray(missions) ? missions : []).find(m => m.id === id)
     removeMission(id)
     const res = await apiRequest(`/api/missions/${id}`, { method: 'DELETE' })
     if (res.ok) toastSuccess('Mission supprimée')
     else {
-      if (before) { const { id: _id, ...rest } = before; addMission(rest, id) }
+      if (before) {
+        const { id: _id, ...rest } = before
+        addMission(rest, id)
+      }
       toastError(res.error)
     }
   }
@@ -221,23 +314,35 @@ export default function AdminPage() {
         failed++
       }
     }
-    if (failed > 0) throw new Error(`${failed} sur ${driversList.length} ${vocab.driver.toLowerCase()}(s) n'ont pas pu être importés.`)
+    if (failed > 0)
+      throw new Error(
+        `${failed} sur ${driversList.length} ${vocab.driver.toLowerCase()}(s) n'ont pas pu être importés.`,
+      )
   }
 
   async function handleDeleteDriver(id: string, opts?: { confirmed?: boolean }) {
-    if (!opts?.confirmed && !confirm(`Supprimer ce ${vocab.driver.toLowerCase()} ? Il sera archivé et retiré du planning.`)) return
+    if (
+      !opts?.confirmed &&
+      !confirm(
+        `Supprimer ce ${vocab.driver.toLowerCase()} ? Il sera archivé et retiré du planning.`,
+      )
+    )
+      return
     const before = (Array.isArray(drivers) ? drivers : []).find(d => d.id === id)
     removeDriver(id)
     const res = await apiRequest(`/api/drivers/${id}`, { method: 'DELETE' })
     if (res.ok) toastSuccess(`${vocab.driver} supprimé`)
     else {
-      if (before) { const { id: _id, ...rest } = before; addDriver(rest, id) }
+      if (before) {
+        const { id: _id, ...rest } = before
+        addDriver(rest, id)
+      }
       toastError(res.error)
     }
   }
 
   async function handleDuplicateMission(id: string) {
-    const m = ( Array.isArray(missions) ? missions : [] ).find(m => m.id === id)
+    const m = (Array.isArray(missions) ? missions : []).find(m => m.id === id)
     if (!m) return
     const { id: _id, ...data } = m
     await handleSaveMission(data)
@@ -246,23 +351,30 @@ export default function AdminPage() {
   const [activeTab, setActiveTabRaw] = useState<AppTab>('dashboard')
   const [_tabPending, startTabTransition] = useTransition()
   const prevTabRef = useRef<AppTab>('dashboard')
-  const setActiveTab = useCallback((tab: AppTab) => {
-    if (prevTabRef.current === 'settings' && tab !== 'settings') {
-      cachedFetch<SettingsApiResponse>('/api/settings', 120_000).then(s => {
-        if (s?.defaultSpeedKmh !== null) setTenantSettings(prev => ({ ...prev, ...s }))
-      }).catch(() => {})
-    }
-    prevTabRef.current = tab
-    startTabTransition(() => setActiveTabRaw(tab))
-  }, [startTabTransition])
+  const setActiveTab = useCallback(
+    (tab: AppTab) => {
+      if (prevTabRef.current === 'settings' && tab !== 'settings') {
+        cachedFetch<SettingsApiResponse>('/api/settings', 120_000)
+          .then(s => {
+            if (s?.defaultSpeedKmh !== null) setTenantSettings(prev => ({ ...prev, ...s }))
+          })
+          .catch(() => {})
+      }
+      prevTabRef.current = tab
+      startTabTransition(() => setActiveTabRaw(tab))
+    },
+    [startTabTransition],
+  )
 
-  const [poolView, setPoolView]   = useState<ViewMode>('week')
-  const [poolDate, setPoolDate]   = useState<string>(today())
+  const [poolView, setPoolView] = useState<ViewMode>('week')
+  const [poolDate, setPoolDate] = useState<string>(today())
 
-  const [planDate, setPlanDate]   = useState<string>(today())
+  const [planDate, setPlanDate] = useState<string>(today())
 
   const [draggedId, setDraggedId] = useState<string | null>(null)
-  const [dragSource, setDragSource] = useState<{ from: 'pool' } | { from: 'plan'; driverId: string; date: string } | null>(null)
+  const [dragSource, setDragSource] = useState<
+    { from: 'pool' } | { from: 'plan'; driverId: string; date: string } | null
+  >(null)
 
   const [topHeight, setTopHeight] = useState(300)
   const isResizing = useRef(false)
@@ -277,24 +389,31 @@ export default function AdminPage() {
   }
   function onMouseMove(e: React.MouseEvent) {
     if (!isResizing.current) return
-    const newH = Math.max(140, Math.min(620, resizeStartH.current + e.clientY - resizeStartY.current))
+    const newH = Math.max(
+      140,
+      Math.min(620, resizeStartH.current + e.clientY - resizeStartY.current),
+    )
     setTopHeight(newH)
   }
-  function onMouseUp() { isResizing.current = false }
+  function onMouseUp() {
+    isResizing.current = false
+  }
 
-  const [missionModal, setMissionModal]   = useState<MissionModalState>({ kind: 'none' })
+  const [missionModal, setMissionModal] = useState<MissionModalState>({ kind: 'none' })
   const [missionPrefill, setMissionPrefill] = useState<ParsedMissionFields | null>(null)
-  const [driverModal, setDriverModal]     = useState<{ kind: 'new' } | { kind: 'edit'; driver: Driver } | null>(null)
+  const [driverModal, setDriverModal] = useState<
+    { kind: 'new' } | { kind: 'edit'; driver: Driver } | null
+  >(null)
   const [confirmOverride, setConfirmOverride] = useState<ConfirmOverrideState>(null)
   const [missionDetail, setMissionDetail] = useState<Mission | null>(null)
-  const [driverDetail, setDriverDetail]   = useState<Driver | null>(null)
+  const [driverDetail, setDriverDetail] = useState<Driver | null>(null)
 
   const [showValidation, setShowValidation] = useState(false)
 
   const _calcCache = useRef<Record<string, { result: TourResult | null; hash: string }>>({})
   const driverMap = useMemo(() => {
     const m = new Map<string, Driver>()
-    for (const d of (Array.isArray(drivers) ? drivers : [])) m.set(d.id, d)
+    for (const d of Array.isArray(drivers) ? drivers : []) m.set(d.id, d)
     return m
   }, [drivers])
   const calcResults = useMemo(() => {
@@ -311,8 +430,11 @@ export default function AdminPage() {
       if (!driver) continue
       const st = startTimes[key] || tenantSettings.defaultStartTime
       const spd = speeds[driverId] || tenantSettings.defaultSpeedKmh
-      const hash = `${missions.length}:${missions[0]?.id}:${missions[missions.length-1]?.id}:${st}:${spd}`
-      if (cache[driverId]?.hash === hash) { results[driverId] = cache[driverId].result; continue }
+      const hash = `${missions.length}:${missions[0]?.id}:${missions[missions.length - 1]?.id}:${st}:${spd}`
+      if (cache[driverId]?.hash === hash) {
+        results[driverId] = cache[driverId].result
+        continue
+      }
       const sorted = [...missions].sort((a, b) => a.sequenceOrder - b.sequenceOrder)
       const result = calcTour(sorted, driver.depotLat, driver.depotLng, st, spd, undefined, {
         costPerKm: tenantSettings.costPerKm,
@@ -330,24 +452,50 @@ export default function AdminPage() {
     const dArr = Array.isArray(drivers) ? drivers : []
     const planSuffix = `|${planDate}`
     const nonSyntheticActive = mArr.filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived)
-    const poolTotal  = nonSyntheticActive.length
-    const poolToday  = nonSyntheticActive.filter(m => m.date === planDate).length
-    const p1Count    = nonSyntheticActive.filter(m => m.priority === 1).length
-    const totalDrivers      = dArr.filter(d => !d.archived).length
-    const driversWithPlan   = dArr.filter(d => !d.archived && (plans[`${d.id}${planSuffix}`] || []).length > 0).length
-    const calcVals   = Object.values(calcResults)
-    const totalKm    = Math.round(calcVals.reduce((s, r) => s + (r?.totalRoadDistKm ?? 0), 0) * 10) / 10
+    const poolTotal = nonSyntheticActive.length
+    const poolToday = nonSyntheticActive.filter(m => m.date === planDate).length
+    const p1Count = nonSyntheticActive.filter(m => m.priority === 1).length
+    const totalDrivers = dArr.filter(d => !d.archived).length
+    const driversWithPlan = dArr.filter(
+      d => !d.archived && (plans[`${d.id}${planSuffix}`] || []).length > 0,
+    ).length
+    const calcVals = Object.values(calcResults)
+    const totalKm =
+      Math.round(calcVals.reduce((s, r) => s + (r?.totalRoadDistKm ?? 0), 0) * 10) / 10
     const totalFuelEur = calcVals.reduce((s, r) => s + (r?.fuelCostEur ?? 0), 0)
-    const active     = calcVals.filter(r => r && r.totalDurationMin > 0)
-    const avgWorkMin = active.length > 0 ? Math.round(active.reduce((s, r) => s + (r?.totalDurationMin ?? 0), 0) / active.length) : 0
+    const active = calcVals.filter(r => r && r.totalDurationMin > 0)
+    const avgWorkMin =
+      active.length > 0
+        ? Math.round(active.reduce((s, r) => s + (r?.totalDurationMin ?? 0), 0) / active.length)
+        : 0
     const planEntries = Object.entries(plans).filter(([key]) => key.endsWith(planSuffix))
-    const assignedForDate      = planEntries.flatMap(([, plan]) => plan.filter(m => !m.isSynthetic)).length
-    const p1AssignedForDate    = planEntries.flatMap(([, plan]) => plan.filter(m => !m.isSynthetic && m.priority === 1)).length
-    const driversWithPlanForDate = dArr.filter(d => (plans[`${d.id}${planSuffix}`] || []).length > 0).length
-    return { poolTotal, poolToday, p1Count, driversWithPlan, totalDrivers, totalKm, totalFuelEur, avgWorkMin, assignedForDate, p1AssignedForDate, driversWithPlanForDate }
+    const assignedForDate = planEntries.flatMap(([, plan]) =>
+      plan.filter(m => !m.isSynthetic),
+    ).length
+    const p1AssignedForDate = planEntries.flatMap(([, plan]) =>
+      plan.filter(m => !m.isSynthetic && m.priority === 1),
+    ).length
+    const driversWithPlanForDate = dArr.filter(
+      d => (plans[`${d.id}${planSuffix}`] || []).length > 0,
+    ).length
+    return {
+      poolTotal,
+      poolToday,
+      p1Count,
+      driversWithPlan,
+      totalDrivers,
+      totalKm,
+      totalFuelEur,
+      avgWorkMin,
+      assignedForDate,
+      p1AssignedForDate,
+      driversWithPlanForDate,
+    }
   }, [missions, drivers, plans, calcResults, planDate])
 
-  const [driverStatuses, setDriverStatuses] = useState<Record<string, Record<string, MissionStatus>>>({})
+  const [driverStatuses, setDriverStatuses] = useState<
+    Record<string, Record<string, MissionStatus>>
+  >({})
   const [showAlerts, setShowAlerts] = useState(false)
 
   // Live field progress: server-sent events (pushed as soon as a driver taps a status), with a
@@ -359,9 +507,14 @@ export default function AdminPage() {
 
     async function fetchOnce() {
       try {
-        const res = await fetch(`/api/driver-status?date=${planDate}`, { signal: ctrl.signal, cache: 'no-store' })
+        const res = await fetch(`/api/driver-status?date=${planDate}`, {
+          signal: ctrl.signal,
+          cache: 'no-store',
+        })
         if (res.ok) setDriverStatuses(await res.json())
-      } catch { /* aborted or offline — next tick retries */ }
+      } catch {
+        /* aborted or offline — next tick retries */
+      }
     }
     function startPolling() {
       if (poll) return
@@ -371,12 +524,26 @@ export default function AdminPage() {
 
     if (typeof EventSource !== 'undefined') {
       source = new EventSource(`/api/sse/driver-status?date=${planDate}`)
-      source.onmessage = e => { try { setDriverStatuses(JSON.parse(e.data)) } catch { /* malformed frame */ } }
-      source.onerror = () => { source?.close(); source = null; startPolling() }
+      source.onmessage = e => {
+        try {
+          setDriverStatuses(JSON.parse(e.data))
+        } catch {
+          /* malformed frame */
+        }
+      }
+      source.onerror = () => {
+        source?.close()
+        source = null
+        startPolling()
+      }
     } else {
       startPolling()
     }
-    return () => { ctrl.abort(); source?.close(); if (poll) clearInterval(poll) }
+    return () => {
+      ctrl.abort()
+      source?.close()
+      if (poll) clearInterval(poll)
+    }
   }, [planDate])
 
   const alerts = useMemo(() => {
@@ -388,11 +555,12 @@ export default function AdminPage() {
       for (const pm of plan) assignedIds.add(pm.id)
     }
 
-    const p1Unassigned = ( Array.isArray(missions) ? missions : [] ).filter(m =>
-      m.priority === 1 &&
-      m.date === todayStr &&
-      !SYNTHETIC_TYPES.includes(m.type) &&
-      !assignedIds.has(m.id)
+    const p1Unassigned = (Array.isArray(missions) ? missions : []).filter(
+      m =>
+        m.priority === 1 &&
+        m.date === todayStr &&
+        !SYNTHETIC_TYPES.includes(m.type) &&
+        !assignedIds.has(m.id),
     )
     if (p1Unassigned.length > 0) {
       result.push({
@@ -402,9 +570,12 @@ export default function AdminPage() {
       })
     }
 
-    const driversNoTour = ( Array.isArray(drivers) ? drivers : [] ).filter(d => {
+    const driversNoTour = (Array.isArray(drivers) ? drivers : []).filter(d => {
       const key = `${d.id}|${todayStr}`
-      return (plans[key] || []).filter(m => !m.isSynthetic).length === 0 && !isUnavailable(d.id, todayStr)
+      return (
+        (plans[key] || []).filter(m => !m.isSynthetic).length === 0 &&
+        !isUnavailable(d.id, todayStr)
+      )
     })
     if (driversNoTour.length > 0) {
       result.push({
@@ -428,8 +599,8 @@ export default function AdminPage() {
       }
     }
 
-    const noGps = ( Array.isArray(missions) ? missions : [] ).filter(m =>
-      m.latitude === 0 && m.longitude === 0 && !SYNTHETIC_TYPES.includes(m.type)
+    const noGps = (Array.isArray(missions) ? missions : []).filter(
+      m => m.latitude === 0 && m.longitude === 0 && !SYNTHETIC_TYPES.includes(m.type),
     ).length
     if (noGps > 0) {
       result.push({
@@ -458,10 +629,14 @@ export default function AdminPage() {
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault(); undo(); return
+        e.preventDefault()
+        undo()
+        return
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-        e.preventDefault(); redo(); return
+        e.preventDefault()
+        redo()
+        return
       }
 
       const hasModal =
@@ -488,7 +663,17 @@ export default function AdminPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [missionModal, driverModal, missionDetail, driverDetail, confirmOverride, showValidation, setActiveTab, undo, redo])
+  }, [
+    missionModal,
+    driverModal,
+    missionDetail,
+    driverDetail,
+    confirmOverride,
+    showValidation,
+    setActiveTab,
+    undo,
+    redo,
+  ])
 
   function handleDrop(driverId: string) {
     if (!draggedId) return
@@ -515,18 +700,30 @@ export default function AdminPage() {
   }, [draggedId, dragSource, unassignFromDriver])
 
   // Stable ref: passed as prop to TopPanel
-  const handleReschedule = useCallback((missionId: string, newDate: string) => {
-    const mission = (Array.isArray(missions) ? missions : []).find(m => m.id === missionId)
-    if (!mission || mission.date === newDate) return
-    const previousDate = mission.date
-    updateMission(missionId, { date: newDate })
-    setDraggedId(null)
-    setDragSource(null)
-    void apiRequest(`/api/missions/${missionId}`, { method: 'PUT', json: { date: newDate } }).then(res => {
-      if (res.ok) toastSuccess(`Mission déplacée au ${new Date(newDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}`)
-      else { updateMission(missionId, { date: previousDate }); toastError(res.error) }
-    })
-  }, [missions, updateMission, toastSuccess, toastError])
+  const handleReschedule = useCallback(
+    (missionId: string, newDate: string) => {
+      const mission = (Array.isArray(missions) ? missions : []).find(m => m.id === missionId)
+      if (!mission || mission.date === newDate) return
+      const previousDate = mission.date
+      updateMission(missionId, { date: newDate })
+      setDraggedId(null)
+      setDragSource(null)
+      void apiRequest(`/api/missions/${missionId}`, {
+        method: 'PUT',
+        json: { date: newDate },
+      }).then(res => {
+        if (res.ok)
+          toastSuccess(
+            `Mission déplacée au ${new Date(newDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+          )
+        else {
+          updateMission(missionId, { date: previousDate })
+          toastError(res.error)
+        }
+      })
+    },
+    [missions, updateMission, toastSuccess, toastError],
+  )
 
   // Stable ref: passed as prop to BottomPanel and ToursTab
   const handleEditPlanned = useCallback((m: PlannedMission, driverId: string, date: string) => {
@@ -534,551 +731,1449 @@ export default function AdminPage() {
   }, [])
 
   const missionCount = useMemo(
-    () => (Array.isArray(missions) ? missions : []).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length,
+    () =>
+      (Array.isArray(missions) ? missions : []).filter(
+        m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived,
+      ).length,
     [missions],
   )
   // NAV_ITEMS rebuilt only when vocab or mission badge changes — avoids re-creating JSX every render
-  const NAV_ITEMS = useMemo<{ id: AppTab; label: string; icon: React.ReactNode; section?: string; adminOnly?: boolean; permission?: string; badge?: number }[]>(() => [
+  const NAV_ITEMS = useMemo<
+    {
+      id: AppTab
+      label: string
+      icon: React.ReactNode
+      section?: string
+      adminOnly?: boolean
+      permission?: string
+      badge?: number
+    }[]
+  >(
+    () => [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        section: 'Dispatch',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect
+              x="2"
+              y="2"
+              width="6"
+              height="6"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <rect
+              x="10"
+              y="2"
+              width="6"
+              height="6"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <rect
+              x="2"
+              y="10"
+              width="6"
+              height="6"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <rect
+              x="10"
+              y="10"
+              width="6"
+              height="6"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'missions',
+        label: vocab.missions,
+        badge: missionCount > 0 ? missionCount : undefined,
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M6 2v2M12 2v2M2.5 7h13M4 3.5h10a1.5 1.5 0 011.5 1.5v10a1.5 1.5 0 01-1.5 1.5H4A1.5 1.5 0 012.5 15V5A1.5 1.5 0 014 3.5z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'tours',
+        label: vocab.tours,
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M2 9a7 7 0 1114 0A7 7 0 012 9z" stroke="currentColor" strokeWidth="1.5" />
+            <path
+              d="M9 5.5V9l2.5 2.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'stats',
+        label: 'Statistiques',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M5 13V9M9 13V5M13 13V8"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'insights',
+        label: 'Pilotage',
+        adminOnly: true,
+        permission: 'view_reports',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M2.5 15.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <path
+              d="M4 12l3.5-4 3 2.5L15 4.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M11.5 4.5H15V8"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'history',
+        label: 'Historique',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M3 3v12h12"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M6 12l3-4 3 2 3-5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ),
+      },
 
-    { id: 'dashboard', label: 'Dashboard', section: 'Dispatch', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="10" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="10" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/></svg> },
-    { id: 'missions',  label: vocab.missions, badge: missionCount > 0 ? missionCount : undefined, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M6 2v2M12 2v2M2.5 7h13M4 3.5h10a1.5 1.5 0 011.5 1.5v10a1.5 1.5 0 01-1.5 1.5H4A1.5 1.5 0 012.5 15V5A1.5 1.5 0 014 3.5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'tours',     label: vocab.tours, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 9a7 7 0 1114 0A7 7 0 012 9z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 5.5V9l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
-    { id: 'stats',     label: 'Statistiques', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 13V9M9 13V5M13 13V8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg> },
-    { id: 'insights',  label: 'Pilotage', adminOnly: true, permission: 'view_reports', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2.5 15.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M4 12l3.5-4 3 2.5L15 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M11.5 4.5H15V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
-    { id: 'history',   label: 'Historique', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 3v12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M6 12l3-4 3 2 3-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+      {
+        id: 'catalogue',
+        label: 'Clients & sites',
+        section: 'Commercial',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M3 4h12M3 8h12M3 12h8"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+            <circle cx="14" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <path
+              d="M16 14l1.5 1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'sales',
+        label: 'Ventes',
+        adminOnly: true,
+        permission: 'manage_sales',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M4 2.5h7l3 3v10H4z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M6.5 8.5h5M6.5 11.5h5M6.5 5.5h2.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'billing',
+        label: 'Facturation',
+        adminOnly: true,
+        permission: 'manage_billing',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect
+              x="2"
+              y="4"
+              width="14"
+              height="10"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M2 7.5h14M5 11h3"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'containers',
+        label: 'Parc de bennes',
+        section: 'Ressources',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M2 6.5h14l-1.6 7.2a1 1 0 01-1 .8H4.6a1 1 0 01-1-.8L2 6.5z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M5 6.5V4.5M13 6.5V4.5M6.5 9.5h5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'drivers',
+        label: vocab.drivers,
+        adminOnly: true,
+        permission: 'manage_drivers',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" />
+            <path
+              d="M3 15.5c0-2.5 2.5-4.5 6-4.5s6 2 6 4.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'vehicles',
+        label: vocab.vehicles,
+        adminOnly: true,
+        permission: 'manage_vehicles',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect
+              x="2"
+              y="5"
+              width="14"
+              height="8"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <circle cx="5.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+            <circle cx="12.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+          </svg>
+        ),
+      },
+      {
+        id: 'exutoires',
+        label: vocab.exutoires,
+        adminOnly: true,
+        permission: 'manage_exutoires',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M9 2L2 7v8a1 1 0 001 1h12a1 1 0 001-1V7L9 2z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'templates',
+        label: 'Récurrentes',
+        adminOnly: true,
+        permission: 'manage_missions',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M3 9a6 6 0 1012 0A6 6 0 003 9z" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M9 6v3l2 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M1 9h2M15 9h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        ),
+      },
 
-    { id: 'catalogue', label: 'Clients & sites', section: 'Commercial', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4h12M3 8h12M3 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="14" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M16 14l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'sales',     label: 'Ventes', adminOnly: true, permission: 'manage_sales', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 2.5h7l3 3v10H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M6.5 8.5h5M6.5 11.5h5M6.5 5.5h2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'billing',   label: 'Facturation', adminOnly: true, permission: 'manage_billing', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M2 7.5h14M5 11h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'containers', label: 'Parc de bennes', section: 'Ressources', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 6.5h14l-1.6 7.2a1 1 0 01-1 .8H4.6a1 1 0 01-1-.8L2 6.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M5 6.5V4.5M13 6.5V4.5M6.5 9.5h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'drivers',   label: vocab.drivers, adminOnly: true, permission: 'manage_drivers', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 15.5c0-2.5 2.5-4.5 6-4.5s6 2 6 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'vehicles',  label: vocab.vehicles, adminOnly: true, permission: 'manage_vehicles', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="5" width="14" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="5.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="12.5" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg> },
-    { id: 'exutoires', label: vocab.exutoires, adminOnly: true, permission: 'manage_exutoires', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L2 7v8a1 1 0 001 1h12a1 1 0 001-1V7L9 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg> },
-    { id: 'templates', label: 'Récurrentes', adminOnly: true, permission: 'manage_missions', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 1012 0A6 6 0 003 9z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 6v3l2 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M1 9h2M15 9h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-
-    { id: 'users',     label: 'Utilisateurs', section: 'Administration', adminOnly: true, permission: 'manage_users', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="7" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/><path d="M1.5 15c0-2.2 2.2-4 5.5-4s5.5 1.8 5.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-    { id: 'audit',     label: 'Audit', adminOnly: true, icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 3h8a2 2 0 012 2v10l-3-2-3 2-3-2-3 2V5a2 2 0 012-2z" stroke="currentColor" strokeWidth="1.5"/></svg> },
-    { id: 'telematics',label: 'Télématique', adminOnly: true, permission: 'manage_integrations', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 15v-3M5 12l4 3 4-3M3 9l6 3 6-3M1 6l8 3 8-3-8-3-8 3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg> },
-    { id: 'settings',  label: 'Paramètres', adminOnly: true, permission: 'manage_settings', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.4 3.4l1.4 1.4M13.2 13.2l1.4 1.4M3.4 14.6l1.4-1.4M13.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
-    { id: 'weekly-plan', label: 'Planning semaine', section: 'Planification', adminOnly: true, permission: 'optimize', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6 2v2M12 2v2M2 7h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5 11h2M8.5 11h2M12 11h1M5 13.5h2M8.5 13.5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [vocab, missionCount])
+      {
+        id: 'users',
+        label: 'Utilisateurs',
+        section: 'Administration',
+        adminOnly: true,
+        permission: 'manage_users',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="7" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="13" cy="7" r="2" stroke="currentColor" strokeWidth="1.2" />
+            <path
+              d="M1.5 15c0-2.2 2.2-4 5.5-4s5.5 1.8 5.5 4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'audit',
+        label: 'Audit',
+        adminOnly: true,
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M5 3h8a2 2 0 012 2v10l-3-2-3 2-3-2-3 2V5a2 2 0 012-2z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'telematics',
+        label: 'Télématique',
+        adminOnly: true,
+        permission: 'manage_integrations',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M9 15v-3M5 12l4 3 4-3M3 9l6 3 6-3M1 6l8 3 8-3-8-3-8 3z"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'settings',
+        label: 'Paramètres',
+        adminOnly: true,
+        permission: 'manage_settings',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <path
+              d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.4 3.4l1.4 1.4M13.2 13.2l1.4 1.4M3.4 14.6l1.4-1.4M13.2 4.8l1.4-1.4"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        id: 'weekly-plan',
+        label: 'Planning semaine',
+        section: 'Planification',
+        adminOnly: true,
+        permission: 'optimize',
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect
+              x="2"
+              y="3"
+              width="14"
+              height="13"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M6 2v2M12 2v2M2 7h14"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+            <path
+              d="M5 11h2M8.5 11h2M12 11h1M5 13.5h2M8.5 13.5h2"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    ],
+    [vocab, missionCount],
+  )
 
   return (
     <>
-    <OnboardingGuide mode="admin" />
-    <main
-      id="main-content"
-      className="h-screen flex bg-surface-50 text-surface-900 overflow-hidden"
-      onDragOver={e => { if (draggedId) e.preventDefault() }}
-      onDrop={() => { setDraggedId(null) }}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-    >
-      {}
-      <aside className="sidebar flex-shrink-0 h-screen bg-white border-r border-surface-200 flex flex-col z-30 shadow-sidebar overflow-hidden">
+      <OnboardingGuide mode="admin" />
+      <main
+        id="main-content"
+        className="h-screen flex bg-surface-50 text-surface-900 overflow-hidden"
+        onDragOver={e => {
+          if (draggedId) e.preventDefault()
+        }}
+        onDrop={() => {
+          setDraggedId(null)
+        }}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+      >
         {}
-        <div className="h-14 flex items-center gap-3 px-4 flex-shrink-0 border-b border-surface-100">
-          <Image src={BRAND_LOGO_SRC} alt="PATHÉLIX" width={32} height={32} className="w-8 h-8 rounded-lg object-contain flex-shrink-0" />
-          <span className="nav-label font-semibold text-surface-900 text-sm tracking-tight font-display">PATHÉLIX</span>
-        </div>
-
-        {}
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5" aria-label="Navigation principale">
-          {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin || (item.permission && hasPerm(permissions, item.permission))).map((item, i) => (
-            <div key={item.id}>
-              {item.section && (
-                <div className={`nav-label text-[10px] font-semibold text-surface-400 uppercase tracking-wider px-3 ${i > 0 ? 'mt-5' : ''} mb-1.5`}>
-                  {item.section}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => setActiveTab(item.id)}
-                title={item.label}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200
-                  ${activeTab === item.id
-                    ? 'bg-brand-50 text-brand-500'
-                    : 'text-surface-500 hover:bg-surface-50 hover:text-surface-700'}`}
-              >
-                <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center">{item.icon}</span>
-                <span className="nav-label flex-1">{item.label}</span>
-                {item.badge !== undefined && item.badge > 0 && (
-                  <span className="nav-label ml-auto bg-brand-100 text-brand-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none min-w-[20px] text-center">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            </div>
-          ))}
-        </nav>
-
-        {}
-        <div className="flex-shrink-0 border-t border-surface-100 p-2 space-y-1">
-          <div className="nav-label flex items-center gap-2 px-2 py-1.5 text-[11px] text-surface-400">
-            <span className="font-semibold text-surface-500">{( Array.isArray(drivers) ? drivers : [] ).length}</span> {vocab.drivers.toLowerCase()}
-            <span className="text-surface-300">·</span>
-            <span className="font-semibold text-surface-500">{( Array.isArray(missions) ? missions : [] ).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length}</span> missions
-          </div>
-          <button type="button" title="Déconnexion" onClick={async () => {
-            await fetch('/api/auth/logout', { method: 'POST' })
-            await usePlanningStore.persist.clearStorage()
-            window.location.href = '/login'
-          }}
-            className="w-full flex items-center justify-center gap-2 px-2 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            <span className="nav-label">Déconnexion</span>
-          </button>
-        </div>
-      </aside>
-
-      {}
-      <div className="admin-content flex-1 flex flex-col min-w-0 overflow-hidden relative">
-
-        {}
-        <header className="h-14 flex-shrink-0 flex items-center gap-3 px-5 border-b border-surface-200 z-20 topbar-bg">
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-base font-semibold text-surface-900 capitalize truncate">
-              {NAV_ITEMS.find(n => n.id === activeTab)?.label || 'Dashboard'}
-            </h1>
-            {/* On a phone the title needs the room: the context line only shows from 640px up. */}
-            <span className="hidden sm:inline text-surface-300 text-sm">/</span>
-            <span className="hidden sm:inline text-surface-400 text-sm truncate">
-              {activeTab === 'dashboard' ? 'Vue d\'ensemble' :
-               activeTab === 'missions' ? `${(Array.isArray(missions) ? missions : []).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length} missions` :
-               activeTab === 'tours' ? planDate :
-               activeTab === 'drivers' ? `${(Array.isArray(drivers) ? drivers : []).filter(d => !d.archived).length} ${vocab.drivers.toLowerCase()}` :
-               activeTab === 'catalogue' ? 'Clients, Sites, Produits' :
-               activeTab === 'settings' ? 'Configuration' :
-               ''}
+        <aside className="sidebar flex-shrink-0 h-screen bg-white border-r border-surface-200 flex flex-col z-30 shadow-sidebar overflow-hidden">
+          {}
+          <div className="h-14 flex items-center gap-3 px-4 flex-shrink-0 border-b border-surface-100">
+            <Image
+              src={BRAND_LOGO_SRC}
+              alt="PATHÉLIX"
+              width={32}
+              height={32}
+              className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+            />
+            <span className="nav-label font-semibold text-surface-900 text-sm tracking-tight font-display">
+              PATHÉLIX
             </span>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            {}
-            <button type="button"
-              onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
-              title="Recherche globale (Ctrl+K)"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-200 text-surface-400 hover:text-surface-600 hover:border-surface-300 text-xs transition-colors">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 11A5 5 0 106 1a5 5 0 000 10zM12 12l-2.5-2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-              <span>Ctrl+K</span>
-            </button>
-            {}
-            <div className="relative">
-              <button type="button" onClick={() => setShowAlerts(v => !v)} title="Alertes"
-                aria-label={`Alertes${alerts.length > 0 ? ` (${alerts.length})` : ''}`}
-                aria-expanded={showAlerts ? "true" : "false"}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors text-sm
-                  ${alerts.length > 0 ? 'text-amber-500 hover:bg-amber-50' : 'text-surface-400 hover:text-surface-600 hover:bg-surface-100'}`}>
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7.5 15a1.5 1.5 0 003 0M9 2a5 5 0 00-5 5c0 2.5-1 4-1.5 4.5h13C15 11 14 9.5 14 7a5 5 0 00-5-5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                {alerts.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
-                    {alerts.filter(a => a.level === 'error').length || alerts.length}
-                  </span>
-                )}
-              </button>
-              {showAlerts && (
-                <div className="absolute right-0 top-10 w-80 bg-white border border-surface-200 rounded-xl shadow-elevated z-50 overflow-hidden animate-fade-in" aria-live="polite">
-                  <div className="px-4 py-2.5 border-b border-surface-100 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-surface-700">Alertes ({alerts.length})</span>
-                    <button type="button" onClick={() => setShowAlerts(false)} title="Fermer" className="text-surface-400 hover:text-surface-600 text-xs">
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10 4L4 10M4 4l6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                    </button>
+
+          {}
+          <nav
+            className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5"
+            aria-label="Navigation principale"
+          >
+            {NAV_ITEMS.filter(
+              item =>
+                !item.adminOnly ||
+                isAdmin ||
+                (item.permission && hasPerm(permissions, item.permission)),
+            ).map((item, i) => (
+              <div key={item.id}>
+                {item.section && (
+                  <div
+                    className={`nav-label text-[10px] font-semibold text-surface-400 uppercase tracking-wider px-3 ${i > 0 ? 'mt-5' : ''} mb-1.5`}
+                  >
+                    {item.section}
                   </div>
-                  {alerts.length === 0 ? (
-                    <div className="px-4 py-6 text-surface-400 text-xs text-center">Aucune alerte</div>
-                  ) : (
-                    <div className="max-h-64 overflow-y-auto divide-y divide-surface-100">
-                      {alerts.map(a => (
-                        <div key={a.id} className={`px-4 py-3 flex items-start gap-2.5 text-xs
-                          ${a.level === 'error' ? 'text-red-600' : a.level === 'warning' ? 'text-amber-600' : 'text-blue-600'}`}>
-                          <span className={`flex-shrink-0 mt-0.5 w-2 h-2 rounded-full ${a.level === 'error' ? 'bg-red-500' : a.level === 'warning' ? 'bg-amber-400' : 'bg-blue-400'}`} />
-                          <span className="text-surface-600">{a.message}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  title={item.label}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                  ${
+                    activeTab === item.id
+                      ? 'bg-brand-50 text-brand-500'
+                      : 'text-surface-500 hover:bg-surface-50 hover:text-surface-700'
+                  }`}
+                >
+                  <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                    {item.icon}
+                  </span>
+                  <span className="nav-label flex-1">{item.label}</span>
+                  {item.badge !== undefined && item.badge > 0 && (
+                    <span className="nav-label ml-auto bg-brand-100 text-brand-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none min-w-[20px] text-center">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              </div>
+            ))}
+          </nav>
+
+          {}
+          <div className="flex-shrink-0 border-t border-surface-100 p-2 space-y-1">
+            <div className="nav-label flex items-center gap-2 px-2 py-1.5 text-[11px] text-surface-400">
+              <span className="font-semibold text-surface-500">
+                {(Array.isArray(drivers) ? drivers : []).length}
+              </span>{' '}
+              {vocab.drivers.toLowerCase()}
+              <span className="text-surface-300">·</span>
+              <span className="font-semibold text-surface-500">
+                {
+                  (Array.isArray(missions) ? missions : []).filter(
+                    m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived,
+                  ).length
+                }
+              </span>{' '}
+              missions
+            </div>
+            <button
+              type="button"
+              title="Déconnexion"
+              onClick={async () => {
+                await fetch('/api/auth/logout', { method: 'POST' })
+                await usePlanningStore.persist.clearStorage()
+                window.location.href = '/login'
+              }}
+              className="w-full flex items-center justify-center gap-2 px-2 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="shrink-0"
+              >
+                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span className="nav-label">Déconnexion</span>
+            </button>
+          </div>
+        </aside>
+
+        {}
+        <div className="admin-content flex-1 flex flex-col min-w-0 overflow-hidden relative">
+          {}
+          <header className="h-14 flex-shrink-0 flex items-center gap-3 px-5 border-b border-surface-200 z-20 topbar-bg">
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-base font-semibold text-surface-900 capitalize truncate">
+                {NAV_ITEMS.find(n => n.id === activeTab)?.label || 'Dashboard'}
+              </h1>
+              {/* On a phone the title needs the room: the context line only shows from 640px up. */}
+              <span className="hidden sm:inline text-surface-300 text-sm">/</span>
+              <span className="hidden sm:inline text-surface-400 text-sm truncate">
+                {activeTab === 'dashboard'
+                  ? "Vue d'ensemble"
+                  : activeTab === 'missions'
+                    ? `${(Array.isArray(missions) ? missions : []).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length} missions`
+                    : activeTab === 'tours'
+                      ? planDate
+                      : activeTab === 'drivers'
+                        ? `${(Array.isArray(drivers) ? drivers : []).filter(d => !d.archived).length} ${vocab.drivers.toLowerCase()}`
+                        : activeTab === 'catalogue'
+                          ? 'Clients, Sites, Produits'
+                          : activeTab === 'settings'
+                            ? 'Configuration'
+                            : ''}
+              </span>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              {}
+              <button
+                type="button"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }),
+                  )
+                }
+                title="Recherche globale (Ctrl+K)"
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-200 text-surface-400 hover:text-surface-600 hover:border-surface-300 text-xs transition-colors"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path
+                    d="M6 11A5 5 0 106 1a5 5 0 000 10zM12 12l-2.5-2.5"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>Ctrl+K</span>
+              </button>
+              {}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowAlerts(v => !v)}
+                  title="Alertes"
+                  aria-label={`Alertes${alerts.length > 0 ? ` (${alerts.length})` : ''}`}
+                  aria-expanded={showAlerts ? 'true' : 'false'}
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors text-sm
+                  ${alerts.length > 0 ? 'text-amber-500 hover:bg-amber-50' : 'text-surface-400 hover:text-surface-600 hover:bg-surface-100'}`}
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <path
+                      d="M7.5 15a1.5 1.5 0 003 0M9 2a5 5 0 00-5 5c0 2.5-1 4-1.5 4.5h13C15 11 14 9.5 14 7a5 5 0 00-5-5z"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  {alerts.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                      {alerts.filter(a => a.level === 'error').length || alerts.length}
+                    </span>
+                  )}
+                </button>
+                {showAlerts && (
+                  <div
+                    className="absolute right-0 top-10 w-80 bg-white border border-surface-200 rounded-xl shadow-elevated z-50 overflow-hidden animate-fade-in"
+                    aria-live="polite"
+                  >
+                    <div className="px-4 py-2.5 border-b border-surface-100 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-surface-700">
+                        Alertes ({alerts.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAlerts(false)}
+                        title="Fermer"
+                        className="text-surface-400 hover:text-surface-600 text-xs"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <path
+                            d="M10 4L4 10M4 4l6 6"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                    {alerts.length === 0 ? (
+                      <div className="px-4 py-6 text-surface-400 text-xs text-center">
+                        Aucune alerte
+                      </div>
+                    ) : (
+                      <div className="max-h-64 overflow-y-auto divide-y divide-surface-100">
+                        {alerts.map(a => (
+                          <div
+                            key={a.id}
+                            className={`px-4 py-3 flex items-start gap-2.5 text-xs
+                          ${a.level === 'error' ? 'text-red-600' : a.level === 'warning' ? 'text-amber-600' : 'text-blue-600'}`}
+                          >
+                            <span
+                              className={`flex-shrink-0 mt-0.5 w-2 h-2 rounded-full ${a.level === 'error' ? 'bg-red-500' : a.level === 'warning' ? 'bg-amber-400' : 'bg-blue-400'}`}
+                            />
+                            <span className="text-surface-600">{a.message}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {}
+              <button
+                type="button"
+                onClick={() => setShowValidation(true)}
+                title="Vérifier le planning"
+                className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <path
+                    d="M4 9l3.5 3.5L14 5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+              {}
+              <NotificationBell
+                onNavigate={tab => setActiveTab(tab as Parameters<typeof setActiveTab>[0])}
+              />
+              <SyncIndicator />
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                title="Rafraîchir"
+                className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-surface-600 hover:bg-surface-100 rounded-lg transition-colors"
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <path
+                    d="M3 9a6 6 0 0111.5-2.5M15 3v3.5h-3.5M15 9a6 6 0 01-11.5 2.5M3 15v-3.5h3.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+              <ThemeToggle />
+            </div>
+          </header>
+          <GlobalSearch
+            onNavigate={tab => setActiveTab(tab as Parameters<typeof setActiveTab>[0])}
+            commands={NAV_ITEMS.filter(
+              item =>
+                !item.adminOnly ||
+                isAdmin ||
+                (item.permission && hasPerm(permissions, item.permission)),
+            ).map(item => ({ id: item.id, label: item.label, tab: item.id }))}
+          />
+
+          {}
+          {Object.keys(driverStatuses).length > 0 && (
+            <div className="flex-shrink-0 flex items-center gap-3 px-5 py-1.5 border-b border-surface-100 bg-surface-50 overflow-x-auto">
+              <span className="text-[10px] text-surface-400 uppercase tracking-wider font-semibold flex-shrink-0">
+                En direct
+              </span>
+              {(Array.isArray(drivers) ? drivers : []).map(d => {
+                const statuses = driverStatuses[d.id]
+                if (!statuses) return null
+                const plan = plans[`${d.id}|${planDate}`] || []
+                const real = plan.filter(m => !m.isSynthetic)
+                const done = real.filter(m => statuses[m.id] === 'done').length
+                const doing = real.filter(
+                  m => statuses[m.id] && statuses[m.id] !== 'todo' && statuses[m.id] !== 'done',
+                ).length
+                const total = real.length
+                if (total === 0) return null
+                return (
+                  <div key={d.id} className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-[10px] text-surface-500 font-medium">{d.firstName}</span>
+                    <div className="flex gap-0.5">
+                      {real.map(m => (
+                        <div
+                          key={m.id}
+                          className={`w-2 h-2 rounded-sm ${
+                            statuses[m.id] === 'done'
+                              ? 'bg-emerald-500'
+                              : statuses[m.id] && statuses[m.id] !== 'todo'
+                                ? 'bg-blue-500 animate-pulse'
+                                : 'bg-surface-200'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-[10px] text-surface-400">
+                      {done}/{total}
+                    </span>
+                    {doing > 0 && (
+                      <span className="text-[10px] text-blue-500 font-medium">en cours</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {}
+
+          {}
+
+          {}
+          {activeTab === 'dashboard' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-dashboard"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              {(isAdmin || hasPerm(permissions, 'manage_settings')) && (
+                <SetupChecklist onNavigate={tab => setActiveTab(tab as AppTab)} />
+              )}
+              <DashboardKPIBar
+                poolTotal={dashboardStats.poolTotal}
+                poolToday={dashboardStats.poolToday}
+                driversWithPlan={dashboardStats.driversWithPlan}
+                totalDrivers={dashboardStats.totalDrivers}
+                p1Count={dashboardStats.p1Count}
+                date={planDate}
+                totalKm={dashboardStats.totalKm}
+                totalFuelEur={dashboardStats.totalFuelEur}
+                avgWorkMin={dashboardStats.avgWorkMin}
+                unassignedCount={dashboardStats.poolToday}
+              />
+
+              {}
+              <div className="flex-shrink-0 flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2.5 border-b border-surface-100 bg-white overflow-x-auto">
+                <span className="text-[10px] text-surface-400 uppercase tracking-widest font-semibold flex-shrink-0 hidden md:block capitalize">
+                  {displayShort(planDate)}
+                </span>
+                {[
+                  {
+                    label: 'Missions assignées',
+                    value: dashboardStats.assignedForDate,
+                    color:
+                      dashboardStats.assignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300',
+                  },
+                  {
+                    label: 'Missions en pool',
+                    value: dashboardStats.poolToday,
+                    color: dashboardStats.poolToday > 0 ? 'text-brand-500' : 'text-surface-300',
+                  },
+                  {
+                    label: `${vocab.drivers} avec plan`,
+                    value: `${dashboardStats.driversWithPlanForDate}/${dashboardStats.totalDrivers}`,
+                    color:
+                      dashboardStats.driversWithPlanForDate > 0
+                        ? 'text-surface-900'
+                        : 'text-surface-300',
+                  },
+                  {
+                    label: 'P1 assignées',
+                    value: dashboardStats.p1AssignedForDate,
+                    color:
+                      dashboardStats.p1AssignedForDate > 0
+                        ? 'text-emerald-600'
+                        : 'text-surface-300',
+                  },
+                ].map(k => (
+                  <div
+                    key={k.label}
+                    className="flex items-center gap-2 bg-surface-50 border border-surface-200 rounded-lg px-3 py-1.5 flex-shrink-0"
+                  >
+                    <span
+                      className={`text-sm md:text-base font-bold tabular-nums leading-none ${k.color}`}
+                    >
+                      {k.value}
+                    </span>
+                    <span className="text-[8px] md:text-[9px] text-surface-400 uppercase tracking-wider whitespace-nowrap font-medium">
+                      {k.label}
+                    </span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tours')}
+                  aria-label="Aller à l'onglet Tournées pour optimiser"
+                  className="ml-auto flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors shadow-sm"
+                >
+                  <span>Optimiser les tournées</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              </div>
+
+              <TopPanel
+                poolDate={poolDate}
+                setPoolDate={setPoolDate}
+                view={poolView}
+                setView={setPoolView}
+                draggedId={draggedId}
+                dragSource={dragSource}
+                onDragStart={id => {
+                  setDraggedId(id)
+                  setDragSource({ from: 'pool' })
+                }}
+                onDragEnd={() => {
+                  setDraggedId(null)
+                  setDragSource(null)
+                }}
+                onDropFromPlan={handleDropOnPool}
+                onEditMission={m => setMissionModal({ kind: 'edit', mission: m })}
+                onNewMission={date => {
+                  setMissionPrefill(null)
+                  setMissionModal({ kind: 'new', date })
+                }}
+                onNewMissionWithPrefill={(date, fields) => {
+                  setMissionPrefill(fields)
+                  setMissionModal({ kind: 'new', date })
+                }}
+                onViewMission={m => setMissionDetail(m)}
+                onDeleteMission={id => handleDeleteMission(id).catch(() => {})}
+                onDuplicateMission={id => handleDuplicateMission(id).catch(() => {})}
+                topHeight={topHeight}
+                drivers={Array.isArray(drivers) ? drivers : []}
+                onBatchAssign={(ids, driverId) => {
+                  ids.forEach(id => assignToDriver(id, driverId, planDate))
+                }}
+                onReschedule={handleReschedule}
+              />
+
+              <div
+                onMouseDown={onDividerMouseDown}
+                className="h-2 flex-shrink-0 flex items-center justify-center cursor-row-resize group bg-surface-100 hover:bg-surface-200 transition-colors"
+              >
+                <div className="w-16 h-0.5 rounded-full bg-surface-300 group-hover:bg-brand-500 transition-colors" />
+              </div>
+
+              <BottomPanel
+                planDate={planDate}
+                setPlanDate={setPlanDate}
+                draggedId={draggedId}
+                onDrop={handleDrop}
+                onDragStartFromPlan={(missionId, driverId) => {
+                  setDraggedId(missionId)
+                  setDragSource({ from: 'plan', driverId, date: planDate })
+                }}
+                onDragEnd={() => {
+                  setDraggedId(null)
+                  setDragSource(null)
+                }}
+                calcResults={calcResults}
+                onEditPlanned={handleEditPlanned}
+                onExportPdf={() => {
+                  const tours = (Array.isArray(drivers) ? drivers : [])
+                    .filter(d => !d.archived && (plans[`${d.id}|${planDate}`] || []).length > 0)
+                    .map(d => ({
+                      driver: d,
+                      plan: plans[`${d.id}|${planDate}`] || [],
+                      result: calcResults[d.id] || null,
+                      date: planDate,
+                      startTime:
+                        startTimes[`${d.id}|${planDate}`] || tenantSettings.defaultStartTime,
+                    }))
+                  if (tours.length === 0) return
+                  exportTourSheetPdf(tours)
+                }}
+                onNewDriver={() => setDriverModal({ kind: 'new' })}
+                onViewDriver={d => setDriverDetail(d)}
+                onViewMission={m => setMissionDetail(m)}
+                defaultStartTime={tenantSettings.defaultStartTime}
+              />
+            </div>
+          )}
+
+          {activeTab === 'drivers' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-drivers"
+              aria-labelledby="tab-drivers"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <DriversTab
+                onEdit={d => setDriverModal({ kind: 'edit', driver: d })}
+                onNew={() => setDriverModal({ kind: 'new' })}
+                onDelete={(id, opts) => handleDeleteDriver(id, opts).catch(() => {})}
+                onImportDriversCSV={handleImportDriversCSV}
+              />
+            </div>
+          )}
+
+          {activeTab === 'missions' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-missions"
+              aria-labelledby="tab-missions"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <MissionsTab
+                onEdit={m => setMissionModal({ kind: 'edit', mission: m })}
+                onNew={() => setMissionModal({ kind: 'new', date: today() })}
+                onView={m => setMissionDetail(m)}
+                onDelete={id => handleDeleteMission(id).catch(() => {})}
+                onDuplicate={id => handleDuplicateMission(id).catch(() => {})}
+                onImportCSV={handleImportMissionsCSV}
+              />
+            </div>
+          )}
+
+          {activeTab === 'tours' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-tours"
+              aria-labelledby="tab-tours"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <ToursTab
+                onEditPlanned={handleEditPlanned}
+                onViewMission={m => setMissionDetail(m)}
+              />
+            </div>
+          )}
+
+          {activeTab === 'exutoires' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-exutoires"
+              aria-labelledby="tab-exutoires"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <ExutoiresTab />
+            </div>
+          )}
+          {activeTab === 'stats' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-stats"
+              aria-labelledby="tab-stats"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <StatsTab />
+            </div>
+          )}
+          {activeTab === 'templates' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-templates"
+              aria-labelledby="tab-templates"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <TemplatesTab
+                onGenerate={missions =>
+                  missions.forEach(m => handleSaveMission(m).catch(logErr('api')))
+                }
+              />
+            </div>
+          )}
+          {activeTab === 'vehicles' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-vehicles"
+              aria-labelledby="tab-vehicles"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <VehiclesTab />
+            </div>
+          )}
+          {activeTab === 'history' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-history"
+              aria-labelledby="tab-history"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <HistoryTab tourDate={planDate} />
+            </div>
+          )}
+          {activeTab === 'users' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-users"
+              aria-labelledby="tab-users"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <UsersTab />
+            </div>
+          )}
+          {activeTab === 'audit' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-audit"
+              aria-labelledby="tab-audit"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <AuditTab />
+            </div>
+          )}
+          {activeTab === 'telematics' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-telematics"
+              aria-labelledby="tab-telematics"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <TelematicsTab date={planDate} />
+            </div>
+          )}
+          {activeTab === 'catalogue' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-catalogue"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <CatalogueTab readOnly={!isAdmin} />
+            </div>
+          )}
+          {activeTab === 'settings' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-settings"
+              aria-labelledby="tab-settings"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <SettingsTab />
+            </div>
+          )}
+          {activeTab === 'sales' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-sales"
+              aria-labelledby="tab-sales"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <SalesTab />
+            </div>
+          )}
+          {activeTab === 'insights' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-insights"
+              aria-labelledby="tab-insights"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <InsightsTab />
+            </div>
+          )}
+          {activeTab === 'billing' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-billing"
+              aria-labelledby="tab-billing"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <BillingTab />
+            </div>
+          )}
+          {activeTab === 'containers' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-containers"
+              aria-labelledby="tab-containers"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <ContainersTab />
+            </div>
+          )}
+          {activeTab === 'weekly-plan' && (
+            <div
+              role="tabpanel"
+              id="tabpanel-weekly-plan"
+              aria-labelledby="tab-weekly-plan"
+              className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"
+            >
+              <WeeklyPlanTab
+                onNavigateToTours={date => {
+                  setPlanDate(date)
+                  setActiveTab('tours')
+                }}
+              />
+            </div>
+          )}
+
+          {}
+          {missionModal.kind === 'new' && (
+            <MissionForm
+              title="Nouvelle mission"
+              initial={{ ...blankMission(missionModal.date), ...(missionPrefill ?? {}) }}
+              onSave={data => {
+                handleSaveMission(data).catch(() => {})
+                setMissionModal({ kind: 'none' })
+                setMissionPrefill(null)
+              }}
+              onClose={() => {
+                setMissionModal({ kind: 'none' })
+                setMissionPrefill(null)
+              }}
+            />
+          )}
+          {missionModal.kind === 'edit' && (
+            <MissionForm
+              title="Modifier la mission"
+              initial={missionModal.mission}
+              onSave={data => {
+                handleSaveMission(data, missionModal.mission.id).catch(() => {})
+                setMissionModal({ kind: 'none' })
+              }}
+              onClose={() => setMissionModal({ kind: 'none' })}
+            />
+          )}
+          {missionModal.kind === 'edit-planned' && (
+            <MissionForm
+              title="Modifier la mission planifiée"
+              initial={missionModal.mission}
+              aside={<AssignmentWhy date={missionModal.date} missionId={missionModal.mission.id} />}
+              onSave={data => {
+                updatePlannedMission(
+                  missionModal.mission.id,
+                  missionModal.driverId,
+                  missionModal.date,
+                  data,
+                )
+                setMissionModal({ kind: 'none' })
+              }}
+              onClose={() => setMissionModal({ kind: 'none' })}
+            />
+          )}
+          {driverModal?.kind === 'new' && (
+            <DriverForm
+              title={`Nouveau ${vocab.driver.toLowerCase()}`}
+              initial={BLANK_DRIVER}
+              onSave={data => {
+                handleSaveDriver(data).catch(() => {})
+                setDriverModal(null)
+              }}
+              onClose={() => setDriverModal(null)}
+            />
+          )}
+          {driverModal?.kind === 'edit' && (
+            <DriverForm
+              title={`Modifier le ${vocab.driver.toLowerCase()}`}
+              initial={driverModal.driver}
+              onSave={data => {
+                handleSaveDriver(data, driverModal.driver.id).catch(() => {})
+                setDriverModal(null)
+              }}
+              onClose={() => setDriverModal(null)}
+            />
+          )}
+          {missionDetail && (
+            <MissionDetailModal
+              mission={missionDetail}
+              onEdit={() => {
+                setMissionModal({ kind: 'edit', mission: missionDetail })
+                setMissionDetail(null)
+              }}
+              onDelete={() => {
+                const id = missionDetail.id
+                if ((Array.isArray(missions) ? missions : []).some(m => m.id === id)) {
+                  handleDeleteMission(id).catch(() => {})
+                } else {
+                  for (const [key, plan] of Object.entries(plans)) {
+                    if (plan.some(m => m.id === id)) {
+                      const parts = key.split('|')
+                      unassignFromDriver(id, parts[0], parts[1])
+                      break
+                    }
+                  }
+                }
+                setMissionDetail(null)
+              }}
+              onDuplicate={() => {
+                handleDuplicateMission(missionDetail.id).catch(() => {})
+              }}
+              onClose={() => setMissionDetail(null)}
+              onAssign={(driverId, date) => {
+                assignToDriver(missionDetail.id, driverId, date)
+                setMissionDetail(null)
+              }}
+            />
+          )}
+          {driverDetail && (
+            <DriverDetailModal
+              driver={driverDetail}
+              result={calcResults[driverDetail.id] || null}
+              plan={plans[`${driverDetail.id}|${planDate}`] || []}
+              planDate={planDate}
+              onEdit={() => {
+                setDriverModal({ kind: 'edit', driver: driverDetail })
+                setDriverDetail(null)
+              }}
+              onDelete={() => {
+                handleDeleteDriver(driverDetail.id).catch(() => {})
+                setDriverDetail(null)
+              }}
+              onClose={() => setDriverDetail(null)}
+            />
+          )}
+          <ConfirmOverrideModal
+            state={confirmOverride}
+            onConfirm={() => {
+              if (!confirmOverride) return
+              setManualStartMin(
+                confirmOverride.missionId,
+                confirmOverride.driverId,
+                confirmOverride.date,
+                confirmOverride.pendingStartMin,
+              )
+              setConfirmOverride(null)
+            }}
+            onCancel={() => setConfirmOverride(null)}
+          />
+
+          {}
+          {showValidation &&
+            (() => {
+              const todayStr = planDate
+              const checks: Array<{ level: 'error' | 'warning' | 'ok'; message: string }> = []
+
+              const p1Pool = (Array.isArray(missions) ? missions : []).filter(
+                m =>
+                  m.priority === 1 &&
+                  m.date === todayStr &&
+                  !SYNTHETIC_TYPES.includes(m.type) &&
+                  !m.archived &&
+                  !Object.values(plans).some(plan => plan.some(pm => pm.id === m.id)),
+              )
+              checks.push(
+                p1Pool.length > 0
+                  ? {
+                      level: 'error',
+                      message: `${p1Pool.length} mission${p1Pool.length > 1 ? 's' : ''} P1 non assignée${p1Pool.length > 1 ? 's' : ''}`,
+                    }
+                  : { level: 'ok', message: 'Toutes les missions P1 sont assignées' },
+              )
+
+              const driversEmpty = (Array.isArray(drivers) ? drivers : []).filter(
+                d =>
+                  !d.archived &&
+                  !isUnavailable(d.id, todayStr) &&
+                  (plans[`${d.id}|${todayStr}`] || []).filter(m => !m.isSynthetic).length === 0,
+              )
+              checks.push(
+                driversEmpty.length > 0
+                  ? {
+                      level: 'warning',
+                      message: `${driversEmpty.length} ${driversEmpty.length > 1 ? vocab.drivers.toLowerCase() : vocab.driver.toLowerCase()} disponible${driversEmpty.length > 1 ? 's' : ''} sans tournée`,
+                    }
+                  : {
+                      level: 'ok',
+                      message: `Tous les ${vocab.drivers.toLowerCase()} disponibles ont une tournée`,
+                    },
+              )
+
+              const legalErrors = Object.entries(calcResults).filter(([, r]) =>
+                r?.warnings.some(w => w.severity === 'error'),
+              )
+              checks.push(
+                legalErrors.length > 0
+                  ? {
+                      level: 'error',
+                      message: `${legalErrors.length} ${legalErrors.length > 1 ? vocab.drivers.toLowerCase() : vocab.driver.toLowerCase()} avec violation${legalErrors.length > 1 ? 's' : ''} légale${legalErrors.length > 1 ? 's' : ''}`,
+                    }
+                  : { level: 'ok', message: 'Aucune violation légale CE 561/2006' },
+              )
+
+              const noGps = (Array.isArray(missions) ? missions : []).filter(
+                m =>
+                  m.latitude === 0 &&
+                  m.longitude === 0 &&
+                  !SYNTHETIC_TYPES.includes(m.type) &&
+                  !m.archived &&
+                  m.date === todayStr,
+              )
+              checks.push(
+                noGps.length > 0
+                  ? {
+                      level: 'warning',
+                      message: `${noGps.length} mission${noGps.length > 1 ? 's' : ''} sans coordonnées GPS`,
+                    }
+                  : { level: 'ok', message: 'Toutes les missions ont des coordonnées GPS' },
+              )
+
+              const poolCount = (Array.isArray(missions) ? missions : []).filter(
+                m =>
+                  !SYNTHETIC_TYPES.includes(m.type) &&
+                  !m.archived &&
+                  m.date === todayStr &&
+                  !Object.values(plans).some(plan => plan.some(pm => pm.id === m.id)),
+              ).length
+              checks.push(
+                poolCount > 0
+                  ? {
+                      level: 'warning',
+                      message: `${poolCount} mission${poolCount > 1 ? 's' : ''} encore dans le pool (non assignée${poolCount > 1 ? 's' : ''})`,
+                    }
+                  : { level: 'ok', message: 'Toutes les missions du jour sont assignées' },
+              )
+
+              const hasErrors = checks.some(c => c.level === 'error')
+              const hasWarnings = checks.some(c => c.level === 'warning')
+
+              return (
+                <div
+                  className="fixed inset-0 bg-surface-900/30 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
+                  onClick={() => setShowValidation(false)}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Vérification du planning"
+                    className="bg-white border border-surface-200 rounded-2xl w-full max-w-md overflow-hidden shadow-modal"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100">
+                      <h2 className="text-surface-900 font-semibold text-base">
+                        Validation — {displayShort(todayStr)}
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => setShowValidation(false)}
+                        title="Fermer"
+                        className="text-surface-400 hover:text-surface-600 w-8 h-8 flex items-center justify-center hover:bg-surface-100 rounded-lg transition-colors"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <path
+                            d="M10 4L4 10M4 4l6 6"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="px-6 py-4 space-y-2">
+                      {checks.map((c, i) => (
+                        <div
+                          key={i}
+                          className={`flex items-center gap-2.5 text-xs px-3 py-2.5 rounded-lg border
+                    ${
+                      c.level === 'error'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : c.level === 'warning'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}
+                        >
+                          <span
+                            className={`flex-shrink-0 w-2 h-2 rounded-full ${c.level === 'error' ? 'bg-red-500' : c.level === 'warning' ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                          />
+                          <span>{c.message}</span>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-            {}
-            <button type="button" onClick={() => setShowValidation(true)} title="Vérifier le planning"
-              className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </button>
-            {}
-            <NotificationBell onNavigate={(tab) => setActiveTab(tab as Parameters<typeof setActiveTab>[0])} />
-            <SyncIndicator />
-            <button type="button" onClick={() => window.location.reload()} title="Rafraîchir"
-              className="w-8 h-8 flex items-center justify-center text-surface-400 hover:text-surface-600 hover:bg-surface-100 rounded-lg transition-colors">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9a6 6 0 0111.5-2.5M15 3v3.5h-3.5M15 9a6 6 0 01-11.5 2.5M3 15v-3.5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </button>
-            <ThemeToggle />
-          </div>
-        </header>
-        <GlobalSearch onNavigate={(tab) => setActiveTab(tab as Parameters<typeof setActiveTab>[0])}
-          commands={NAV_ITEMS.filter(item => !item.adminOnly || isAdmin || (item.permission && hasPerm(permissions, item.permission))).map(item => ({ id: item.id, label: item.label, tab: item.id }))} />
-
-        {}
-        {Object.keys(driverStatuses).length > 0 && (
-          <div className="flex-shrink-0 flex items-center gap-3 px-5 py-1.5 border-b border-surface-100 bg-surface-50 overflow-x-auto">
-            <span className="text-[10px] text-surface-400 uppercase tracking-wider font-semibold flex-shrink-0">En direct</span>
-            {( Array.isArray(drivers) ? drivers : [] ).map(d => {
-              const statuses = driverStatuses[d.id]
-              if (!statuses) return null
-              const plan = plans[`${d.id}|${planDate}`] || []
-              const real = plan.filter(m => !m.isSynthetic)
-              const done = real.filter(m => statuses[m.id] === 'done').length
-              const doing = real.filter(m => statuses[m.id] && statuses[m.id] !== 'todo' && statuses[m.id] !== 'done').length
-              const total = real.length
-              if (total === 0) return null
-              return (
-                <div key={d.id} className="flex items-center gap-1.5 flex-shrink-0">
-                  <span className="text-[10px] text-surface-500 font-medium">{d.firstName}</span>
-                  <div className="flex gap-0.5">
-                    {real.map(m => (
-                      <div key={m.id} className={`w-2 h-2 rounded-sm ${
-                        statuses[m.id] === 'done' ? 'bg-emerald-500' :
-                        statuses[m.id] && statuses[m.id] !== 'todo' ? 'bg-blue-500 animate-pulse' :
-                        'bg-surface-200'
-                      }`} />
-                    ))}
+                    <div
+                      className={`px-6 py-3 border-t border-surface-100 text-center text-xs font-semibold
+                ${hasErrors ? 'text-red-600' : hasWarnings ? 'text-amber-600' : 'text-emerald-600'}`}
+                    >
+                      {hasErrors
+                        ? 'Le planning nécessite des corrections'
+                        : hasWarnings
+                          ? 'Le planning est pret avec quelques avertissements'
+                          : 'Le planning est parfait !'}
+                    </div>
                   </div>
-                  <span className="text-[10px] text-surface-400">{done}/{total}</span>
-                  {doing > 0 && <span className="text-[10px] text-blue-500 font-medium">en cours</span>}
                 </div>
               )
-            })}
-          </div>
-        )}
-
+            })()}
+        </div>
         {}
 
         {}
-
-        {}
-        {activeTab === 'dashboard' && <div role="tabpanel" id="tabpanel-dashboard" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60">
-        {(isAdmin || hasPerm(permissions, 'manage_settings')) && <SetupChecklist onNavigate={tab => setActiveTab(tab as AppTab)} />}
-        <DashboardKPIBar
-          poolTotal={dashboardStats.poolTotal}
-          poolToday={dashboardStats.poolToday}
-          driversWithPlan={dashboardStats.driversWithPlan}
-          totalDrivers={dashboardStats.totalDrivers}
-          p1Count={dashboardStats.p1Count}
-          date={planDate}
-          totalKm={dashboardStats.totalKm}
-          totalFuelEur={dashboardStats.totalFuelEur}
-          avgWorkMin={dashboardStats.avgWorkMin}
-          unassignedCount={dashboardStats.poolToday}
-        />
-
-        {}
-        <div className="flex-shrink-0 flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2.5 border-b border-surface-100 bg-white overflow-x-auto">
-          <span className="text-[10px] text-surface-400 uppercase tracking-widest font-semibold flex-shrink-0 hidden md:block capitalize">
-            {displayShort(planDate)}
-          </span>
+        <nav className="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-surface-200 z-40 items-center justify-around px-1 py-1.5 safe-area-bottom">
           {[
-            { label: 'Missions assignées',   value: dashboardStats.assignedForDate,         color: dashboardStats.assignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
-            { label: 'Missions en pool',      value: dashboardStats.poolToday,              color: dashboardStats.poolToday > 0 ? 'text-brand-500' : 'text-surface-300' },
-            { label: `${vocab.drivers} avec plan`,  value: `${dashboardStats.driversWithPlanForDate}/${dashboardStats.totalDrivers}`, color: dashboardStats.driversWithPlanForDate > 0 ? 'text-surface-900' : 'text-surface-300' },
-            { label: 'P1 assignées',          value: dashboardStats.p1AssignedForDate,      color: dashboardStats.p1AssignedForDate > 0 ? 'text-emerald-600' : 'text-surface-300' },
-          ].map(k => (
-            <div key={k.label} className="flex items-center gap-2 bg-surface-50 border border-surface-200 rounded-lg px-3 py-1.5 flex-shrink-0">
-              <span className={`text-sm md:text-base font-bold tabular-nums leading-none ${k.color}`}>{k.value}</span>
-              <span className="text-[8px] md:text-[9px] text-surface-400 uppercase tracking-wider whitespace-nowrap font-medium">{k.label}</span>
-            </div>
+            { id: 'dashboard' as AppTab, icon: '⬡', label: 'Accueil' },
+            { id: 'missions' as AppTab, icon: '📋', label: 'Missions' },
+            { id: 'tours' as AppTab, icon: '🗺', label: 'Tournées' },
+            { id: 'stats' as AppTab, icon: '📊', label: 'Stats' },
+            { id: 'catalogue' as AppTab, icon: '📦', label: 'Catalogue' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-medium transition-colors min-w-[56px]
+              ${activeTab === tab.id ? 'text-brand-500' : 'text-surface-400'}`}
+            >
+              <span className="text-lg leading-none">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
           ))}
-          <button
-            type="button"
-            onClick={() => setActiveTab('tours')}
-            aria-label="Aller à l'onglet Tournées pour optimiser"
-            className="ml-auto flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors shadow-sm"
-          >
-            <span>Optimiser les tournées</span>
-            <span aria-hidden="true">→</span>
-          </button>
-        </div>
-
-        <TopPanel
-          poolDate={poolDate} setPoolDate={setPoolDate}
-          view={poolView} setView={setPoolView}
-          draggedId={draggedId}
-          dragSource={dragSource}
-          onDragStart={(id) => { setDraggedId(id); setDragSource({ from: 'pool' }) }}
-          onDragEnd={() => { setDraggedId(null); setDragSource(null) }}
-          onDropFromPlan={handleDropOnPool}
-          onEditMission={(m) => setMissionModal({ kind: 'edit', mission: m })}
-          onNewMission={(date) => { setMissionPrefill(null); setMissionModal({ kind: 'new', date }) }}
-          onNewMissionWithPrefill={(date, fields) => { setMissionPrefill(fields); setMissionModal({ kind: 'new', date }) }}
-          onViewMission={(m) => setMissionDetail(m)}
-          onDeleteMission={(id) => handleDeleteMission(id).catch(()=>{})}
-          onDuplicateMission={(id) => handleDuplicateMission(id).catch(()=>{})}
-          topHeight={topHeight}
-          drivers={(Array.isArray(drivers) ? drivers : [])}
-          onBatchAssign={(ids, driverId) => { ids.forEach(id => assignToDriver(id, driverId, planDate)) }}
-          onReschedule={handleReschedule}
-        />
-
-        <div onMouseDown={onDividerMouseDown}
-          className="h-2 flex-shrink-0 flex items-center justify-center cursor-row-resize group bg-surface-100 hover:bg-surface-200 transition-colors">
-          <div className="w-16 h-0.5 rounded-full bg-surface-300 group-hover:bg-brand-500 transition-colors" />
-        </div>
-
-        <BottomPanel
-          planDate={planDate} setPlanDate={setPlanDate}
-          draggedId={draggedId}
-          onDrop={handleDrop}
-          onDragStartFromPlan={(missionId, driverId) => { setDraggedId(missionId); setDragSource({ from: 'plan', driverId, date: planDate }) }}
-          onDragEnd={() => { setDraggedId(null); setDragSource(null) }}
-          calcResults={calcResults}
-          onEditPlanned={handleEditPlanned}
-          onExportPdf={() => {
-            const tours = (Array.isArray(drivers) ? drivers : [])
-              .filter(d => !d.archived && (plans[`${d.id}|${planDate}`] || []).length > 0)
-              .map(d => ({
-                driver: d,
-                plan: plans[`${d.id}|${planDate}`] || [],
-                result: calcResults[d.id] || null,
-                date: planDate,
-                startTime: startTimes[`${d.id}|${planDate}`] || tenantSettings.defaultStartTime,
-              }))
-            if (tours.length === 0) return
-            exportTourSheetPdf(tours)
-          }}
-          onNewDriver={() => setDriverModal({ kind: 'new' })}
-          onViewDriver={(d) => setDriverDetail(d)}
-          onViewMission={(m) => setMissionDetail(m)}
-          defaultStartTime={tenantSettings.defaultStartTime}
-        />
-      </div>}
-
-      {activeTab === 'drivers' && (
-        <div role="tabpanel" id="tabpanel-drivers" aria-labelledby="tab-drivers" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60">
-        <DriversTab
-          onEdit={(d) => setDriverModal({ kind: 'edit', driver: d })}
-          onNew={() => setDriverModal({ kind: 'new' })}
-          onDelete={(id, opts) => handleDeleteDriver(id, opts).catch(()=>{})}
-          onImportDriversCSV={handleImportDriversCSV}
-        />
-        </div>
-      )}
-
-      {activeTab === 'missions' && (
-        <div role="tabpanel" id="tabpanel-missions" aria-labelledby="tab-missions" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60">
-        <MissionsTab
-          onEdit={(m) => setMissionModal({ kind: 'edit', mission: m })}
-          onNew={() => setMissionModal({ kind: 'new', date: today() })}
-          onView={(m) => setMissionDetail(m)}
-          onDelete={(id) => handleDeleteMission(id).catch(()=>{})}
-          onDuplicate={(id) => handleDuplicateMission(id).catch(()=>{})}
-          onImportCSV={handleImportMissionsCSV}
-        />
-        </div>
-      )}
-
-      {activeTab === 'tours' && (
-        <div role="tabpanel" id="tabpanel-tours" aria-labelledby="tab-tours" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60">
-        <ToursTab
-          onEditPlanned={handleEditPlanned}
-          onViewMission={(m) => setMissionDetail(m)}
-        />
-        </div>
-      )}
-
-      {activeTab === 'exutoires' && <div role="tabpanel" id="tabpanel-exutoires" aria-labelledby="tab-exutoires" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><ExutoiresTab /></div>}
-      {activeTab === 'stats' && <div role="tabpanel" id="tabpanel-stats" aria-labelledby="tab-stats" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><StatsTab /></div>}
-      {activeTab === 'templates' && (
-        <div role="tabpanel" id="tabpanel-templates" aria-labelledby="tab-templates" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><TemplatesTab onGenerate={(missions) => missions.forEach(m => handleSaveMission(m).catch(logErr('api')))} /></div>
-      )}
-      {activeTab === 'vehicles' && <div role="tabpanel" id="tabpanel-vehicles" aria-labelledby="tab-vehicles" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><VehiclesTab /></div>}
-      {activeTab === 'history' && <div role="tabpanel" id="tabpanel-history" aria-labelledby="tab-history" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><HistoryTab tourDate={planDate} /></div>}
-      {activeTab === 'users' && <div role="tabpanel" id="tabpanel-users" aria-labelledby="tab-users" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><UsersTab /></div>}
-      {activeTab === 'audit' && <div role="tabpanel" id="tabpanel-audit" aria-labelledby="tab-audit" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><AuditTab /></div>}
-      {activeTab === 'telematics' && <div role="tabpanel" id="tabpanel-telematics" aria-labelledby="tab-telematics" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><TelematicsTab date={planDate} /></div>}
-      {activeTab === 'catalogue' && <div role="tabpanel" id="tabpanel-catalogue" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><CatalogueTab readOnly={!isAdmin} /></div>}
-      {activeTab === 'settings' && <div role="tabpanel" id="tabpanel-settings" aria-labelledby="tab-settings" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><SettingsTab /></div>}
-      {activeTab === 'sales' && <div role="tabpanel" id="tabpanel-sales" aria-labelledby="tab-sales" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><SalesTab /></div>}
-      {activeTab === 'insights' && <div role="tabpanel" id="tabpanel-insights" aria-labelledby="tab-insights" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><InsightsTab /></div>}
-      {activeTab === 'billing' && <div role="tabpanel" id="tabpanel-billing" aria-labelledby="tab-billing" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><BillingTab /></div>}
-      {activeTab === 'containers' && <div role="tabpanel" id="tabpanel-containers" aria-labelledby="tab-containers" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><ContainersTab /></div>}
-      {activeTab === 'weekly-plan' && <div role="tabpanel" id="tabpanel-weekly-plan" aria-labelledby="tab-weekly-plan" className="flex-1 overflow-hidden flex flex-col relative z-10 bg-surface-50/60"><WeeklyPlanTab onNavigateToTours={(date) => { setPlanDate(date); setActiveTab('tours') }} /></div>}
-
-      {}
-      {missionModal.kind === 'new' && (
-        <MissionForm title="Nouvelle mission"
-          initial={{ ...blankMission(missionModal.date), ...(missionPrefill ?? {}) }}
-          onSave={(data) => { handleSaveMission(data).catch(()=>{}); setMissionModal({ kind: 'none' }); setMissionPrefill(null) }}
-          onClose={() => { setMissionModal({ kind: 'none' }); setMissionPrefill(null) }} />
-      )}
-      {missionModal.kind === 'edit' && (
-        <MissionForm title="Modifier la mission" initial={missionModal.mission}
-          onSave={(data) => { handleSaveMission(data, missionModal.mission.id).catch(()=>{}); setMissionModal({ kind: 'none' }) }}
-          onClose={() => setMissionModal({ kind: 'none' })} />
-      )}
-      {missionModal.kind === 'edit-planned' && (
-        <MissionForm title="Modifier la mission planifiée" initial={missionModal.mission}
-          aside={<AssignmentWhy date={missionModal.date} missionId={missionModal.mission.id} />}
-          onSave={(data) => {
-            updatePlannedMission(missionModal.mission.id, missionModal.driverId, missionModal.date, data)
-            setMissionModal({ kind: 'none' })
-          }}
-          onClose={() => setMissionModal({ kind: 'none' })} />
-      )}
-      {driverModal?.kind === 'new' && (
-        <DriverForm title={`Nouveau ${vocab.driver.toLowerCase()}`} initial={BLANK_DRIVER}
-          onSave={(data) => { handleSaveDriver(data).catch(()=>{}); setDriverModal(null) }}
-          onClose={() => setDriverModal(null)} />
-      )}
-      {driverModal?.kind === 'edit' && (
-        <DriverForm title={`Modifier le ${vocab.driver.toLowerCase()}`} initial={driverModal.driver}
-          onSave={(data) => { handleSaveDriver(data, driverModal.driver.id).catch(()=>{}); setDriverModal(null) }}
-          onClose={() => setDriverModal(null)} />
-      )}
-      {missionDetail && (
-        <MissionDetailModal
-          mission={missionDetail}
-          onEdit={() => { setMissionModal({ kind: 'edit', mission: missionDetail }); setMissionDetail(null) }}
-          onDelete={() => {
-            const id = missionDetail.id
-            if (( Array.isArray(missions) ? missions : [] ).some(m => m.id === id)) {
-              handleDeleteMission(id).catch(()=>{})
-            } else {
-              for (const [key, plan] of Object.entries(plans)) {
-                if (plan.some(m => m.id === id)) {
-                  const parts = key.split('|')
-                  unassignFromDriver(id, parts[0], parts[1])
-                  break
-                }
-              }
-            }
-            setMissionDetail(null)
-          }}
-          onDuplicate={() => { handleDuplicateMission(missionDetail.id).catch(()=>{}) }}
-          onClose={() => setMissionDetail(null)}
-          onAssign={(driverId, date) => {
-            assignToDriver(missionDetail.id, driverId, date)
-            setMissionDetail(null)
-          }}
-        />
-      )}
-      {driverDetail && (
-        <DriverDetailModal
-          driver={driverDetail}
-          result={calcResults[driverDetail.id] || null}
-          plan={plans[`${driverDetail.id}|${planDate}`] || []}
-          planDate={planDate}
-          onEdit={() => { setDriverModal({ kind: 'edit', driver: driverDetail }); setDriverDetail(null) }}
-          onDelete={() => { handleDeleteDriver(driverDetail.id).catch(()=>{}); setDriverDetail(null) }}
-          onClose={() => setDriverDetail(null)}
-        />
-      )}
-      <ConfirmOverrideModal
-        state={confirmOverride}
-        onConfirm={() => {
-          if (!confirmOverride) return
-          setManualStartMin(confirmOverride.missionId, confirmOverride.driverId, confirmOverride.date, confirmOverride.pendingStartMin)
-          setConfirmOverride(null)
-        }}
-        onCancel={() => setConfirmOverride(null)}
-      />
-
-      {}
-      {showValidation && (() => {
-        const todayStr = planDate
-        const checks: Array<{ level: 'error' | 'warning' | 'ok'; message: string }> = []
-
-        const p1Pool = (Array.isArray(missions) ? missions : []).filter(m =>
-          m.priority === 1 && m.date === todayStr && !SYNTHETIC_TYPES.includes(m.type) && !m.archived &&
-          !Object.values(plans).some(plan => plan.some(pm => pm.id === m.id))
-        )
-        checks.push(p1Pool.length > 0
-          ? { level: 'error', message: `${p1Pool.length} mission${p1Pool.length > 1 ? 's' : ''} P1 non assignée${p1Pool.length > 1 ? 's' : ''}` }
-          : { level: 'ok', message: 'Toutes les missions P1 sont assignées' })
-
-        const driversEmpty = (Array.isArray(drivers) ? drivers : []).filter(d =>
-          !d.archived && !isUnavailable(d.id, todayStr) &&
-          (plans[`${d.id}|${todayStr}`] || []).filter(m => !m.isSynthetic).length === 0
-        )
-        checks.push(driversEmpty.length > 0
-          ? { level: 'warning', message: `${driversEmpty.length} ${driversEmpty.length > 1 ? vocab.drivers.toLowerCase() : vocab.driver.toLowerCase()} disponible${driversEmpty.length > 1 ? 's' : ''} sans tournée` }
-          : { level: 'ok', message: `Tous les ${vocab.drivers.toLowerCase()} disponibles ont une tournée` })
-
-        const legalErrors = Object.entries(calcResults).filter(([, r]) => r?.warnings.some(w => w.severity === 'error'))
-        checks.push(legalErrors.length > 0
-          ? { level: 'error', message: `${legalErrors.length} ${legalErrors.length > 1 ? vocab.drivers.toLowerCase() : vocab.driver.toLowerCase()} avec violation${legalErrors.length > 1 ? 's' : ''} légale${legalErrors.length > 1 ? 's' : ''}` }
-          : { level: 'ok', message: 'Aucune violation légale CE 561/2006' })
-
-        const noGps = (Array.isArray(missions) ? missions : []).filter(m =>
-          m.latitude === 0 && m.longitude === 0 && !SYNTHETIC_TYPES.includes(m.type) && !m.archived && m.date === todayStr
-        )
-        checks.push(noGps.length > 0
-          ? { level: 'warning', message: `${noGps.length} mission${noGps.length > 1 ? 's' : ''} sans coordonnées GPS` }
-          : { level: 'ok', message: 'Toutes les missions ont des coordonnées GPS' })
-
-        const poolCount = (Array.isArray(missions) ? missions : []).filter(m =>
-          !SYNTHETIC_TYPES.includes(m.type) && !m.archived && m.date === todayStr &&
-          !Object.values(plans).some(plan => plan.some(pm => pm.id === m.id))
-        ).length
-        checks.push(poolCount > 0
-          ? { level: 'warning', message: `${poolCount} mission${poolCount > 1 ? 's' : ''} encore dans le pool (non assignée${poolCount > 1 ? 's' : ''})` }
-          : { level: 'ok', message: 'Toutes les missions du jour sont assignées' })
-
-        const hasErrors = checks.some(c => c.level === 'error')
-        const hasWarnings = checks.some(c => c.level === 'warning')
-
-        return (
-          <div className="fixed inset-0 bg-surface-900/30 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowValidation(false)}>
-            <div role="dialog" aria-modal="true" aria-label="Vérification du planning" className="bg-white border border-surface-200 rounded-2xl w-full max-w-md overflow-hidden shadow-modal" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100">
-                <h2 className="text-surface-900 font-semibold text-base">
-                  Validation — {displayShort(todayStr)}
-                </h2>
-                <button type="button" onClick={() => setShowValidation(false)} title="Fermer" className="text-surface-400 hover:text-surface-600 w-8 h-8 flex items-center justify-center hover:bg-surface-100 rounded-lg transition-colors">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10 4L4 10M4 4l6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                </button>
-              </div>
-              <div className="px-6 py-4 space-y-2">
-                {checks.map((c, i) => (
-                  <div key={i} className={`flex items-center gap-2.5 text-xs px-3 py-2.5 rounded-lg border
-                    ${c.level === 'error' ? 'bg-red-50 text-red-700 border-red-200'
-                    : c.level === 'warning' ? 'bg-amber-50 text-amber-700 border-amber-200'
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                    <span className={`flex-shrink-0 w-2 h-2 rounded-full ${c.level === 'error' ? 'bg-red-500' : c.level === 'warning' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                    <span>{c.message}</span>
-                  </div>
-                ))}
-              </div>
-              <div className={`px-6 py-3 border-t border-surface-100 text-center text-xs font-semibold
-                ${hasErrors ? 'text-red-600' : hasWarnings ? 'text-amber-600' : 'text-emerald-600'}`}>
-                {hasErrors ? 'Le planning nécessite des corrections' : hasWarnings ? 'Le planning est pret avec quelques avertissements' : 'Le planning est parfait !'}
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-
-      </div>{}
-
-      {}
-      <nav className="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-surface-200 z-40 items-center justify-around px-1 py-1.5 safe-area-bottom">
-        {[
-          { id: 'dashboard' as AppTab, icon: '⬡', label: 'Accueil' },
-          { id: 'missions' as AppTab, icon: '📋', label: 'Missions' },
-          { id: 'tours' as AppTab, icon: '🗺', label: 'Tournées' },
-          { id: 'stats' as AppTab, icon: '📊', label: 'Stats' },
-          { id: 'catalogue' as AppTab, icon: '📦', label: 'Catalogue' },
-        ].map(tab => (
-          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-medium transition-colors min-w-[56px]
-              ${activeTab === tab.id ? 'text-brand-500' : 'text-surface-400'}`}>
-            <span className="text-lg leading-none">{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-    </main>
+        </nav>
+      </main>
     </>
   )
 }

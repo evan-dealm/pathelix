@@ -18,10 +18,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // from signing out a session opened since.
       await unscopedPrisma.portalUser.updateMany({
         where: { id: session.sub, tenantId: session.tenantId, sessionVersion: session.sv },
-        data:  { sessionVersion: { increment: 1 } },
+        data: { sessionVersion: { increment: 1 } },
       })
     } catch (err) {
-      log.warn('Portal session revocation failed at logout', { err: err instanceof Error ? err.message : String(err) })
+      log.warn('Portal session revocation failed at logout', {
+        err: err instanceof Error ? err.message : String(err),
+      })
     }
   }
   const res = NextResponse.json({ ok: true })

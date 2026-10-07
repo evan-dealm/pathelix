@@ -1,7 +1,6 @@
 import { Page, expect } from '@playwright/test'
 
 export async function login(page: Page, email = 'admin@excoffier.fr', password = 'Excoffier2026!') {
-
   const cookies = await page.context().cookies()
   const hasSession = cookies.some(c => c.name === 'session')
 
@@ -76,7 +75,9 @@ export async function navigateToTab(page: Page, tabName: string) {
 
   const label = labelMap[key] || tabName
 
-  const tab = page.locator(`nav[aria-label="Navigation principale"] button[title="${label}"]`).first()
+  const tab = page
+    .locator(`nav[aria-label="Navigation principale"] button[title="${label}"]`)
+    .first()
   // `:visible` matters on mobile: the sidebar button is still in the DOM (hidden) and comes
   // first, while the one a user can tap is in the bottom navigation bar.
   const fallback = page.locator(`nav button:has-text("${label}"):visible`).first()
@@ -114,7 +115,12 @@ export async function navigateToTab(page: Page, tabName: string) {
     } else {
       break
     }
-    if (await targetPanel.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false)) {
+    if (
+      await targetPanel
+        .waitFor({ state: 'visible', timeout: 20_000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
       landed = true
       break
     }
@@ -132,27 +138,40 @@ export async function navigateToTab(page: Page, tabName: string) {
   // the tab switch itself never landing (found via e2e investigation: the previous silent
   // fallthrough masked this exact failure mode behind an unrelated-looking timeout downstream).
   if (!landed) {
-    throw new Error(`navigateToTab('${tabName}'): #tabpanel-${key} never became visible after 3 click attempts`)
+    throw new Error(
+      `navigateToTab('${tabName}'): #tabpanel-${key} never became visible after 3 click attempts`,
+    )
   }
 }
 
 export async function waitForAdminReady(page: Page) {
   // Nav bar timeout kept short so beforeEach + test body stays within the 120s global limit.
-  const navReady = await page.locator('nav[aria-label="Navigation principale"]').waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false)
+  const navReady = await page
+    .locator('nav[aria-label="Navigation principale"]')
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
   if (!navReady) {
     await page.goto('/admin', { waitUntil: 'domcontentloaded' }).catch(() => {})
-    await page.locator('nav[aria-label="Navigation principale"]').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {})
+    await page
+      .locator('nav[aria-label="Navigation principale"]')
+      .waitFor({ state: 'visible', timeout: 15_000 })
+      .catch(() => {})
   }
   // DashboardTab (and all admin tabs) are dynamic imports — DynamicLoading skeleton has no text.
-  await page.waitForFunction(
-    () => (document.querySelector('#tabpanel-dashboard')?.textContent ?? '').trim().length > 10,
-    { timeout: 8_000 },
-  ).catch(() => {})
+  await page
+    .waitForFunction(
+      () => (document.querySelector('#tabpanel-dashboard')?.textContent ?? '').trim().length > 10,
+      { timeout: 8_000 },
+    )
+    .catch(() => {})
   await page.waitForTimeout(300)
 }
 
 export async function closeModal(page: Page) {
-  const closeBtn = page.locator('button:has-text("Annuler"), button:has-text("Fermer"), [aria-label="Fermer"]').first()
+  const closeBtn = page
+    .locator('button:has-text("Annuler"), button:has-text("Fermer"), [aria-label="Fermer"]')
+    .first()
   if (await closeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
     await closeBtn.click()
     await page.waitForTimeout(300)

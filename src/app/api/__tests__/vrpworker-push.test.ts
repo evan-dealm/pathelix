@@ -4,15 +4,15 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockFindUnique  = vi.hoisted(() => vi.fn())
-const mockFindMany    = vi.hoisted(() => vi.fn())
-const mockBroadcast   = vi.hoisted(() => vi.fn())
-const mockGetRedis    = vi.hoisted(() => vi.fn())
-const mockRedisGet    = vi.hoisted(() => vi.fn())
-const mockRedisSetex  = vi.hoisted(() => vi.fn())
+const mockFindUnique = vi.hoisted(() => vi.fn())
+const mockFindMany = vi.hoisted(() => vi.fn())
+const mockBroadcast = vi.hoisted(() => vi.fn())
+const mockGetRedis = vi.hoisted(() => vi.fn())
+const mockRedisGet = vi.hoisted(() => vi.fn())
+const mockRedisSetex = vi.hoisted(() => vi.fn())
 
 const mockRedis = vi.hoisted(() => ({
-  get:   mockRedisGet,
+  get: mockRedisGet,
   setex: mockRedisSetex,
 }))
 
@@ -37,21 +37,44 @@ vi.mock('@/lib/permissions', () => ({
 }))
 
 vi.mock('@/lib/data/drivers', () => ({
-  getAllDrivers: vi.fn(() => Promise.resolve([
-    { id: 'd-1', firstName: 'A', lastName: 'B', sector: 'S1', depotName: 'D', depotLat: 45.0, depotLng: 5.0, archived: false },
-  ])),
+  getAllDrivers: vi.fn(() =>
+    Promise.resolve([
+      {
+        id: 'd-1',
+        firstName: 'A',
+        lastName: 'B',
+        sector: 'S1',
+        depotName: 'D',
+        depotLat: 45.0,
+        depotLng: 5.0,
+        archived: false,
+      },
+    ]),
+  ),
 }))
 
 vi.mock('@/lib/data/missions', () => ({
-  getMissionsByDate: vi.fn(() => Promise.resolve([
-    { id: 'm-1', type: 'POSER', date: '2026-01-06', address: 'x', latitude: 48.86, longitude: 2.33, estimatedDurationMin: 30, maneuverTimeMin: 15, archived: false, needsGeocode: false },
-  ])),
+  getMissionsByDate: vi.fn(() =>
+    Promise.resolve([
+      {
+        id: 'm-1',
+        type: 'POSER',
+        date: '2026-01-06',
+        address: 'x',
+        latitude: 48.86,
+        longitude: 2.33,
+        estimatedDurationMin: 30,
+        maneuverTimeMin: 15,
+        archived: false,
+        needsGeocode: false,
+      },
+    ]),
+  ),
 }))
 
 vi.mock('@/lib/data/exutoires', () => ({
   getAllExutoires: vi.fn(() => Promise.resolve([])),
 }))
-
 
 vi.mock('@/lib/loadShedder', () => ({
   loadShedder: { acquire: vi.fn(() => 'ok'), release: vi.fn() },
@@ -88,12 +111,14 @@ vi.mock('@/lib/queue/vrpQueue', () => ({
 }))
 
 vi.mock('@/lib/vrp/index', () => ({
-  runVRP: vi.fn(() => Promise.resolve({
-    assignments: { 'd-1': [] },
-    unassignedMissions: [],
-    stats: { assignedMissions: 1, totalMissions: 1, score: 85, timeTakenMs: 300 },
-    warnings: [],
-  })),
+  runVRP: vi.fn(() =>
+    Promise.resolve({
+      assignments: { 'd-1': [] },
+      unassignedMissions: [],
+      stats: { assignedMissions: 1, totalMissions: 1, score: 85, timeTakenMs: 300 },
+      warnings: [],
+    }),
+  ),
 }))
 
 import { POST } from '@/app/api/optimize/route'
@@ -156,11 +181,7 @@ describe('Push notifications after VRP optimization', () => {
     mockFindUnique.mockResolvedValue({ notificationsEnabled: true })
     await POST(makeRequest({ date: '2026-01-06' }))
     await new Promise(resolve => setTimeout(resolve, 10))
-    expect(mockRedisSetex).toHaveBeenCalledWith(
-      expect.stringContaining('push:throttle:'),
-      120,
-      '1',
-    )
+    expect(mockRedisSetex).toHaveBeenCalledWith(expect.stringContaining('push:throttle:'), 120, '1')
   })
 
   it('Redis down: still sends push (no throttle)', async () => {

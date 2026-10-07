@@ -6,10 +6,12 @@ test.describe('Users Tab', () => {
     await login(page)
     await waitForAdminReady(page)
     await navigateToTab(page, 'users')
-    await page.waitForFunction(
-      () => (document.querySelector('[role="tabpanel"]')?.textContent ?? '').trim().length > 5,
-      { timeout: 30_000 },
-    ).catch(() => {})
+    await page
+      .waitForFunction(
+        () => (document.querySelector('[role="tabpanel"]')?.textContent ?? '').trim().length > 5,
+        { timeout: 30_000 },
+      )
+      .catch(() => {})
     await page.waitForTimeout(300)
   })
 
@@ -56,11 +58,16 @@ test.describe('Users Tab', () => {
     await page.waitForTimeout(500)
     const modal = page.locator('[role="dialog"]').first()
     await expect(modal).toBeVisible({ timeout: 10_000 })
-    const saveBtn = modal.locator('button:has-text("Créer"), button:has-text("Créer"), button[type="submit"]').first()
+    const saveBtn = modal
+      .locator('button:has-text("Créer"), button:has-text("Créer"), button[type="submit"]')
+      .first()
     await expect(saveBtn).toBeVisible({ timeout: 5_000 })
     await saveBtn.click()
     await page.waitForTimeout(300)
-    const error = modal.locator('p, [role="alert"], [class*="red"]').filter({ hasText: /obligatoire|requis|required/i }).first()
+    const error = modal
+      .locator('p, [role="alert"], [class*="red"]')
+      .filter({ hasText: /obligatoire|requis|required/i })
+      .first()
     await expect(error).toBeVisible({ timeout: 5_000 })
     await closeModal(page)
   })
@@ -113,7 +120,9 @@ test.describe('Users Tab', () => {
     await expect(editBtn).toBeVisible({ timeout: 5_000 })
     await editBtn.click()
     await page.waitForTimeout(500)
-    const emailInput = page.locator('[role="dialog"] input[placeholder="email@exemple.com"]').first()
+    const emailInput = page
+      .locator('[role="dialog"] input[placeholder="email@exemple.com"]')
+      .first()
     await expect(emailInput).toBeVisible({ timeout: 5_000 })
     const val = await emailInput.inputValue()
     expect(val.length).toBeGreaterThan(0)
@@ -125,7 +134,10 @@ test.describe('Users Tab', () => {
     await expect(editBtn).toBeVisible({ timeout: 5_000 })
     await editBtn.click()
     await page.waitForTimeout(500)
-    const resetSection = page.locator('[role="dialog"]').getByText(/r[ée]initialiser le mot de passe/i).first()
+    const resetSection = page
+      .locator('[role="dialog"]')
+      .getByText(/r[ée]initialiser le mot de passe/i)
+      .first()
     await expect(resetSection).toBeVisible({ timeout: 10_000 })
     await closeModal(page)
   })

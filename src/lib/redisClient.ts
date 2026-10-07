@@ -6,21 +6,20 @@ export function getRedisConfig() {
   const url = process.env.REDIS_URL
   if (url) return url
   return {
-    host:     process.env.REDIS_HOST     ?? 'localhost',
-    port:     parseInt(process.env.REDIS_PORT ?? '6379', 10) || 6379,
+    host: process.env.REDIS_HOST ?? 'localhost',
+    port: parseInt(process.env.REDIS_PORT ?? '6379', 10) || 6379,
     password: process.env.REDIS_PASSWORD ?? undefined,
     username: process.env.REDIS_USERNAME ?? undefined,
-    db:       parseInt(process.env.REDIS_DB ?? '0', 10) || 0,
+    db: parseInt(process.env.REDIS_DB ?? '0', 10) || 0,
   }
 }
 
-export const REDIS_AVAILABLE = Boolean(
-  process.env.REDIS_URL || process.env.REDIS_HOST,
-) && process.env.REDIS_DISABLED !== 'true'
+export const REDIS_AVAILABLE =
+  Boolean(process.env.REDIS_URL || process.env.REDIS_HOST) && process.env.REDIS_DISABLED !== 'true'
 
 let _client: import('ioredis').Redis | null = null
 let _connecting = false
-let _failed     = false
+let _failed = false
 let _retryTimer: ReturnType<typeof setTimeout> | null = null
 
 function scheduleRetry(attemptNum: number): void {
@@ -31,9 +30,7 @@ function scheduleRetry(attemptNum: number): void {
     _retryTimer = null
     _failed = false
 
-    getRedisClient().catch(() => {
-
-    })
+    getRedisClient().catch(() => {})
   }, delay)
 }
 
@@ -43,7 +40,10 @@ const HEALTH_INTERVAL_MS = 5_000
 let _healthTimer: ReturnType<typeof setInterval> | null = null
 
 function stopHealthCheck(): void {
-  if (_healthTimer) { clearInterval(_healthTimer); _healthTimer = null }
+  if (_healthTimer) {
+    clearInterval(_healthTimer)
+    _healthTimer = null
+  }
 }
 
 /**
@@ -55,8 +55,12 @@ function markUnavailable(reason: string): void {
   _client = null
   _failed = true
   stopHealthCheck()
-  try { dead?.disconnect() } catch { /* already closed */ }
-  log.warn('Redis injoignable — mode dégradé jusqu\'à la prochaine reconnexion', { reason })
+  try {
+    dead?.disconnect()
+  } catch {
+    /* already closed */
+  }
+  log.warn("Redis injoignable — mode dégradé jusqu'à la prochaine reconnexion", { reason })
   scheduleRetry(_retryAttempt++)
 }
 
@@ -81,19 +85,19 @@ function startHealthCheck(client: import('ioredis').Redis): void {
 
 export async function getRedisClient(): Promise<import('ioredis').Redis | null> {
   if (!REDIS_AVAILABLE) return null
-  if (_failed)          return null
-  if (_client)          return _client
-  if (_connecting)      return null
+  if (_failed) return null
+  if (_client) return _client
+  if (_connecting) return null
 
   _connecting = true
   try {
     const { default: Redis } = await import('ioredis')
     const extraOpts = {
-      lazyConnect:          true,
-      enableReadyCheck:     false,
+      lazyConnect: true,
+      enableReadyCheck: false,
       maxRetriesPerRequest: 1,
-      connectTimeout:       3_000,
-      commandTimeout:       2_000,
+      connectTimeout: 3_000,
+      commandTimeout: 2_000,
       retryStrategy(times: number): number | null {
         if (times > 3) {
           log.warn('Redis indisponible après 3 tentatives — retry avec backoff')
@@ -109,16 +113,15 @@ export async function getRedisClient(): Promise<import('ioredis').Redis | null> 
     _client = process.env.REDIS_URL
       ? new Redis(process.env.REDIS_URL, extraOpts)
       : new Redis({
-          host:     process.env.REDIS_HOST     ?? 'localhost',
-          port:     parseInt(process.env.REDIS_PORT ?? '6379', 10),
+          host: process.env.REDIS_HOST ?? 'localhost',
+          port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
           password: process.env.REDIS_PASSWORD ?? undefined,
           username: process.env.REDIS_USERNAME ?? undefined,
-          db:       parseInt(process.env.REDIS_DB ?? '0', 10),
+          db: parseInt(process.env.REDIS_DB ?? '0', 10),
           ...extraOpts,
         })
 
     _client.on('error', (err: Error) => {
-
       if (!_failed) log.warn('Erreur Redis', { err: err.message })
     })
 
@@ -143,8 +146,8 @@ export async function getRedisClient(): Promise<import('ioredis').Redis | null> 
 export function resetRedisClient(): void {
   stopHealthCheck()
   _client?.disconnect()
-  _client    = null
-  _failed    = false
+  _client = null
+  _failed = false
   _connecting = false
   _retryAttempt = 0
   if (_retryTimer) {

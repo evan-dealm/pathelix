@@ -10,12 +10,20 @@ import type { Mission, Driver, Exutoire, PlannedMission, OptimizationResult } fr
 import type { VRPSolution, CostContext } from './types'
 import { cachedDist } from './distanceCache'
 import { isHfvrpCompatible } from './hfvrp'
-import { isAllerRetourCompatible, simulateRouteTrace, type RouteTrace, type TraceEvent } from './routeCost'
+import {
+  isAllerRetourCompatible,
+  simulateRouteTrace,
+  type RouteTrace,
+  type TraceEvent,
+} from './routeCost'
 import { getFamiliarityBonus } from '@/lib/familiarityLoader'
 import { realDistanceKm } from './realDistance'
 import { loadIssueAlone } from './vehicleLoad'
 
-const _routeWorkCache = new WeakMap<{ missions: Mission[] }, { work: number; travel: number; len: number }>()
+const _routeWorkCache = new WeakMap<
+  { missions: Mission[] },
+  { work: number; travel: number; len: number }
+>()
 
 function insertionCost(
   route: { missions: Mission[] },
@@ -42,8 +50,24 @@ function insertionCost(
 
   const distBefore = realDistanceKm(ctx, prevId, prevLat, prevLng, nextId, nextLat, nextLng)
 
-  const distToMission   = realDistanceKm(ctx, prevId, prevLat, prevLng, mission.id, mission.latitude, mission.longitude)
-  const distFromMission = realDistanceKm(ctx, mission.id, mission.latitude, mission.longitude, nextId, nextLat, nextLng)
+  const distToMission = realDistanceKm(
+    ctx,
+    prevId,
+    prevLat,
+    prevLng,
+    mission.id,
+    mission.latitude,
+    mission.longitude,
+  )
+  const distFromMission = realDistanceKm(
+    ctx,
+    mission.id,
+    mission.latitude,
+    mission.longitude,
+    nextId,
+    nextLat,
+    nextLng,
+  )
 
   const distDelta = distToMission + distFromMission - distBefore
 
@@ -53,10 +77,13 @@ function insertionCost(
   let routeTravel: number
   const cachedEntry = _routeWorkCache.get(route)
   if (cachedEntry && cachedEntry.len === missions.length) {
-    routeWork   = cachedEntry.work
+    routeWork = cachedEntry.work
     routeTravel = cachedEntry.travel
   } else {
-    routeWork = missions.reduce((sum, m) => sum + (m.estimatedDurationMin ?? 0) + (m.maneuverTimeMin ?? 0), 0)
+    routeWork = missions.reduce(
+      (sum, m) => sum + (m.estimatedDurationMin ?? 0) + (m.maneuverTimeMin ?? 0),
+      0,
+    )
     routeTravel = missions.reduce((sum, m, i) => {
       const pLat = i > 0 ? missions[i - 1].latitude : driver.depotLat
       const pLng = i > 0 ? missions[i - 1].longitude : driver.depotLng
@@ -70,12 +97,14 @@ function insertionCost(
   const balanceActive = (ctx.weights?.balance ?? 0.3) > 0.5
   const satMultiplier = balanceActive ? 5 : 1
   const workRatio = totalWork / MAX_WORK_MIN
-  const saturationPenalty = (
-    workRatio > 0.80 ? (workRatio - 0.80) * 300 * satMultiplier
-    : workRatio > 0.50 ? (workRatio - 0.50) * 50 * satMultiplier
-    : workRatio > 0.30 && balanceActive ? (workRatio - 0.30) * 30
-    : 0
-  )
+  const saturationPenalty =
+    workRatio > 0.8
+      ? (workRatio - 0.8) * 300 * satMultiplier
+      : workRatio > 0.5
+        ? (workRatio - 0.5) * 50 * satMultiplier
+        : workRatio > 0.3 && balanceActive
+          ? (workRatio - 0.3) * 30
+          : 0
 
   const missionCountPenalty = balanceActive ? missions.length * missions.length * 2 : 0
 
@@ -107,16 +136,16 @@ function insertionCost(
   if (mission.dependsOnId) {
     const depIdx = missions.findIndex(m => m.id === mission.dependsOnId)
     if (depIdx >= 0 && position <= depIdx) {
-
       return 100000
     }
   }
 
   let wasteClusterBonus = 0
   if (mission.wasteTypeLabel && missions.length > 0) {
-    const sameWasteCount = missions.filter(m =>
-      m.wasteTypeLabel === mission.wasteTypeLabel &&
-      (m.type === 'RETIRER' || m.type === 'ECHANGER' || m.type === 'CHARGER_IMMEDIAT')
+    const sameWasteCount = missions.filter(
+      m =>
+        m.wasteTypeLabel === mission.wasteTypeLabel &&
+        (m.type === 'RETIRER' || m.type === 'ECHANGER' || m.type === 'CHARGER_IMMEDIAT'),
     ).length
 
     wasteClusterBonus = sameWasteCount * -5
@@ -124,15 +153,31 @@ function insertionCost(
 
   let exutoireBonus = 0
   if (mission.linkedExutoireId && missions.length > 0) {
-    const sameExutoire = missions.filter(m => m.linkedExutoireId === mission.linkedExutoireId).length
+    const sameExutoire = missions.filter(
+      m => m.linkedExutoireId === mission.linkedExutoireId,
+    ).length
     exutoireBonus = sameExutoire * -3
   }
 
   const familiarityBonus = getFamiliarityBonus(
-    ctx.familiarity, driver.id, mission.siteId, ctx.weights?.stability ?? 0,
+    ctx.familiarity,
+    driver.id,
+    mission.siteId,
+    ctx.weights?.stability ?? 0,
   )
 
-  return distDelta * 1.5 + timeDelta * 0.5 + overtimePenalty + saturationPenalty + missionCountPenalty + twPenalty + p1Penalty + wasteClusterBonus + exutoireBonus + familiarityBonus
+  return (
+    distDelta * 1.5 +
+    timeDelta * 0.5 +
+    overtimePenalty +
+    saturationPenalty +
+    missionCountPenalty +
+    twPenalty +
+    p1Penalty +
+    wasteClusterBonus +
+    exutoireBonus +
+    familiarityBonus
+  )
 }
 
 export function buildInitialSolution(
@@ -175,8 +220,8 @@ export function buildInitialSolution(
     const pb = b.priority ?? 4
     if (pa !== pb) return pa - pb
 
-    const twWidthA = a.timeWindow ? (a.timeWindow.closeMin - a.timeWindow.openMin) : 1440
-    const twWidthB = b.timeWindow ? (b.timeWindow.closeMin - b.timeWindow.openMin) : 1440
+    const twWidthA = a.timeWindow ? a.timeWindow.closeMin - a.timeWindow.openMin : 1440
+    const twWidthB = b.timeWindow ? b.timeWindow.closeMin - b.timeWindow.openMin : 1440
     if (twWidthA !== twWidthB) return twWidthA - twWidthB
 
     const twCloseA = a.timeWindow?.closeMin ?? 1440
@@ -188,7 +233,6 @@ export function buildInitialSolution(
   const missionMap = new Map(missions.map(m => [m.id, m]))
 
   while (remaining.size > 0) {
-
     let bestRegretMissionId = ''
     let bestRegret = -Infinity
     let bestInsertRouteIdx = 0
@@ -217,11 +261,13 @@ export function buildInitialSolution(
       }
 
       if (insertions.length === 0) {
-
         let fallbackIdx = -1
         for (let ri = 0; ri < routes.length; ri++) {
           if (!isAllerRetourCompatible(routes[ri].missions, mission.type)) continue
-          if (fallbackIdx === -1 || routes[ri].missions.length < routes[fallbackIdx].missions.length) {
+          if (
+            fallbackIdx === -1 ||
+            routes[ri].missions.length < routes[fallbackIdx].missions.length
+          ) {
             fallbackIdx = ri
           }
         }
@@ -243,7 +289,10 @@ export function buildInitialSolution(
 
       const effectiveRegret = regret + priorityBonus
 
-      if (effectiveRegret > bestRegret || (effectiveRegret === bestRegret && best1.cost < bestInsertCost)) {
+      if (
+        effectiveRegret > bestRegret ||
+        (effectiveRegret === bestRegret && best1.cost < bestInsertCost)
+      ) {
         bestRegret = effectiveRegret
         bestRegretMissionId = mId
         bestInsertRouteIdx = best1.routeIdx
@@ -263,11 +312,11 @@ export function buildInitialSolution(
 }
 
 const BREAK_LABEL: Record<NonNullable<PlannedMission['breakKind']>, string> = {
-  FULL:         'Pause réglementaire',
-  SPLIT_FIRST:  'Pause réglementaire (1re partie)',
+  FULL: 'Pause réglementaire',
+  SPLIT_FIRST: 'Pause réglementaire (1re partie)',
   SPLIT_SECOND: 'Pause réglementaire (2e partie)',
-  WORK:         'Pause (temps de travail)',
-  LUNCH:        'Pause déjeuner',
+  WORK: 'Pause (temps de travail)',
+  LUNCH: 'Pause déjeuner',
 }
 
 /** Plan steps of one simulated route: missions, exutoire trips, breaks — in driving order. */
@@ -282,20 +331,21 @@ function traceToPlannedSteps(trace: RouteTrace, date: string): PlannedMission[] 
     for (const b of pendingBreaks) {
       const offset = b.legOffsetMin < 0 ? legTravelMin : Math.min(legTravelMin, b.legOffsetMin)
       const kind = b.breakKind
-      const label = b.reason === 'WAIT' ? `${BREAK_LABEL[kind]} pendant l'attente` : BREAK_LABEL[kind]
+      const label =
+        b.reason === 'WAIT' ? `${BREAK_LABEL[kind]} pendant l'attente` : BREAK_LABEL[kind]
       planned.push({
-        id:                   `_pause_${trace.driverId}_${seq}`,
-        type:                 'PAUSE',
+        id: `_pause_${trace.driverId}_${seq}`,
+        type: 'PAUSE',
         date,
-        address:              `${label} (${Math.round(b.durationMin)} min)`,
-        latitude:             b.lat,
-        longitude:            b.lng,
+        address: `${label} (${Math.round(b.durationMin)} min)`,
+        latitude: b.lat,
+        longitude: b.lng,
         estimatedDurationMin: b.durationMin,
-        maneuverTimeMin:      0,
-        sequenceOrder:        seq++,
-        isSynthetic:          true,
+        maneuverTimeMin: 0,
+        sequenceOrder: seq++,
+        isSynthetic: true,
         precomputedTravelMin: Math.max(0, offset - driven),
-        breakKind:            kind,
+        breakKind: kind,
       })
       driven = Math.max(driven, offset)
     }
@@ -312,7 +362,7 @@ function traceToPlannedSteps(trace: RouteTrace, date: string): PlannedMission[] 
         const driven = flushBreaks(ev.travelMin)
         planned.push({
           ...ev.mission,
-          sequenceOrder:        seq++,
+          sequenceOrder: seq++,
           precomputedTravelMin: Math.max(0, ev.travelMin - driven),
           ...(ev.loadKg > 0 ? { plannedLoadKg: Math.round(ev.loadKg) } : {}),
         })
@@ -321,22 +371,24 @@ function traceToPlannedSteps(trace: RouteTrace, date: string): PlannedMission[] 
       case 'exutoire': {
         const driven = flushBreaks(ev.travelMin)
         const ex = ev.exutoire
-        const id = ev.allerRetour ? `_vider_ar_${ex.id}_${ev.forMissionId}`
-          : ev.beforePickup ? `_vider_pre_${ex.id}_${ev.forMissionId}`
-          : `_vider_${ex.id}_${ev.forMissionId}`
+        const id = ev.allerRetour
+          ? `_vider_ar_${ex.id}_${ev.forMissionId}`
+          : ev.beforePickup
+            ? `_vider_pre_${ex.id}_${ev.forMissionId}`
+            : `_vider_${ex.id}_${ev.forMissionId}`
         planned.push({
           id,
-          type:                 'VIDER',
+          type: 'VIDER',
           date,
-          clientName:           ex.name,
-          address:              ex.address,
-          latitude:             ex.lat,
-          longitude:            ex.lng,
+          clientName: ex.name,
+          address: ex.address,
+          latitude: ex.lat,
+          longitude: ex.lng,
           estimatedDurationMin: ex.serviceTimeMin,
-          maneuverTimeMin:      0,
-          linkedExutoireId:     ex.id,
-          sequenceOrder:        seq++,
-          isSynthetic:          true,
+          maneuverTimeMin: 0,
+          linkedExutoireId: ex.id,
+          sequenceOrder: seq++,
+          isSynthetic: true,
           precomputedTravelMin: Math.max(0, ev.travelMin - driven),
         })
         break
@@ -345,18 +397,18 @@ function traceToPlannedSteps(trace: RouteTrace, date: string): PlannedMission[] 
         const driven = flushBreaks(ev.travelMin)
         const m = ev.mission
         planned.push({
-          id:                   `_pose_ar_${m.id}`,
-          type:                 'POSER',
+          id: `_pose_ar_${m.id}`,
+          type: 'POSER',
           date,
-          clientName:           m.clientName,
-          address:              m.address,
-          latitude:             m.latitude,
-          longitude:            m.longitude,
+          clientName: m.clientName,
+          address: m.address,
+          latitude: m.latitude,
+          longitude: m.longitude,
           estimatedDurationMin: ev.departureMin - ev.arrivalMin,
-          maneuverTimeMin:      0,
-          accessNotes:          m.accessNotes,
-          sequenceOrder:        seq++,
-          isSynthetic:          true,
+          maneuverTimeMin: 0,
+          accessNotes: m.accessNotes,
+          sequenceOrder: seq++,
+          isSynthetic: true,
           precomputedTravelMin: Math.max(0, ev.travelMin - driven),
         })
         break
@@ -371,13 +423,20 @@ function traceToPlannedSteps(trace: RouteTrace, date: string): PlannedMission[] 
 }
 
 /** Field-readable warnings for one route, from the violations its simulation recorded. */
-function traceWarnings(trace: RouteTrace, ctx: CostContext, maxWorkMin: number): OptimizationResult['warnings'] {
+function traceWarnings(
+  trace: RouteTrace,
+  ctx: CostContext,
+  maxWorkMin: number,
+): OptimizationResult['warnings'] {
   const out: OptimizationResult['warnings'] = []
   const missionEv = new Map<string, Extract<TraceEvent, { kind: 'mission' }>>()
   const exById = new Map<string, Exutoire>()
   const missionById = new Map<string, Mission>()
   for (const ev of trace.events) {
-    if (ev.kind === 'mission') { missionEv.set(ev.mission.id, ev); missionById.set(ev.mission.id, ev.mission) }
+    if (ev.kind === 'mission') {
+      missionEv.set(ev.mission.id, ev)
+      missionById.set(ev.mission.id, ev.mission)
+    }
     if (ev.kind === 'exutoire') exById.set(ev.exutoire.id, ev.exutoire)
   }
   const startMin = ctx.driverStartOverrides?.get(trace.driverId)?.timeMin ?? ctx.startTimeMin
@@ -391,39 +450,62 @@ function traceWarnings(trace: RouteTrace, ctx: CostContext, maxWorkMin: number):
   for (const v of trace.violations) {
     const ev = v.missionId ? missionEv.get(v.missionId) : undefined
     const m = v.missionId ? missionById.get(v.missionId) : undefined
-    const label = m ? (m.clientName || m.address) : (v.missionId ?? '')
+    const label = m ? m.clientName || m.address : (v.missionId ?? '')
     switch (v.code) {
       case 'TIME_WINDOW':
-        if (ev && m?.timeWindow) push(`${label} (${m.address}) : arrivée à ${minToHHMM(ev.startMin)}, après la fin du créneau (${minToHHMM(m.timeWindow.closeMin)})`, 'warning')
+        if (ev && m?.timeWindow)
+          push(
+            `${label} (${m.address}) : arrivée à ${minToHHMM(ev.startMin)}, après la fin du créneau (${minToHHMM(m.timeWindow.closeMin)})`,
+            'warning',
+          )
         break
       case 'P1_LATE':
         // A slot the customer asked for after the urgent deadline is not a late urgent mission.
         if (ev && m && !(m.timeWindow && m.timeWindow.openMin >= p1Deadline)) {
-          push(`Urgence ${label} (${m.address}) servie à ${minToHHMM(ev.startMin)}, après ${minToHHMM(p1Deadline)}`, 'error')
+          push(
+            `Urgence ${label} (${m.address}) servie à ${minToHHMM(ev.startMin)}, après ${minToHHMM(p1Deadline)}`,
+            'error',
+          )
         }
         break
       case 'EXUTOIRE_CLOSED': {
         const ex = v.exutoireId ? exById.get(v.exutoireId) : undefined
-        if (ex) push(`Exutoire "${ex.name}" : arrivée hors horaires${v.amount ? ` (${Math.round(v.amount)} min après la fermeture)` : ''}`, 'warning')
+        if (ex)
+          push(
+            `Exutoire "${ex.name}" : arrivée hors horaires${v.amount ? ` (${Math.round(v.amount)} min après la fermeture)` : ''}`,
+            'warning',
+          )
         break
       }
       case 'NO_EXUTOIRE':
         push(`Mission "${label}" : aucun exutoire ouvert n'accepte ce déchet ce jour-là`, 'warning')
         break
       case 'WORK_TIME':
-        push(`Durée de travail totale dépasse ${Math.round(maxWorkMin / 60)}h (${Math.round(trace.totals.workMin)} min)`, 'error')
+        push(
+          `Durée de travail totale dépasse ${Math.round(maxWorkMin / 60)}h (${Math.round(trace.totals.workMin)} min)`,
+          'error',
+        )
         break
       case 'DAILY_DRIVING':
-        push(`Durée de conduite dépasse 9h (${Math.round(trace.totals.drivingMin)} min) — CE 561/2006`, 'error')
+        push(
+          `Durée de conduite dépasse 9h (${Math.round(trace.totals.drivingMin)} min) — CE 561/2006`,
+          'error',
+        )
         break
       case 'DEPENDENCY':
         push(`Mission "${label}" planifiée avant la mission dont elle dépend`, 'warning')
         break
       case 'BIN_SIZE':
-        push(`Mission "${label}" : benne ${v.amount ?? ''} m³ trop grande pour le véhicule`, 'error')
+        push(
+          `Mission "${label}" : benne ${v.amount ?? ''} m³ trop grande pour le véhicule`,
+          'error',
+        )
         break
       case 'PAYLOAD':
-        push(`Mission "${label}" : ${Math.round(v.amount ?? 0)} kg dépassent la charge utile du véhicule`, 'error')
+        push(
+          `Mission "${label}" : ${Math.round(v.amount ?? 0)} kg dépassent la charge utile du véhicule`,
+          'error',
+        )
         break
       case 'VOLUME':
         push(`Mission "${label}" : ${v.amount ?? ''} m³ dépassent le volume du véhicule`, 'error')
@@ -453,11 +535,11 @@ export function formatSolutionForAPI(
   const maxWorkMin = ctx.maxWorkMin ?? MAX_WORK_MIN
 
   const assignments: Record<string, PlannedMission[]> = {}
-  const warnings: OptimizationResult['warnings']      = []
+  const warnings: OptimizationResult['warnings'] = []
   const exutoireArrivals = new Map<string, number[]>()
   const assignedIds = new Set<string>()
 
-  const driverScores:    number[] = []
+  const driverScores: number[] = []
   const workMinByDriver: number[] = []
 
   for (const route of solution.routes) {
@@ -479,13 +561,13 @@ export function formatSolutionForAPI(
 
     const t = trace.totals
     const ds = computeDriverScore({
-      workMin:          t.workMin,
-      drivingMin:       t.drivingMin,
-      onSiteMin:        t.onSiteMin,
-      roadDistKm:       t.distanceKm,
-      hasOvertime:      t.workMin > maxWorkMin,
+      workMin: t.workMin,
+      drivingMin: t.drivingMin,
+      onSiteMin: t.onSiteMin,
+      roadDistKm: t.distanceKm,
+      hasOvertime: t.workMin > maxWorkMin,
       hasBreachDriving: t.drivingMin > MAX_DRIVING_MIN,
-      warnings:         routeWarnings.filter(w => w.severity === 'warning').length,
+      warnings: routeWarnings.filter(w => w.severity === 'warning').length,
     })
     driverScores.push(ds.total)
     workMinByDriver.push(t.workMin)
@@ -496,13 +578,16 @@ export function formatSolutionForAPI(
     const sorted = [...arrivals].sort((a, b) => a - b)
     let congestWindow = false
     for (let ci = 0; ci <= sorted.length - 3; ci++) {
-      if (sorted[ci + 2] - sorted[ci] <= 30) { congestWindow = true; break }
+      if (sorted[ci + 2] - sorted[ci] <= 30) {
+        congestWindow = true
+        break
+      }
     }
     if (congestWindow) {
       const ex = exutoires.find(e => e.id === exId)
       warnings.push({
         driverId: '',
-        message:  `Congestion à l'exutoire "${ex?.name ?? exId}" : ${arrivals.length} passages dont 3+ dans une fenêtre de 30 min`,
+        message: `Congestion à l'exutoire "${ex?.name ?? exId}" : ${arrivals.length} passages dont 3+ dans une fenêtre de 30 min`,
         severity: 'warning',
       })
     }
@@ -511,7 +596,7 @@ export function formatSolutionForAPI(
   const allMissions = solution.routes.flatMap(r => r.missions)
   const unassignedMissions = allMissions.filter(m => !assignedIds.has(m.id))
   const assignedCount = assignedIds.size
-  const totalCount    = allMissions.length
+  const totalCount = allMissions.length
 
   const assignmentRatio = totalCount > 0 ? assignedCount / totalCount : 1
   const baseScore = computeDistributionScore(driverScores, workMinByDriver)
@@ -522,10 +607,10 @@ export function formatSolutionForAPI(
     unassignedMissions,
     stats: {
       assignedMissions: assignedCount,
-      totalMissions:    totalCount,
+      totalMissions: totalCount,
       score,
-      globalScore:      score,
-      timeTakenMs:      0,
+      globalScore: score,
+      timeTakenMs: 0,
     },
     warnings,
   }

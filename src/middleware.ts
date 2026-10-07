@@ -17,7 +17,9 @@ const GLOBAL_RL_WINDOW = 60_000
 // without Redis, per process as before.
 /** Body size accepted by ordinary JSON routes; larger bodies only on LARGE_BODY_PATHS. */
 const SMALL_BODY_BYTES = 100 * 1024
-const LARGE_BODY_PATHS = new RegExp('^/api/(?:plans|import|driver-photos|delivery-proof|documents|ai/ocr|optimize|weekly-plan|settings|webhooks/|portal/requests)(?:/|$)')
+const LARGE_BODY_PATHS = new RegExp(
+  '^/api/(?:plans|import|driver-photos|delivery-proof|documents|ai/ocr|optimize|weekly-plan|settings|webhooks/|portal/requests)(?:/|$)',
+)
 
 const _userRl = createRateLimiter(GLOBAL_RL_MAX_USER, GLOBAL_RL_WINDOW, {
   redis: true,
@@ -135,7 +137,9 @@ async function waitForRequestBody(request: NextRequest): Promise<void> {
   if (request.method === 'GET' || request.method === 'HEAD' || !request.body) return
   try {
     const reader = request.body.getReader()
-    while (!(await reader.read()).done) { /* discard: the route reads Next's buffered copy */ }
+    while (!(await reader.read()).done) {
+      /* discard: the route reads Next's buffered copy */
+    }
   } catch {
     // Upload aborted by the client: the route fails on its own, nothing to wait for.
   }
@@ -158,8 +162,16 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
   // Ordinary API calls carry a few kilobytes. Only the routes that really receive files, photos,
   // imports or whole plans may take more — the others answer 413 instead of storing megabytes
   // of text in a field (and instead of exposing them to the large-body issue described in apiRoute).
-  if (contentLength && pathname.startsWith('/api/') && parseInt(contentLength, 10) > SMALL_BODY_BYTES && !LARGE_BODY_PATHS.test(pathname)) {
-    return NextResponse.json({ error: 'Requête trop volumineuse pour cette opération (max 100 Ko)' }, { status: 413 })
+  if (
+    contentLength &&
+    pathname.startsWith('/api/') &&
+    parseInt(contentLength, 10) > SMALL_BODY_BYTES &&
+    !LARGE_BODY_PATHS.test(pathname)
+  ) {
+    return NextResponse.json(
+      { error: 'Requête trop volumineuse pour cette opération (max 100 Ko)' },
+      { status: 413 },
+    )
   }
 
   const requestId = crypto.randomUUID()

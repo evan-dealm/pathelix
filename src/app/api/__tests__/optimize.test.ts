@@ -3,7 +3,13 @@ import { NextRequest } from 'next/server'
 import type { MissionType } from '@/lib/types'
 
 vi.mock('@/lib/data/context', () => ({
-  getRequestContext: vi.fn(() => ({ tenantId: 'tenant-test', userId: 'user-1', role: 'admin', requestId: 'req-1', trade: null })),
+  getRequestContext: vi.fn(() => ({
+    tenantId: 'tenant-test',
+    userId: 'user-1',
+    role: 'admin',
+    requestId: 'req-1',
+    trade: null,
+  })),
   getTenantId: vi.fn(() => 'tenant-test'),
 }))
 
@@ -23,7 +29,6 @@ vi.mock('@/lib/data/exutoires', () => ({
   getAllExutoires: vi.fn(),
 }))
 
-
 vi.mock('@/lib/loadShedder', () => ({
   loadShedder: {
     acquire: vi.fn(() => 'ok'),
@@ -37,15 +42,15 @@ vi.mock('@/lib/loadShedder', () => ({
 
 vi.mock('@/lib/rateLimit', () => ({
   createRateLimiter: () => ({
-    check:   vi.fn(() => true),
+    check: vi.fn(() => true),
     headers: vi.fn(() => ({ 'X-RateLimit-Limit': '10', 'X-RateLimit-Remaining': '9' })),
   }),
   createTenantRateLimiter: () => ({
-    check:   vi.fn(() => true),
+    check: vi.fn(() => true),
     headers: vi.fn(() => ({})),
   }),
-  getClientIp:         vi.fn(() => '127.0.0.1'),
-  getTenantPlanLimit:  vi.fn(() => Promise.resolve(10)),
+  getClientIp: vi.fn(() => '127.0.0.1'),
+  getTenantPlanLimit: vi.fn(() => Promise.resolve(10)),
 }))
 
 vi.mock('@/lib/redisClient', () => ({
@@ -54,8 +59,8 @@ vi.mock('@/lib/redisClient', () => ({
 
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({
-    info:  vi.fn(),
-    warn:  vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
   }),
@@ -68,13 +73,15 @@ vi.mock('@/lib/metrics', () => ({
   },
   METRIC: {
     API_LATENCY_MS: 'api.latency_ms',
-    API_REQUESTS:   'api.requests',
-    API_ERRORS:     'api.errors',
-    VRP_ENQUEUED:   'vrp.enqueued',
+    API_REQUESTS: 'api.requests',
+    API_ERRORS: 'api.errors',
+    VRP_ENQUEUED: 'vrp.enqueued',
   },
 }))
 
-const mockPlanFindMany = vi.hoisted(() => vi.fn(() => Promise.resolve([] as Array<{ statuses: unknown }>)))
+const mockPlanFindMany = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve([] as Array<{ statuses: unknown }>)),
+)
 
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
@@ -87,15 +94,15 @@ vi.mock('@/lib/tenantDb', () => ({
 
 vi.mock('@/lib/queue/vrpQueue', () => ({
   enqueueVrpJob: vi.fn(() => Promise.reject(new Error('Redis unavailable'))),
-  getVrpQueue:   vi.fn(() => ({ getWorkers: vi.fn(() => Promise.resolve([])) })),
+  getVrpQueue: vi.fn(() => ({ getWorkers: vi.fn(() => Promise.resolve([])) })),
 }))
 
 vi.mock('@/lib/vrp', () => ({
   runVRP: vi.fn(() => ({
-    assignments:        { 'd-1': [] },
+    assignments: { 'd-1': [] },
     unassignedMissions: [],
-    stats:              { assignedMissions: 0, totalMissions: 0, score: 0, timeTakenMs: 100 },
-    warnings:           [],
+    stats: { assignedMissions: 0, totalMissions: 0, score: 0, timeTakenMs: 100 },
+    warnings: [],
   })),
 }))
 
@@ -110,21 +117,31 @@ import { getRequestContext } from '@/lib/data/context'
 
 function makeRequest(body: unknown): NextRequest {
   return new NextRequest('http://localhost:3000/api/optimize', {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body: JSON.stringify(body),
   })
 }
 
 const sampleDriver = {
-  id: 'd-1', firstName: 'Jean', lastName: 'Dupont',
-  sector: 'Nord', depotName: 'D', depotLat: 45.76, depotLng: 4.83,
+  id: 'd-1',
+  firstName: 'Jean',
+  lastName: 'Dupont',
+  sector: 'Nord',
+  depotName: 'D',
+  depotLat: 45.76,
+  depotLng: 4.83,
 }
 
 const sampleMission = {
-  id: 'm-1', type: 'POSER' as MissionType, date: '2026-03-18',
-  address: 'Test', latitude: 45.77, longitude: 4.84,
-  estimatedDurationMin: 15, maneuverTimeMin: 5,
+  id: 'm-1',
+  type: 'POSER' as MissionType,
+  date: '2026-03-18',
+  address: 'Test',
+  latitude: 45.77,
+  longitude: 4.84,
+  estimatedDurationMin: 15,
+  maneuverTimeMin: 5,
 }
 
 describe('POST /api/optimize', () => {
@@ -137,7 +154,7 @@ describe('POST /api/optimize', () => {
   })
 
   it('triggers optimization with valid request', async () => {
-    const res  = await POST(makeRequest({ date: '2026-03-18', driverIds: ['d-1'] }))
+    const res = await POST(makeRequest({ date: '2026-03-18', driverIds: ['d-1'] }))
     const json = await res.json()
 
     expect(res.status).toBe(200)
@@ -148,8 +165,11 @@ describe('POST /api/optimize', () => {
   // A full optimisation re-plans every mission from scratch: on a day already started it handed
   // finished stops back as work to do, possibly to another truck.
   it('refuses a full re-plan once a mission of the day is completed, and points to Live (409)', async () => {
-    vi.mocked(getMissionsByDate).mockResolvedValue([sampleMission, { ...sampleMission, id: 'm-done', completedAt: new Date('2026-03-18T09:12:00Z') } as never])
-    const res  = await POST(makeRequest({ date: '2026-03-18' }))
+    vi.mocked(getMissionsByDate).mockResolvedValue([
+      sampleMission,
+      { ...sampleMission, id: 'm-done', completedAt: new Date('2026-03-18T09:12:00Z') } as never,
+    ])
+    const res = await POST(makeRequest({ date: '2026-03-18' }))
     const json = await res.json()
     expect(res.status).toBe(409)
     expect(json.code).toBe('DAY_STARTED')
@@ -165,7 +185,11 @@ describe('POST /api/optimize', () => {
   })
 
   it('still optimises a planned day nobody has started', async () => {
-    mockPlanFindMany.mockResolvedValueOnce([{ statuses: { 'm-1': { status: 'todo' } } }, { statuses: null }, { statuses: {} }])
+    mockPlanFindMany.mockResolvedValueOnce([
+      { statuses: { 'm-1': { status: 'todo' } } },
+      { statuses: null },
+      { statuses: {} },
+    ])
     const res = await POST(makeRequest({ date: '2026-03-18' }))
     expect(res.status).toBe(200)
     expect(runVRP).toHaveBeenCalled()
@@ -193,9 +217,9 @@ describe('POST /api/optimize', () => {
 
   it('returns 400 for invalid JSON body', async () => {
     const req = new NextRequest('http://localhost:3000/api/optimize', {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    '{broken',
+      body: '{broken',
     })
     const res = await POST(req)
     expect(res.status).toBe(400)
@@ -235,10 +259,12 @@ describe('POST /api/optimize', () => {
   })
 
   it('passes options to VRP engine', async () => {
-    await POST(makeRequest({
-      date:    '2026-03-18',
-      options: { timeBudgetMs: 5000, seed: 99 },
-    }))
+    await POST(
+      makeRequest({
+        date: '2026-03-18',
+        options: { timeBudgetMs: 5000, seed: 99 },
+      }),
+    )
 
     expect(runVRP).toHaveBeenCalled()
     const call = vi.mocked(runVRP).mock.calls[0]
@@ -250,18 +276,22 @@ describe('POST /api/optimize', () => {
   })
 
   it('rejects timeBudgetMs above 300000 (422) — regression: budget non borné', async () => {
-    const res = await POST(makeRequest({
-      date:    '2026-03-18',
-      options: { timeBudgetMs: 3_600_000 },
-    }))
+    const res = await POST(
+      makeRequest({
+        date: '2026-03-18',
+        options: { timeBudgetMs: 3_600_000 },
+      }),
+    )
     expect(res.status).toBe(422)
   })
 
   it('caps direct-mode time budget at 15s — regression: fallback synchrone monopolisait le process web', async () => {
-    await POST(makeRequest({
-      date:    '2026-03-18',
-      options: { timeBudgetMs: 120_000 },
-    }))
+    await POST(
+      makeRequest({
+        date: '2026-03-18',
+        options: { timeBudgetMs: 120_000 },
+      }),
+    )
 
     expect(runVRP).toHaveBeenCalled()
     const call = vi.mocked(runVRP).mock.calls.at(-1)
@@ -270,7 +300,13 @@ describe('POST /api/optimize', () => {
   })
 
   it('returns 403 when user lacks optimize permission (driver role)', async () => {
-    vi.mocked(getRequestContext).mockReturnValue({ tenantId: 'tenant-test', userId: 'driver-1', role: 'driver', requestId: 'req-1', trade: null })
+    vi.mocked(getRequestContext).mockReturnValue({
+      tenantId: 'tenant-test',
+      userId: 'driver-1',
+      role: 'driver',
+      requestId: 'req-1',
+      trade: null,
+    })
     vi.mocked(hasPermission).mockResolvedValue(false)
     const res = await POST(makeRequest({ date: '2026-03-18' }))
     expect(res.status).toBe(403)

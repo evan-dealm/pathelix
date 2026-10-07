@@ -13,16 +13,27 @@ test.describe('Tours Tab — Advanced', () => {
     await login(page)
     await waitForAdminReady(page)
     await navigateToTab(page, 'tours')
-    await page.waitForFunction(
-      () => (document.querySelector('[role="tabpanel"]')?.textContent ?? '').trim().length > 5,
-      { timeout: 30_000 },
-    ).catch(() => {})
+    await page
+      .waitForFunction(
+        () => (document.querySelector('[role="tabpanel"]')?.textContent ?? '').trim().length > 5,
+        { timeout: 30_000 },
+      )
+      .catch(() => {})
     await page.waitForTimeout(300)
     // Other specs empty the day (« Vider »): these tests need routes, so build them when absent.
-    if (await page.getByText('Aucune tournée planifiée pour ce jour').isVisible().catch(() => false)) {
+    if (
+      await page
+        .getByText('Aucune tournée planifiée pour ce jour')
+        .isVisible()
+        .catch(() => false)
+    ) {
       await page.locator('button:has-text("Optimiser")').first().click()
-      await expect(page.getByText(/Optimisation terminée : \d+\/\d+ missions/).first()).toBeVisible({ timeout: 30_000 })
-      await expect(page.locator('button[title="Exporter en CSV"]').first()).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByText(/Optimisation terminée : \d+\/\d+ missions/).first()).toBeVisible(
+        { timeout: 30_000 },
+      )
+      await expect(page.locator('button[title="Exporter en CSV"]').first()).toBeVisible({
+        timeout: 10_000,
+      })
     }
   })
 
@@ -32,8 +43,12 @@ test.describe('Tours Tab — Advanced', () => {
     await optimizeBtn.click()
     // A small plan is solved in well under a second, so the spinner cannot be relied upon:
     // what the dispatcher must always get is the outcome next to the button.
-    await expect(page.locator('[role="tabpanel"]').getByText(/\d+\/\d+ missions · score \d+\/100/).first())
-      .toBeVisible({ timeout: 30_000 })
+    await expect(
+      page
+        .locator('[role="tabpanel"]')
+        .getByText(/\d+\/\d+ missions · score \d+\/100/)
+        .first(),
+    ).toBeVisible({ timeout: 30_000 })
     await expect(optimizeBtn).toBeEnabled()
   })
 
@@ -67,12 +82,20 @@ test.describe('Tours Tab — Advanced', () => {
     await optimizeBtn.click()
     // Progress is only on screen while the solver runs (instant here); the end of the run is
     // always announced.
-    await expect(page.getByText(/Optimisation terminée : \d+\/\d+ missions/).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/Optimisation terminée : \d+\/\d+ missions/).first()).toBeVisible({
+      timeout: 30_000,
+    })
   })
 
   test('tour metrics display shows duration', async ({ page }) => {
-    const durationLabel = page.locator('[role="tabpanel"]').getByText(/\d+h|\d+min/i).first()
-    const emptyState = page.locator('[role="tabpanel"]').getByText(/Aucune tournée|Aucun chauffeur|planifi/i).first()
+    const durationLabel = page
+      .locator('[role="tabpanel"]')
+      .getByText(/\d+h|\d+min/i)
+      .first()
+    const emptyState = page
+      .locator('[role="tabpanel"]')
+      .getByText(/Aucune tournée|Aucun chauffeur|planifi/i)
+      .first()
     const hasDuration = await durationLabel.isVisible({ timeout: 5_000 }).catch(() => false)
     const hasEmpty = await emptyState.isVisible({ timeout: 1_000 }).catch(() => false)
     // Either tours with metrics OR explicit empty state must be shown
@@ -80,8 +103,14 @@ test.describe('Tours Tab — Advanced', () => {
   })
 
   test('tour metrics display shows kilometers', async ({ page }) => {
-    const kmLabel = page.locator('[role="tabpanel"]').getByText(/\d+\.?\d* km/i).first()
-    const emptyState = page.locator('[role="tabpanel"]').getByText(/Aucune tournée|Aucun chauffeur|planifi/i).first()
+    const kmLabel = page
+      .locator('[role="tabpanel"]')
+      .getByText(/\d+\.?\d* km/i)
+      .first()
+    const emptyState = page
+      .locator('[role="tabpanel"]')
+      .getByText(/Aucune tournée|Aucun chauffeur|planifi/i)
+      .first()
     const hasKm = await kmLabel.isVisible({ timeout: 5_000 }).catch(() => false)
     const hasEmpty = await emptyState.isVisible({ timeout: 1_000 }).catch(() => false)
     expect(hasKm || hasEmpty).toBe(true)
@@ -89,16 +118,23 @@ test.describe('Tours Tab — Advanced', () => {
 
   test('tour metrics display shows driving and on-site time', async ({ page }) => {
     const drivingLabel = page.locator('[role="tabpanel"] text=Conduite').first()
-    const onSiteLabel  = page.locator('[role="tabpanel"] text=Sur site').first()
-    const emptyState   = page.locator('[role="tabpanel"]').getByText(/Aucune tournée|Aucun chauffeur|planifi/i).first()
+    const onSiteLabel = page.locator('[role="tabpanel"] text=Sur site').first()
+    const emptyState = page
+      .locator('[role="tabpanel"]')
+      .getByText(/Aucune tournée|Aucun chauffeur|planifi/i)
+      .first()
     const hasDriving = await drivingLabel.isVisible({ timeout: 5_000 }).catch(() => false)
-    const hasOnSite  = await onSiteLabel.isVisible({ timeout: 1_000 }).catch(() => false)
-    const hasEmpty   = await emptyState.isVisible({ timeout: 1_000 }).catch(() => false)
+    const hasOnSite = await onSiteLabel.isVisible({ timeout: 1_000 }).catch(() => false)
+    const hasEmpty = await emptyState.isVisible({ timeout: 1_000 }).catch(() => false)
     expect(hasDriving || hasOnSite || hasEmpty).toBe(true)
   })
 
   test('date navigation next day button works', async ({ page }) => {
-    const nextBtn = page.locator('[role="tabpanel"] button[title*="suivant" i], [role="tabpanel"] button[aria-label*="suivant" i]').first()
+    const nextBtn = page
+      .locator(
+        '[role="tabpanel"] button[title*="suivant" i], [role="tabpanel"] button[aria-label*="suivant" i]',
+      )
+      .first()
     await expect(nextBtn).toBeVisible({ timeout: 10_000 })
     await nextBtn.click()
     await page.waitForTimeout(500)
@@ -106,7 +142,11 @@ test.describe('Tours Tab — Advanced', () => {
   })
 
   test('date navigation previous day button works', async ({ page }) => {
-    const prevBtn = page.locator('[role="tabpanel"] button[title*="pr" i], [role="tabpanel"] button[aria-label*="précédent" i]').first()
+    const prevBtn = page
+      .locator(
+        '[role="tabpanel"] button[title*="pr" i], [role="tabpanel"] button[aria-label*="précédent" i]',
+      )
+      .first()
     await expect(prevBtn).toBeVisible({ timeout: 10_000 })
     await prevBtn.click()
     await page.waitForTimeout(500)
@@ -136,16 +176,23 @@ test.describe('Tours Tab — Advanced', () => {
 
   test('pool view mode "Semaine" is clickable', async ({ page }) => {
     await navigateToTab(page, 'dashboard')
-    const semaineBtn = page.locator('#tabpanel-dashboard button:has-text("Semaine"):visible').first()
+    const semaineBtn = page
+      .locator('#tabpanel-dashboard button:has-text("Semaine"):visible')
+      .first()
     await expect(semaineBtn).toBeVisible({ timeout: 10_000 })
     await semaineBtn.click()
     // The week view shows the seven day columns.
-    await expect(page.locator('#tabpanel-dashboard').getByText(/^LUN$/i).first()).toBeVisible({ timeout: 5_000 })
+    await expect(page.locator('#tabpanel-dashboard').getByText(/^LUN$/i).first()).toBeVisible({
+      timeout: 5_000,
+    })
   })
 
   test('move down button exists for assigned missions', async ({ page }) => {
     const downBtn = page.locator('button[title*="Descendre" i]').first()
-    const emptyState = page.locator('[role="tabpanel"]').getByText(/Aucune tournée|Aucun chauffeur|planifi/i).first()
+    const emptyState = page
+      .locator('[role="tabpanel"]')
+      .getByText(/Aucune tournée|Aucun chauffeur|planifi/i)
+      .first()
     const hasDown = await downBtn.isVisible({ timeout: 5_000 }).catch(() => false)
     const hasEmpty = await emptyState.isVisible({ timeout: 1_000 }).catch(() => false)
     expect(hasDown || hasEmpty).toBe(true)
@@ -158,10 +205,13 @@ test.describe('Tours Tab — Advanced', () => {
   })
 
   test('empty state message shown when no tours exist', async ({ page }) => {
-    const emptyMsg = page.locator('[role="tabpanel"]').getByText(/Aucune tournée|Aucun chauffeur|planifi/i).first()
+    const emptyMsg = page
+      .locator('[role="tabpanel"]')
+      .getByText(/Aucune tournée|Aucun chauffeur|planifi/i)
+      .first()
     const driverCard = page.locator('[role="tabpanel"] .rounded-xl').first()
     const emptyVisible = await emptyMsg.isVisible({ timeout: 5_000 }).catch(() => false)
-    const cardVisible  = await driverCard.isVisible({ timeout: 1_000 }).catch(() => false)
+    const cardVisible = await driverCard.isVisible({ timeout: 1_000 }).catch(() => false)
     // Must show EITHER empty state OR actual tour cards — not silently nothing
     expect(emptyVisible || cardVisible).toBe(true)
   })
@@ -188,7 +238,10 @@ test.describe('Tours Tab — Advanced', () => {
   test('tour warnings are displayed when present', async ({ page }) => {
     // Either warnings exist with content, or no warnings (both are valid states)
     const warningIcon = page.locator('[role="tabpanel"]').getByText(/⚠/).first()
-    const emptyState = page.locator('[role="tabpanel"]').getByText(/Aucune tournée|planifi/i).first()
+    const emptyState = page
+      .locator('[role="tabpanel"]')
+      .getByText(/Aucune tournée|planifi/i)
+      .first()
     const hasWarning = await warningIcon.isVisible({ timeout: 3_000 }).catch(() => false)
     const hasEmpty = await emptyState.isVisible({ timeout: 1_000 }).catch(() => false)
     const panel = page.locator('[role="tabpanel"]').first()

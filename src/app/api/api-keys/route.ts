@@ -13,7 +13,7 @@ const log = createLogger('/api/api-keys')
 const ScopeEnum = z.enum(API_SCOPES)
 
 const CreateKeySchema = z.object({
-  name:   z.string().min(1).max(100),
+  name: z.string().min(1).max(100),
   scopes: z.array(ScopeEnum).min(1),
   expiresInDays: z.number().int().min(1).max(365).optional(),
 })
@@ -26,7 +26,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const keys = await getTenantDb(tenantId).apiKey.findMany({
     where: { revoked: false },
-    select: { id: true, name: true, prefix: true, scopes: true, lastUsedAt: true, expiresAt: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      prefix: true,
+      scopes: true,
+      lastUsedAt: true,
+      expiresAt: true,
+      createdAt: true,
+    },
     orderBy: { createdAt: 'desc' },
   })
 
@@ -40,7 +48,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   let raw: unknown
-  try { raw = await req.json() } catch { return NextResponse.json({ error: 'JSON invalide' }, { status: 400 }) }
+  try {
+    raw = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'JSON invalide' }, { status: 400 })
+  }
 
   const parsed = CreateKeySchema.safeParse(raw)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
@@ -66,13 +78,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   })
 
   log.info('API key created', { tenantId, keyId: key.id, name: key.name, by: userId })
-  auditAsync(req, 'api_key.create', 'ApiKey', key.id, { name: key.name, scopes: parsed.data.scopes })
+  auditAsync(req, 'api_key.create', 'ApiKey', key.id, {
+    name: key.name,
+    scopes: parsed.data.scopes,
+  })
 
-  return NextResponse.json({
-    ...key,
-    token: rawToken,
-    message: 'Copiez ce token maintenant. Il ne sera plus jamais affiché.',
-  }, { status: 201 })
+  return NextResponse.json(
+    {
+      ...key,
+      token: rawToken,
+      message: 'Copiez ce token maintenant. Il ne sera plus jamais affiché.',
+    },
+    { status: 201 },
+  )
 }
 
 /** Revokes a key (?id=…). Effective immediately on this instance, within 30 s on the others. */
@@ -86,7 +104,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
 
   const { count } = await getTenantDb(tenantId).apiKey.updateMany({
     where: { id, revoked: false },
-    data:  { revoked: true },
+    data: { revoked: true },
   })
   if (count === 0) return NextResponse.json({ error: 'Clé introuvable' }, { status: 404 })
 

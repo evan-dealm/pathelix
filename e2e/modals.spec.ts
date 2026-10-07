@@ -8,7 +8,10 @@ function modalDialog(page: import('@playwright/test').Page) {
 async function goToMissions(page: import('@playwright/test').Page) {
   await navigateToTab(page, 'missions')
   // See missions.spec.ts beforeEach — the real fix was DataProvider's UTC/local date mismatch.
-  await page.locator('[role="tabpanel"] tbody tr').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await page
+    .locator('[role="tabpanel"] tbody tr')
+    .first()
+    .waitFor({ state: 'visible', timeout: 20_000 })
   await page.waitForTimeout(300)
 }
 
@@ -44,10 +47,13 @@ test.describe('MissionDetailModal', () => {
   test('shows type badge', async ({ page }) => {
     await openFirstMissionDetail(page)
     const dialog = modalDialog(page)
-    const typeBadge = dialog.locator('span, div').filter({
-      // Labels come from the trade vocabulary (« Pose », « Retrait », « Échange »…).
-      hasText: /POSER|RETIRER|ECHANGER|VIDER|Pose|Retrait|Retirer|Échange|Vider/i,
-    }).first()
+    const typeBadge = dialog
+      .locator('span, div')
+      .filter({
+        // Labels come from the trade vocabulary (« Pose », « Retrait », « Échange »…).
+        hasText: /POSER|RETIRER|ECHANGER|VIDER|Pose|Retrait|Retirer|Échange|Vider/i,
+      })
+      .first()
     await expect(typeBadge).toBeVisible({ timeout: 5_000 })
   })
 
@@ -68,27 +74,38 @@ test.describe('MissionDetailModal', () => {
     expect(content).toBeTruthy()
     expect(content!.length).toBeGreaterThan(20)
     // Date must appear in some form — digits with separators or month names
-    expect(content).toMatch(/\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/i)
+    expect(content).toMatch(
+      /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/i,
+    )
   })
 
   test('edit button is present', async ({ page }) => {
     await openFirstMissionDetail(page)
     const dialog = modalDialog(page)
-    const editBtn = dialog.locator('button').filter({ hasText: /Modifier/ }).first()
+    const editBtn = dialog
+      .locator('button')
+      .filter({ hasText: /Modifier/ })
+      .first()
     await expect(editBtn).toBeVisible({ timeout: 5_000 })
   })
 
   test('duplicate button is present', async ({ page }) => {
     await openFirstMissionDetail(page)
     const dialog = modalDialog(page)
-    const dupBtn = dialog.locator('button').filter({ hasText: /Dupliquer/ }).first()
+    const dupBtn = dialog
+      .locator('button')
+      .filter({ hasText: /Dupliquer/ })
+      .first()
     await expect(dupBtn).toBeVisible({ timeout: 5_000 })
   })
 
   test('delete button is present', async ({ page }) => {
     await openFirstMissionDetail(page)
     const dialog = modalDialog(page)
-    const deleteBtn = dialog.locator('button').filter({ hasText: /Supprimer/ }).first()
+    const deleteBtn = dialog
+      .locator('button')
+      .filter({ hasText: /Supprimer/ })
+      .first()
     await expect(deleteBtn).toBeVisible({ timeout: 5_000 })
   })
 
@@ -145,7 +162,10 @@ test.describe('MissionDetailModal', () => {
 
   test('modal overlay has backdrop blur styling', async ({ page }) => {
     await openFirstMissionDetail(page)
-    const overlay = page.locator('.fixed.inset-0').filter({ has: page.locator('[role="dialog"]') }).first()
+    const overlay = page
+      .locator('.fixed.inset-0')
+      .filter({ has: page.locator('[role="dialog"]') })
+      .first()
     await expect(overlay).toBeVisible()
     const cls = await overlay.getAttribute('class')
     expect(cls).toMatch(/backdrop-blur/)
@@ -154,7 +174,10 @@ test.describe('MissionDetailModal', () => {
   test('assignment sub-form shows driver dropdown', async ({ page }) => {
     await openFirstMissionDetail(page)
     const dialog = modalDialog(page)
-    const assignBtn = dialog.locator('button').filter({ hasText: /Assigner/ }).first()
+    const assignBtn = dialog
+      .locator('button')
+      .filter({ hasText: /Assigner/ })
+      .first()
     if (await assignBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await assignBtn.click()
       await page.waitForTimeout(300)
@@ -162,7 +185,10 @@ test.describe('MissionDetailModal', () => {
       await expect(driverSelect).toBeVisible({ timeout: 5_000 })
       const optCount = await driverSelect.locator('option').count()
       expect(optCount).toBeGreaterThan(0)
-      const cancelBtn = dialog.locator('button').filter({ hasText: /Annuler/ }).first()
+      const cancelBtn = dialog
+        .locator('button')
+        .filter({ hasText: /Annuler/ })
+        .first()
       if (await cancelBtn.isVisible().catch(() => false)) await cancelBtn.click()
     } else {
       // Mission already assigned — driver info section must be visible instead
@@ -215,7 +241,10 @@ test.describe('DriverDetailModal', () => {
     dismissDialogs(page)
     await openFirstDriverDetail(page)
     const dialog = modalDialog(page)
-    const deleteBtn = dialog.locator('button').filter({ hasText: /Supprimer/ }).first()
+    const deleteBtn = dialog
+      .locator('button')
+      .filter({ hasText: /Supprimer/ })
+      .first()
     if (await deleteBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await deleteBtn.click()
       await page.waitForTimeout(500)
@@ -292,7 +321,10 @@ test.describe('General Modal Behavior', () => {
   test('modal overlay has backdrop blur styling', async ({ page }) => {
     await goToMissions(page)
     await openFirstMissionDetail(page)
-    const overlay = page.locator('.fixed.inset-0').filter({ has: page.locator('[role="dialog"]') }).first()
+    const overlay = page
+      .locator('.fixed.inset-0')
+      .filter({ has: page.locator('[role="dialog"]') })
+      .first()
     await expect(overlay).toBeVisible()
     const cls = await overlay.getAttribute('class')
     expect(cls).toMatch(/backdrop-blur/)

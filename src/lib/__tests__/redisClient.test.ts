@@ -7,7 +7,9 @@ vi.mock('@/lib/logger', () => ({
 // ── getRedisConfig ────────────────────────────────────────────────────────────
 
 describe('getRedisConfig', () => {
-  afterEach(() => { vi.unstubAllEnvs() })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
 
   it('returns REDIS_URL string when set', async () => {
     vi.stubEnv('REDIS_URL', 'redis://localhost:6379')
@@ -51,7 +53,9 @@ describe('getRedisClient — Redis not configured', () => {
     vi.stubEnv('REDIS_HOST', '')
     vi.stubEnv('REDIS_DISABLED', '')
   })
-  afterEach(() => { vi.unstubAllEnvs() })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
 
   it('returns null when REDIS_URL and REDIS_HOST not set', async () => {
     const { getRedisClient } = await import('@/lib/redisClient')
@@ -174,19 +178,26 @@ describe('getRedisClient — a connection that went silent', () => {
   it('is dropped within seconds, then a new connection is built when Redis answers again', async () => {
     // The socket stays open but nothing answers: ioredis never reconnects by itself, every
     // command waits for its timeout — each request paid +2 s until the application was restarted.
-    const silent = { on: vi.fn(), ping: vi.fn().mockResolvedValueOnce('PONG').mockRejectedValue(new Error('Command timed out')), disconnect: vi.fn() }
-    const fresh  = { on: vi.fn(), ping: vi.fn().mockResolvedValue('PONG'), disconnect: vi.fn() }
-    const MockRedis = vi.fn().mockImplementationOnce(() => silent).mockImplementation(() => fresh)
+    const silent = {
+      on: vi.fn(),
+      ping: vi.fn().mockResolvedValueOnce('PONG').mockRejectedValue(new Error('Command timed out')),
+      disconnect: vi.fn(),
+    }
+    const fresh = { on: vi.fn(), ping: vi.fn().mockResolvedValue('PONG'), disconnect: vi.fn() }
+    const MockRedis = vi
+      .fn()
+      .mockImplementationOnce(() => silent)
+      .mockImplementation(() => fresh)
     vi.doMock('ioredis', () => ({ default: MockRedis }))
     const { getRedisClient } = await import('@/lib/redisClient')
 
     expect(await getRedisClient()).toBe(silent)
 
-    await vi.advanceTimersByTimeAsync(5_000)        // watchdog ping fails
+    await vi.advanceTimersByTimeAsync(5_000) // watchdog ping fails
     expect(silent.disconnect).toHaveBeenCalled()
-    expect(await getRedisClient()).toBeNull()       // degraded at once: callers skip Redis
+    expect(await getRedisClient()).toBeNull() // degraded at once: callers skip Redis
 
-    await vi.advanceTimersByTimeAsync(5_000)        // first retry starts (it connects asynchronously)
+    await vi.advanceTimersByTimeAsync(5_000) // first retry starts (it connects asynchronously)
     await vi.waitFor(async () => expect(await getRedisClient()).toBe(fresh))
     expect(MockRedis).toHaveBeenCalledTimes(2)
   })

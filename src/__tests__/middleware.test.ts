@@ -128,8 +128,14 @@ describe('middleware', () => {
       },
     })
     const req = new NextRequest('http://localhost/api/drivers/abc', {
-      method: 'PUT', body, duplex: 'half',
-      headers: { cookie: 'session=tok', 'x-forwarded-for': '1.2.3.4', 'content-type': 'application/json' },
+      method: 'PUT',
+      body,
+      duplex: 'half',
+      headers: {
+        cookie: 'session=tok',
+        'x-forwarded-for': '1.2.3.4',
+        'content-type': 'application/json',
+      },
     } as ConstructorParameters<typeof NextRequest>[1])
     const res = await middleware(req)
     expect(res.headers.get('x-middleware-next')).toBe('1')
@@ -137,9 +143,16 @@ describe('middleware', () => {
   })
 
   it('does not wait for the upload of a request it refuses', async () => {
-    const body = new ReadableStream<Uint8Array>({ start() { /* never ends */ } })
+    const body = new ReadableStream<Uint8Array>({
+      start() {
+        /* never ends */
+      },
+    })
     const req = new NextRequest('http://localhost/api/drivers/abc', {
-      method: 'PUT', body, duplex: 'half', headers: { 'x-forwarded-for': '1.2.3.4' },
+      method: 'PUT',
+      body,
+      duplex: 'half',
+      headers: { 'x-forwarded-for': '1.2.3.4' },
     } as ConstructorParameters<typeof NextRequest>[1])
     const res = await middleware(req)
     expect(res.status).toBe(401)
@@ -149,10 +162,22 @@ describe('middleware', () => {
   // framework error on routes that do not read them first.
   it('ordinary API routes refuse a body over 100 KB; file, import and plan routes still take large ones', async () => {
     mockVerifySession.mockResolvedValue(makeSession())
-    const big = { cookie: 'session=tok', headers: { 'content-length': String(300 * 1024) }, method: 'POST' }
-    expect((await middleware(makeReq('/api/drivers/abc', { ...big, method: 'PUT' }))).status).toBe(413)
+    const big = {
+      cookie: 'session=tok',
+      headers: { 'content-length': String(300 * 1024) },
+      method: 'POST',
+    }
+    expect((await middleware(makeReq('/api/drivers/abc', { ...big, method: 'PUT' }))).status).toBe(
+      413,
+    )
     expect((await middleware(makeReq('/api/clients', big))).status).toBe(413)
-    for (const path of ['/api/plans', '/api/import', '/api/driver-photos', '/api/delivery-proof', '/api/optimize']) {
+    for (const path of [
+      '/api/plans',
+      '/api/import',
+      '/api/driver-photos',
+      '/api/delivery-proof',
+      '/api/optimize',
+    ]) {
       expect((await middleware(makeReq(path, big))).status, path).not.toBe(413)
     }
     const small = { ...big, headers: { 'content-length': '2048' } }

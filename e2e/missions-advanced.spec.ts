@@ -1,10 +1,19 @@
 import { test, expect } from '@playwright/test'
-import { login, waitForAdminReady, navigateToTab, closeModal, acceptDialogs, dismissDialogs } from './helpers'
+import {
+  login,
+  waitForAdminReady,
+  navigateToTab,
+  closeModal,
+  acceptDialogs,
+  dismissDialogs,
+} from './helpers'
 
 async function openFilters(page: import('@playwright/test').Page) {
   const filtersBtn = page.locator('button:has-text("Filtres")').first()
   if (await filtersBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-    const isActive = await filtersBtn.evaluate(el => el.classList.toString().includes('4da6ff') || el.textContent?.includes('•'))
+    const isActive = await filtersBtn.evaluate(
+      el => el.classList.toString().includes('4da6ff') || el.textContent?.includes('•'),
+    )
     if (!isActive) {
       await filtersBtn.click()
       await page.waitForTimeout(300)
@@ -18,15 +27,16 @@ test.describe('Missions — Advanced Features', () => {
     await waitForAdminReady(page)
     await navigateToTab(page, 'missions')
     // MissionsTab is a dynamic import — wait for its content to render (skeleton has no text)
-    await page.waitForFunction(
-      () => (document.querySelector('[role="tabpanel"]')?.textContent ?? '').trim().length > 5,
-      { timeout: 30_000 },
-    ).catch(() => {})
+    await page
+      .waitForFunction(
+        () => (document.querySelector('[role="tabpanel"]')?.textContent ?? '').trim().length > 5,
+        { timeout: 30_000 },
+      )
+      .catch(() => {})
     await page.waitForTimeout(300)
   })
 
   test('toggle to Kanban view shows Kanban board', async ({ page }) => {
-
     const kanbanBtn = page.locator('button:has-text("Kanban")').first()
     if (await kanbanBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await kanbanBtn.click()
@@ -57,7 +67,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('CSV/Excel import button opens import modal', async ({ page }) => {
-
     const importBtn = page.locator('button:has-text("Import")').first()
     if (await importBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await importBtn.click()
@@ -78,15 +87,15 @@ test.describe('Missions — Advanced Features', () => {
 
       const dropZone = page.locator('text=/Glisser un fichier|CSV|Excel|parcourir/i').first()
       const fileInput = page.locator('input[type="file"]').first()
-      const hasUpload = await dropZone.isVisible({ timeout: 2000 }).catch(() => false)
-        || await fileInput.isVisible({ timeout: 2000 }).catch(() => false)
+      const hasUpload =
+        (await dropZone.isVisible({ timeout: 2000 }).catch(() => false)) ||
+        (await fileInput.isVisible({ timeout: 2000 }).catch(() => false))
       expect(hasUpload).toBeTruthy()
       await closeModal(page)
     }
   })
 
   test('CSV/Excel export button is present and clickable', async ({ page }) => {
-
     const exportBtn = page.locator('button:has-text("Export")').first()
     if (await exportBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await exportBtn.click()
@@ -94,8 +103,9 @@ test.describe('Missions — Advanced Features', () => {
 
       const exportCsvOption = page.locator('text="Export CSV"').first()
       const exportExcelOption = page.locator('text="Export Excel"').first()
-      const hasMenu = await exportCsvOption.isVisible({ timeout: 2000 }).catch(() => false)
-        || await exportExcelOption.isVisible({ timeout: 2000 }).catch(() => false)
+      const hasMenu =
+        (await exportCsvOption.isVisible({ timeout: 2000 }).catch(() => false)) ||
+        (await exportExcelOption.isVisible({ timeout: 2000 }).catch(() => false))
       expect(hasMenu).toBeTruthy()
 
       await page.keyboard.press('Escape')
@@ -104,7 +114,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('clicking priority cell cycles through priorities', async ({ page }) => {
-
     const priorityBtn = page.locator('button[title="Cliquer pour changer la priorité"]').first()
     if (await priorityBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       const textBefore = await priorityBtn.textContent()
@@ -117,8 +126,9 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('priority cycles from P3 back to none or P1', async ({ page }) => {
-
-    const p3Btn = page.locator('button[title="Cliquer pour changer la priorité"]:has-text("P3")').first()
+    const p3Btn = page
+      .locator('button[title="Cliquer pour changer la priorité"]:has-text("P3")')
+      .first()
     if (await p3Btn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await p3Btn.click()
       await page.waitForTimeout(500)
@@ -173,12 +183,14 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('reset filters button clears all active filters', async ({ page }) => {
-
     await openFilters(page)
 
-    const typeFilter = page.locator('select[aria-label="Filtrer par type de mission"], select[title="Filtrer par type de mission"]').first()
+    const typeFilter = page
+      .locator(
+        'select[aria-label="Filtrer par type de mission"], select[title="Filtrer par type de mission"]',
+      )
+      .first()
     if (await typeFilter.isVisible({ timeout: 3000 }).catch(() => false)) {
-
       const options = await typeFilter.locator('option').all()
       if (options.length > 1) {
         const secondOptionValue = await options[1].getAttribute('value')
@@ -209,7 +221,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('selecting items reveals bulk action buttons', async ({ page }) => {
-
     const selectAll = page.locator('input[aria-label="Sélectionner toutes les missions"]').first()
     if (await selectAll.isVisible({ timeout: 3000 }).catch(() => false)) {
       await selectAll.click()
@@ -281,7 +292,6 @@ test.describe('Missions — Advanced Features', () => {
       if (await archiveBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
         await archiveBtn.click()
         await page.waitForTimeout(500)
-
       }
     }
   })
@@ -298,7 +308,6 @@ test.describe('Missions — Advanced Features', () => {
       if (await deleteBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
         await deleteBtn.click()
         await page.waitForTimeout(500)
-
       }
     }
   })
@@ -324,11 +333,19 @@ test.describe('Missions — Advanced Features', () => {
       await checkboxes.nth(0).click()
       await checkboxes.nth(1).click()
       await page.waitForTimeout(300)
-      const counterText1 = await page.locator('text=/\\d+\\s*sélectionnée/i').first().textContent().catch(() => '')
+      const counterText1 = await page
+        .locator('text=/\\d+\\s*sélectionnée/i')
+        .first()
+        .textContent()
+        .catch(() => '')
 
       await checkboxes.nth(1).click()
       await page.waitForTimeout(300)
-      const counterText2 = await page.locator('text=/\\d+\\s*sélectionnée/i').first().textContent().catch(() => '')
+      const counterText2 = await page
+        .locator('text=/\\d+\\s*sélectionnée/i')
+        .first()
+        .textContent()
+        .catch(() => '')
       if (counterText1 && counterText2) {
         expect(counterText2).not.toEqual(counterText1)
       }
@@ -338,7 +355,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('pagination buttons (previous/next) are present', async ({ page }) => {
-
     const nextBtn = page.locator('button:has-text(">"):not(:has-text(">>"))').first()
     const prevBtn = page.locator('button:has-text("<"):not(:has-text("<<"))').first()
     const nextVisible = await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)
@@ -348,12 +364,10 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('clicking next page advances pagination display', async ({ page }) => {
-
     const nextBtn = page.locator('button:has-text(">"):not(:has-text(">>"))').first()
     if (await nextBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       const isDisabled = await nextBtn.isDisabled()
       if (!isDisabled) {
-
         const pageIndicator = page.locator('text=/^\\d+\\/\\d+$/').first()
         const textBefore = await pageIndicator.textContent().catch(() => '')
         await nextBtn.click()
@@ -367,7 +381,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('page display shows current position', async ({ page }) => {
-
     const pageDisplay = page.locator('text=/sur \\d+|\\d+\\/\\d+/').first()
     const hasDisplay = await pageDisplay.isVisible({ timeout: 3000 }).catch(() => false)
     if (hasDisplay) {
@@ -377,7 +390,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('sort by Date column', async ({ page }) => {
-
     const dateHeader = page.locator('th button:has-text("Date")').first()
     if (await dateHeader.isVisible({ timeout: 3000 }).catch(() => false)) {
       await dateHeader.click()
@@ -401,7 +413,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('sort by Client column', async ({ page }) => {
-
     const clientHeader = page.locator('th button:has-text("Client")').first()
     if (await clientHeader.isVisible({ timeout: 3000 }).catch(() => false)) {
       await clientHeader.click()
@@ -412,7 +423,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('sort by Priority column', async ({ page }) => {
-
     const priorityHeader = page.locator('th button:has-text("P.")').first()
     if (await priorityHeader.isVisible({ timeout: 3000 }).catch(() => false)) {
       await priorityHeader.click()
@@ -439,7 +449,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('archive section toggle shows archived missions', async ({ page }) => {
-
     const archiveToggle = page.locator('button:has-text("Archives")').first()
     if (await archiveToggle.isVisible({ timeout: 3000 }).catch(() => false)) {
       await archiveToggle.click()
@@ -520,7 +529,9 @@ test.describe('Missions — Advanced Features', () => {
       await duplicateBtn.click()
       await page.waitForTimeout(500)
 
-      const formTitle = page.locator('text=/Dupliquer|Depuis le catalogue|Saisie manuelle/i').first()
+      const formTitle = page
+        .locator('text=/Dupliquer|Depuis le catalogue|Saisie manuelle/i')
+        .first()
       const hasResult = await formTitle.isVisible({ timeout: 3000 }).catch(() => false)
       if (hasResult) {
         await closeModal(page)
@@ -537,7 +548,6 @@ test.describe('Missions — Advanced Features', () => {
     if (await deleteBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await deleteBtn.click()
       await page.waitForTimeout(500)
-
     }
   })
 
@@ -553,8 +563,9 @@ test.describe('Missions — Advanced Features', () => {
     }
   })
 
-  test('filter active indicator appears on Filtres button with active advanced filters', async ({ page }) => {
-
+  test('filter active indicator appears on Filtres button with active advanced filters', async ({
+    page,
+  }) => {
     await openFilters(page)
     const typeFilter = page.locator('select[aria-label="Filtrer par type de mission"]').first()
     if (await typeFilter.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -565,7 +576,10 @@ test.describe('Missions — Advanced Features', () => {
           await typeFilter.selectOption(secondOptionValue)
           await page.waitForTimeout(300)
 
-          const filtresBtnText = await page.locator('button:has-text("Filtres")').first().textContent()
+          const filtresBtnText = await page
+            .locator('button:has-text("Filtres")')
+            .first()
+            .textContent()
           expect(filtresBtnText).toContain('•')
 
           const resetBtn = page.locator('button:has-text("Réinitialiser")').first()
@@ -593,7 +607,10 @@ test.describe('Missions — Advanced Features', () => {
             await resetBtn.click()
             await page.waitForTimeout(500)
 
-            const filtresBtnText = await page.locator('button:has-text("Filtres")').first().textContent()
+            const filtresBtnText = await page
+              .locator('button:has-text("Filtres")')
+              .first()
+              .textContent()
             expect(filtresBtnText).not.toContain('•')
           }
         }
@@ -633,11 +650,7 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('mission count badge is displayed in toolbar', async ({ page }) => {
-
-    const countBadge = page.locator(
-      'text=/^\\d+\\/\\d+$/, ' +
-      'text=/\\d+\\s*mission/i'
-    ).first()
+    const countBadge = page.locator('text=/^\\d+\\/\\d+$/, ' + 'text=/\\d+\\s*mission/i').first()
     const hasBadge = await countBadge.isVisible({ timeout: 3000 }).catch(() => false)
     if (hasBadge) {
       const text = await countBadge.textContent()
@@ -646,7 +659,6 @@ test.describe('Missions — Advanced Features', () => {
   })
 
   test('mission count updates after applying search filter', async ({ page }) => {
-
     const countSpan = page.locator('span.text-xs.font-semibold').first()
     const initialText = await countSpan.textContent().catch(() => '')
 

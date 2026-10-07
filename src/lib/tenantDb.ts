@@ -132,7 +132,16 @@ const READ_OR_DELETE_WHERE_OPS = new Set([
 ])
 
 const CREATE_OPS = new Set(['create', 'createMany', 'createManyAndReturn'])
-const READ_OPS = new Set(['findFirst', 'findFirstOrThrow', 'findMany', 'findUnique', 'findUniqueOrThrow', 'count', 'aggregate', 'groupBy'])
+const READ_OPS = new Set([
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'findUnique',
+  'findUniqueOrThrow',
+  'count',
+  'aggregate',
+  'groupBy',
+])
 
 /**
  * Drops the cached mission lists of a tenant (on every instance, through the cache bus). Called

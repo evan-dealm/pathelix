@@ -20,7 +20,7 @@ vi.mock('bullmq', () => ({
   Queue: vi.fn().mockImplementation(() => mockQueue),
 }))
 
-vi.mock('@/lib/queue/connection', async (orig) => ({
+vi.mock('@/lib/queue/connection', async orig => ({
   ...(await orig<typeof import('@/lib/queue/connection')>()),
   queueConnectionOptions: () => ({ host: 'localhost', port: 6379 }),
 }))
@@ -55,7 +55,10 @@ describe('getVrpQueue', () => {
 })
 
 describe('enqueueVrpJob', () => {
-  beforeEach(() => { vi.clearAllMocks(); mockJob.id = 'job-123' })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockJob.id = 'job-123'
+  })
 
   it('adds job to queue and returns job ID', async () => {
     mockQueue.add.mockResolvedValue(mockJob)
@@ -76,7 +79,10 @@ describe('enqueueVrpJob', () => {
 })
 
 describe('getVrpJobStatus', () => {
-  beforeEach(() => { vi.clearAllMocks(); mockJob.id = 'job-123' })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockJob.id = 'job-123'
+  })
 
   it('returns unknown when job not found', async () => {
     mockQueue.getJob.mockResolvedValue(null)
@@ -134,7 +140,9 @@ describe('getVrpJobStatus', () => {
 
 describe('getVrpJobStatus — job orphaned by a dead worker', () => {
   const setWorkers = (workers: unknown[]) => {
-    (mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi.fn().mockResolvedValue(workers)
+    ;(mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi
+      .fn()
+      .mockResolvedValue(workers)
   }
 
   it('reports the failure when the job is active but no worker is left to finish it', async () => {
@@ -165,9 +173,13 @@ describe('getVrpJobStatus — job orphaned by a dead worker', () => {
 describe('hasActiveVrpWorker', () => {
   it('reports no worker (instead of hanging) when listing workers fails or stalls', async () => {
     const { hasActiveVrpWorker } = await import('@/lib/queue/vrpQueue')
-    ;(mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi.fn().mockRejectedValueOnce(new Error('Connection is closed.'))
+    ;(mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Connection is closed.'))
     expect(await hasActiveVrpWorker()).toBe(false)
-    ;(mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi.fn().mockResolvedValueOnce([{ id: 'w1' }])
+    ;(mockQueue as unknown as { getWorkers: unknown }).getWorkers = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'w1' }])
     expect(await hasActiveVrpWorker()).toBe(true)
   })
 })

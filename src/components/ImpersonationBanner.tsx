@@ -11,7 +11,10 @@ interface MeData {
 }
 
 export function ImpersonationBanner() {
-  const [impersonation, setImpersonation] = useState<{ tenantId: string; tenantName: string } | null>(null)
+  const [impersonation, setImpersonation] = useState<{
+    tenantId: string
+    tenantName: string
+  } | null>(null)
   const pathname = usePathname()
 
   // This component lives in the root layout, which App Router does not remount on client-side
@@ -35,10 +38,16 @@ export function ImpersonationBanner() {
         // entire job is showing the tenant you're impersonating right now, so it can never
         // use a cached response.
         const res = await fetch('/api/auth/me', { cache: 'no-store' })
-        if (!res.ok) { setImpersonation(null); return }
+        if (!res.ok) {
+          setImpersonation(null)
+          return
+        }
         const me: MeData = await res.json()
 
-        if (!me.userId.startsWith('sa:')) { setImpersonation(null); return }
+        if (!me.userId.startsWith('sa:')) {
+          setImpersonation(null)
+          return
+        }
 
         // Not /api/superadmin/tenants/[id]: the impersonated session's role is the target
         // tenant's role (e.g. 'admin'), so that superadmin-only route always 403s here.
@@ -46,13 +55,14 @@ export function ImpersonationBanner() {
         const settingsRes = await fetch('/api/settings', { cache: 'no-store' })
         if (settingsRes.ok) {
           const settings = await settingsRes.json()
-          setImpersonation({ tenantId: me.tenantId, tenantName: settings.tenantName || settings.companyDisplayName || me.tenantId })
+          setImpersonation({
+            tenantId: me.tenantId,
+            tenantName: settings.tenantName || settings.companyDisplayName || me.tenantId,
+          })
         } else {
           setImpersonation({ tenantId: me.tenantId, tenantName: me.tenantId })
         }
-      } catch {
-
-      }
+      } catch {}
     }
     check()
   }, [pathname])
@@ -60,7 +70,6 @@ export function ImpersonationBanner() {
   if (!impersonation) return null
 
   async function exitImpersonation() {
-
     try {
       const res = await fetch('/api/superadmin/exit-impersonation', { method: 'POST' })
       if (res.ok) {
@@ -71,7 +80,6 @@ export function ImpersonationBanner() {
         await usePlanningStore.persist.clearStorage()
         window.location.href = data.redirectTo ?? '/superadmin'
       } else {
-
         await usePlanningStore.persist.clearStorage()
         await fetch('/api/auth/logout', { method: 'POST' })
         window.location.href = '/login'
@@ -89,7 +97,9 @@ export function ImpersonationBanner() {
       <span className="text-lg">&#9888;&#65039;</span>
       <span className="font-semibold text-sm">
         GOD MODE : Vous agissez en tant que{' '}
-        <span className="underline decoration-2 underline-offset-2">{impersonation.tenantName}</span>
+        <span className="underline decoration-2 underline-offset-2">
+          {impersonation.tenantName}
+        </span>
       </span>
       <button
         onClick={exitImpersonation}

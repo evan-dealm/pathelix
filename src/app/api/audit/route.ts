@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createLogger }              from '@/lib/logger'
+import { createLogger } from '@/lib/logger'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
-import { metrics, METRIC }           from '@/lib/metrics'
-import { logSuperadminAction }       from '@/lib/superadminAudit'
-import { getTenantDb }                from '@/lib/tenantDb'
+import { metrics, METRIC } from '@/lib/metrics'
+import { logSuperadminAction } from '@/lib/superadminAudit'
+import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/audit')
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const t0       = Date.now()
+  const t0 = Date.now()
   const tenantId = getTenantId(req)
   // Who did what, across the whole organisation: for its administrators only. Any dispatcher
   // could read it (and with it the activity of every colleague) by calling the API directly.
@@ -16,18 +16,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (role !== 'admin' && role !== 'superadmin') {
     return NextResponse.json({ error: 'Réservé aux administrateurs' }, { status: 403 })
   }
-  const params   = req.nextUrl.searchParams
-  const page     = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
-  const limit    = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))
+  const params = req.nextUrl.searchParams
+  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))
 
   const entityType = params.get('entityType') ?? undefined
-  const entityId   = params.get('entityId')   ?? undefined
+  const entityId = params.get('entityId') ?? undefined
 
   try {
     const db = getTenantDb(tenantId)
     const where: Record<string, unknown> = {}
     if (entityType) where.entityType = entityType
-    if (entityId)   where.entityId   = entityId
+    if (entityId) where.entityId = entityId
 
     const [logs, total] = await Promise.all([
       db.auditLog.findMany({
@@ -42,27 +42,38 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // AuditLog only stores userId (superadmin impersonation entries prefix it "sa:<id>"),
     // never a display name — the Audit tab's "Utilisateur" column was blank on every row
     // because nothing here ever resolved it. Batch-fetch the distinct real user ids once.
-    const realUserId = (userId: string) => userId.startsWith('sa:') ? userId.slice(3) : userId
-    const rawIds  = logs.map(l => l.userId).filter((id): id is string => Boolean(id))
+    const realUserId = (userId: string) => (userId.startsWith('sa:') ? userId.slice(3) : userId)
+    const rawIds = logs.map(l => l.userId).filter((id): id is string => Boolean(id))
     const realIds = [...new Set(rawIds.map(realUserId))]
-    const users = realIds.length > 0
-      ? await db.user.findMany({ where: { id: { in: realIds } }, select: { id: true, firstName: true, lastName: true, email: true } })
-      : []
-    const nameById = new Map(users.map(u => [u.id, `${u.firstName} ${u.lastName}`.trim() || u.email]))
+    const users =
+      realIds.length > 0
+        ? await db.user.findMany({
+            where: { id: { in: realIds } },
+            select: { id: true, firstName: true, lastName: true, email: true },
+          })
+        : []
+    const nameById = new Map(
+      users.map(u => [u.id, `${u.firstName} ${u.lastName}`.trim() || u.email]),
+    )
     const withNames = logs.map(l => ({
       ...l,
       userName: l.userId ? (nameById.get(realUserId(l.userId)) ?? l.userId) : '—',
     }))
 
-    metrics.histogram(METRIC.API_LATENCY_MS, Date.now() - t0, { route: '/api/audit', method: 'GET' })
+    metrics.histogram(METRIC.API_LATENCY_MS, Date.now() - t0, {
+      route: '/api/audit',
+      method: 'GET',
+    })
     metrics.increment(METRIC.API_REQUESTS, { route: '/api/audit', method: 'GET', status: '200' })
 
     return NextResponse.json({
-      data:       withNames,
+      data: withNames,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {
-    log.error('GET failed', { err: err instanceof Error ? err.message.slice(0, 200) : 'unknown error' })
+    log.error('GET failed', {
+      err: err instanceof Error ? err.message.slice(0, 200) : 'unknown error',
+    })
     metrics.increment(METRIC.API_ERRORS, { route: '/api/audit', type: 'server_error' })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
@@ -70,16 +81,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
   const { tenantId, userId, role } = getRequestContext(req)
-  if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
+  if (role !== 'superadmin')
+    return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
-  const params  = req.nextUrl.searchParams
-  const before  = params.get('before')
-  const after   = params.get('after')
+  const params = req.nextUrl.searchParams
+  const before = params.get('before')
+  const after = params.get('after')
   const confirm = params.get('confirm')
 
   if (!before || !after) {
     return NextResponse.json(
-      { error: 'Les paramètres before et after (dates ISO) sont requis pour limiter la suppression' },
+      {
+        error: 'Les paramètres before et after (dates ISO) sont requis pour limiter la suppression',
+      },
       { status: 400 },
     )
   }
@@ -91,7 +105,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const afterDate  = new Date(after)
+  const afterDate = new Date(after)
   const beforeDate = new Date(before)
   if (isNaN(afterDate.getTime()) || isNaN(beforeDate.getTime())) {
     return NextResponse.json({ error: 'Dates invalides' }, { status: 400 })
@@ -114,17 +128,19 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     })
     log.info('Audit logs purged', { tenantId, after, before, count: result.count })
     logSuperadminAction({
-      superadminId:    userId,
-      targetTenantId:  tenantId,
+      superadminId: userId,
+      targetTenantId: tenantId,
       isImpersonation: userId.startsWith('sa:'),
-      method:          'DELETE',
-      path:            '/api/audit',
-      action:          'audit_log_purge',
-      details:         { after, before, deletedCount: result.count },
+      method: 'DELETE',
+      path: '/api/audit',
+      action: 'audit_log_purge',
+      details: { after, before, deletedCount: result.count },
     })
     return NextResponse.json({ ok: true, deleted: result.count })
   } catch (err) {
-    log.error('DELETE failed', { err: err instanceof Error ? err.message.slice(0, 200) : 'unknown error' })
+    log.error('DELETE failed', {
+      err: err instanceof Error ? err.message.slice(0, 200) : 'unknown error',
+    })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

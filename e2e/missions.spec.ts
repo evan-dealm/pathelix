@@ -10,7 +10,10 @@ test.describe('Missions Tab', () => {
     // DataProvider fetching the wrong day's missions near local midnight (UTC vs local "today"
     // mismatch, see src/providers/DataProvider.tsx) — fixed at the source, so this is back to a
     // plain render-completion wait.
-    await page.locator('[role="tabpanel"] tbody tr').first().waitFor({ state: 'visible', timeout: 20_000 })
+    await page
+      .locator('[role="tabpanel"] tbody tr')
+      .first()
+      .waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForTimeout(300)
   })
 
@@ -30,7 +33,10 @@ test.describe('Missions Tab', () => {
     const rowCount = await rows.count()
     // Either 0 rows (filtered out) or an empty state message
     if (rowCount > 0) {
-      const emptyMsg = page.locator('[role="tabpanel"]').getByText(/Aucune mission|Aucun résultat/i).first()
+      const emptyMsg = page
+        .locator('[role="tabpanel"]')
+        .getByText(/Aucune mission|Aucun résultat/i)
+        .first()
       const hasEmpty = await emptyMsg.isVisible({ timeout: 2_000 }).catch(() => false)
       expect(rowCount === 0 || hasEmpty).toBe(true)
     }
@@ -38,7 +44,11 @@ test.describe('Missions Tab', () => {
   })
 
   test('type filter dropdown works', async ({ page }) => {
-    const typeFilter = page.locator('select[aria-label="Filtrer par type de mission"], select[title="Filtrer par type de mission"]').first()
+    const typeFilter = page
+      .locator(
+        'select[aria-label="Filtrer par type de mission"], select[title="Filtrer par type de mission"]',
+      )
+      .first()
     const filtersBtn = page.locator('button:has-text("Filtres")').first()
     if (await filtersBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
       await filtersBtn.click()
@@ -53,7 +63,9 @@ test.describe('Missions Tab', () => {
   })
 
   test('new mission button opens form', async ({ page }) => {
-    const newBtn = page.locator('button:has-text("Nouvelle mission"), button:has-text("+ Nouvelle")').first()
+    const newBtn = page
+      .locator('button:has-text("Nouvelle mission"), button:has-text("+ Nouvelle")')
+      .first()
     await expect(newBtn).toBeVisible({ timeout: 5_000 })
     await newBtn.click()
     await page.waitForTimeout(500)
@@ -63,7 +75,9 @@ test.describe('Missions Tab', () => {
   })
 
   test('mission form has required fields', async ({ page }) => {
-    const newBtn = page.locator('button:has-text("Nouvelle mission"), button:has-text("+ Nouvelle")').first()
+    const newBtn = page
+      .locator('button:has-text("Nouvelle mission"), button:has-text("+ Nouvelle")')
+      .first()
     await expect(newBtn).toBeVisible({ timeout: 5_000 })
     await newBtn.click()
     await page.waitForTimeout(500)
@@ -75,7 +89,9 @@ test.describe('Missions Tab', () => {
   })
 
   test('mission form validates required fields', async ({ page }) => {
-    const newBtn = page.locator('button:has-text("Nouvelle mission"), button:has-text("+ Nouvelle")').first()
+    const newBtn = page
+      .locator('button:has-text("Nouvelle mission"), button:has-text("+ Nouvelle")')
+      .first()
     await expect(newBtn).toBeVisible({ timeout: 5_000 })
     await newBtn.click()
     await page.waitForTimeout(500)
@@ -104,7 +120,14 @@ test.describe('Missions Tab', () => {
 
   test('pagination controls work', async ({ page }) => {
     const panel = page.locator('[role="tabpanel"]').first()
-    const shown = Number(((await panel.getByText(/^\d+\/\d+$/).first().textContent()) ?? '').split('/')[0])
+    const shown = Number(
+      (
+        (await panel
+          .getByText(/^\d+\/\d+$/)
+          .first()
+          .textContent()) ?? ''
+      ).split('/')[0],
+    )
     const range = panel.getByText(/^\d+-\d+ sur \d+$/).first()
     if (await range.isVisible().catch(() => false)) {
       // More than one page: « > » moves to the next range.

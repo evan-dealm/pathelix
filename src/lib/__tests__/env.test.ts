@@ -5,7 +5,7 @@ vi.mock('@/lib/logger', () => ({
 }))
 
 const VALID_BASE = {
-  DATABASE_URL:   'postgresql://user:pass@localhost:5432/db',
+  DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
   SESSION_SECRET: 'a'.repeat(32),
 }
 
@@ -84,19 +84,34 @@ describe('validateEnv — mock mode fail-safe in production', () => {
 
   it('exits in production when SESSION_SECRET is the value shipped in .env.example', async () => {
     // 41 characters: long enough for the length rule, yet readable by anyone in the repository.
-    stubEnv({ ...VALID_BASE, SESSION_SECRET: 'change-me-min-32-chars-random-string-here', NODE_ENV: 'production', USE_MOCK_DATA: 'false' })
+    stubEnv({
+      ...VALID_BASE,
+      SESSION_SECRET: 'change-me-min-32-chars-random-string-here',
+      NODE_ENV: 'production',
+      USE_MOCK_DATA: 'false',
+    })
     const { validateEnv } = await import('../env')
     expect(() => validateEnv()).toThrow('process.exit(1)')
   })
 
   it('exits in production when INTEGRATION_ENCRYPTION_KEY is set but not 64 hex characters', async () => {
-    stubEnv({ ...VALID_BASE, NODE_ENV: 'production', USE_MOCK_DATA: 'false', INTEGRATION_ENCRYPTION_KEY: 'not-a-key' })
+    stubEnv({
+      ...VALID_BASE,
+      NODE_ENV: 'production',
+      USE_MOCK_DATA: 'false',
+      INTEGRATION_ENCRYPTION_KEY: 'not-a-key',
+    })
     const { validateEnv } = await import('../env')
     expect(() => validateEnv()).toThrow('process.exit(1)')
   })
 
   it('starts in production with a valid or absent INTEGRATION_ENCRYPTION_KEY', async () => {
-    stubEnv({ ...VALID_BASE, NODE_ENV: 'production', USE_MOCK_DATA: 'false', INTEGRATION_ENCRYPTION_KEY: 'ab'.repeat(32) })
+    stubEnv({
+      ...VALID_BASE,
+      NODE_ENV: 'production',
+      USE_MOCK_DATA: 'false',
+      INTEGRATION_ENCRYPTION_KEY: 'ab'.repeat(32),
+    })
     const { validateEnv } = await import('../env')
     expect(() => validateEnv()).not.toThrow()
     stubEnv({ INTEGRATION_ENCRYPTION_KEY: undefined })

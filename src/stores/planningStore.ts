@@ -8,50 +8,51 @@ import { createLogger } from '@/lib/logger'
 const log = createLogger('planningStore')
 
 type HistorySnapshot = {
-  plans:      Record<string, PlannedMission[]>
+  plans: Record<string, PlannedMission[]>
   startTimes: Record<string, string>
 }
 
 type SyncStatus = 'idle' | 'syncing' | 'error' | 'synced'
 
 interface PlanningState {
-  drivers:     Driver[]
-  missions:    Mission[]
+  drivers: Driver[]
+  missions: Mission[]
 
-  plans:       Record<string, PlannedMission[]>
+  plans: Record<string, PlannedMission[]>
 
-  startTimes:  Record<string, string>
+  startTimes: Record<string, string>
 
-  speeds:      Record<string, number>
+  speeds: Record<string, number>
 
   unavailable: Record<string, boolean>
 
   lockedPlans: Record<string, boolean>
 
-  syncStatus:    SyncStatus
+  syncStatus: SyncStatus
   /** Why the last tour save failed (shown to the dispatcher), null otherwise. */
-  syncError:     string | null
-  lastSyncedAt:  string | null
+  syncError: string | null
+  lastSyncedAt: string | null
 
-  _history:    HistorySnapshot[]
+  _history: HistorySnapshot[]
   /** Number of undo steps taken since the last action (0 = at the live tip). */
   _historyIdx: number
   /** Live state captured lazily on the first undo since the last action, so redo can return to it — `_history` only ever stores pre-action snapshots, never the tip itself. */
-  _tip:        HistorySnapshot | null
+  _tip: HistorySnapshot | null
 }
 
 interface PlanningActions {
-
   setInitialData(_drivers: Driver[], _missions: Mission[]): void
   addMissionsBulk(_missions: Mission[]): void
   upsertMissions(_missions: Mission[]): void
-  mergePlansFromDB(_plans: Array<{
-    driverId:   string
-    date:       string
-    missions:   PlannedMission[]
-    startTime?: string
-    speedKmh?:  number
-  }>): void
+  mergePlansFromDB(
+    _plans: Array<{
+      driverId: string
+      date: string
+      missions: PlannedMission[]
+      startTime?: string
+      speedKmh?: number
+    }>,
+  ): void
 
   addMission(_data: Omit<Mission, 'id'>, _serverId?: string): void
   updateMission(_id: string, _data: Partial<Mission>): void
@@ -71,9 +72,9 @@ interface PlanningActions {
   clearDriverPlan(_driverId: string, _date: string): void
   clearAllPlansForDate(_date: string): void
   applyOptimization(
-    _date:        string,
+    _date: string,
     _assignments: Record<string, PlannedMission[]>,
-    _unassigned:  Mission[],
+    _unassigned: Mission[],
     _defaultStartTime?: string,
   ): void
   moveUp(_missionId: string, _driverId: string, _date: string): void
@@ -93,9 +94,18 @@ interface PlanningActions {
   canUndo(): boolean
   canRedo(): boolean
 
-  updatePlannedMission(_missionId: string, _driverId: string, _date: string, _data: Partial<PlannedMission>): void
-  setManualStartMin(_missionId: string, _driverId: string, _date: string, _startMin: number | undefined): void
-
+  updatePlannedMission(
+    _missionId: string,
+    _driverId: string,
+    _date: string,
+    _data: Partial<PlannedMission>,
+  ): void
+  setManualStartMin(
+    _missionId: string,
+    _driverId: string,
+    _date: string,
+    _startMin: number | undefined,
+  ): void
 }
 
 type PlanningStore = PlanningState & PlanningActions
@@ -120,9 +130,9 @@ function pushHistory(state: PlanningState, snap: HistorySnapshot): Partial<Plann
   const base = state._history.slice(0, keepUpTo)
   const next = [...base, snap].slice(-MAX_HISTORY)
   return {
-    _history:    next,
+    _history: next,
     _historyIdx: 0,
-    _tip:        null,
+    _tip: null,
   }
 }
 
@@ -140,102 +150,129 @@ function debouncedSyncPlan(
   driverId: string,
   date: string,
   get: () => PlanningStore,
-  set: (_partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>)) => void,
+  set: (
+    _partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>),
+  ) => void,
 ) {
-
   if (typeof window === 'undefined') return
   const timerKey = `${driverId}|${date}`
   const existing = _syncTimers.get(timerKey)
   if (existing) clearTimeout(existing)
-  _syncTimers.set(timerKey, setTimeout(async () => {
-    _syncTimers.delete(timerKey)
-    const state = get()
-    const key = `${driverId}|${date}`
-    const missions = state.plans[key] || []
-    const startTime = state.startTimes[key] || '07:00'
-    const speed = state.speeds[driverId] || 50
+  _syncTimers.set(
+    timerKey,
+    setTimeout(async () => {
+      _syncTimers.delete(timerKey)
+      const state = get()
+      const key = `${driverId}|${date}`
+      const missions = state.plans[key] || []
+      const startTime = state.startTimes[key] || '07:00'
+      const speed = state.speeds[driverId] || 50
 
-    try {
-      set({ syncStatus: 'syncing', syncError: null })
-      const res = await fetch('/api/plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ driverId, date, missions, startTime, speedKmh: speed }),
-      })
-      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => null), res.status))
-      set({ syncStatus: 'synced', lastSyncedAt: new Date().toISOString() })
-    } catch (err) {
-      log.warn('sync failed', { err: err instanceof Error ? err.message : String(err) })
-      set({ syncStatus: 'error', syncError: err instanceof Error ? err.message : 'Sauvegarde impossible' })
-    }
-  }, 500))
+      try {
+        set({ syncStatus: 'syncing', syncError: null })
+        const res = await fetch('/api/plans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ driverId, date, missions, startTime, speedKmh: speed }),
+        })
+        if (!res.ok)
+          throw new Error(apiErrorMessage(await res.json().catch(() => null), res.status))
+        set({ syncStatus: 'synced', lastSyncedAt: new Date().toISOString() })
+      } catch (err) {
+        log.warn('sync failed', { err: err instanceof Error ? err.message : String(err) })
+        set({
+          syncStatus: 'error',
+          syncError: err instanceof Error ? err.message : 'Sauvegarde impossible',
+        })
+      }
+    }, 500),
+  )
 }
 
 function debouncedSyncAllForDate(
   date: string,
   get: () => PlanningStore,
-  set: (_partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>)) => void,
+  set: (
+    _partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>),
+  ) => void,
   delayMs = 500,
 ) {
-
   if (typeof window === 'undefined') return
   // One timer per date: syncing several dates at once (undo across days, copy to another day)
   // must not cancel each other.
   const pending = _syncAllTimers.get(date)
   if (pending) clearTimeout(pending)
-  _syncAllTimers.set(date, setTimeout(async () => {
-    _syncAllTimers.delete(date)
-    const state = get()
-    const plansForDate: Array<{
-      driverId: string; date: string; missions: PlannedMission[];
-      startTime: string; speedKmh: number
-    }> = []
+  _syncAllTimers.set(
+    date,
+    setTimeout(async () => {
+      _syncAllTimers.delete(date)
+      const state = get()
+      const plansForDate: Array<{
+        driverId: string
+        date: string
+        missions: PlannedMission[]
+        startTime: string
+        speedKmh: number
+      }> = []
 
-    for (const [key, missions] of Object.entries(state.plans)) {
-      if (!key.endsWith(`|${date}`)) continue
-      const dId = key.replace(`|${date}`, '')
-      plansForDate.push({
-        driverId: dId, date, missions,
-        startTime: state.startTimes[key] ?? '07:00',
-        speedKmh: state.speeds[dId] ?? 50,
-      })
-    }
-
-    if (plansForDate.length === 0) return
-
-    try {
-      set({ syncStatus: 'syncing', syncError: null })
-
-      const BATCH = 50
-      const batches = []
-      for (let i = 0; i < plansForDate.length; i += BATCH) {
-        batches.push(plansForDate.slice(i, i + BATCH))
-      }
-      const results = await Promise.all(batches.map(batch => {
-        const body = JSON.stringify(batch)
-        return fetch('/api/plans', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          // Lets the save finish if the page is left right away (browsers cap keepalive bodies at 64 KB).
-          keepalive: body.length < 60_000,
+      for (const [key, missions] of Object.entries(state.plans)) {
+        if (!key.endsWith(`|${date}`)) continue
+        const dId = key.replace(`|${date}`, '')
+        plansForDate.push({
+          driverId: dId,
+          date,
+          missions,
+          startTime: state.startTimes[key] ?? '07:00',
+          speedKmh: state.speeds[dId] ?? 50,
         })
-      }))
-      const failed = results.find(r => !r.ok)
-      if (failed) throw new Error(apiErrorMessage(await failed.json().catch(() => null), failed.status))
-      set({ syncStatus: 'synced', lastSyncedAt: new Date().toISOString() })
-    } catch (err) {
-      log.warn('sync (all for date) failed', { err: err instanceof Error ? err.message : String(err) })
-      set({ syncStatus: 'error', syncError: err instanceof Error ? err.message : 'Sauvegarde impossible' })
-    }
-  }, delayMs))
+      }
+
+      if (plansForDate.length === 0) return
+
+      try {
+        set({ syncStatus: 'syncing', syncError: null })
+
+        const BATCH = 50
+        const batches = []
+        for (let i = 0; i < plansForDate.length; i += BATCH) {
+          batches.push(plansForDate.slice(i, i + BATCH))
+        }
+        const results = await Promise.all(
+          batches.map(batch => {
+            const body = JSON.stringify(batch)
+            return fetch('/api/plans', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body,
+              // Lets the save finish if the page is left right away (browsers cap keepalive bodies at 64 KB).
+              keepalive: body.length < 60_000,
+            })
+          }),
+        )
+        const failed = results.find(r => !r.ok)
+        if (failed)
+          throw new Error(apiErrorMessage(await failed.json().catch(() => null), failed.status))
+        set({ syncStatus: 'synced', lastSyncedAt: new Date().toISOString() })
+      } catch (err) {
+        log.warn('sync (all for date) failed', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+        set({
+          syncStatus: 'error',
+          syncError: err instanceof Error ? err.message : 'Sauvegarde impossible',
+        })
+      }
+    }, delayMs),
+  )
 }
 
 /** Saves every date whose tours differ between two plan maps (undo/redo, copy, archive…). */
 function syncChangedDates(
   before: Record<string, PlannedMission[]>,
   get: () => PlanningStore,
-  set: (_partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>)) => void,
+  set: (
+    _partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>),
+  ) => void,
 ) {
   const after = get().plans
   const dates = new Set<string>()
@@ -248,20 +285,19 @@ function syncChangedDates(
 export const usePlanningStore = create<PlanningStore>()(
   persist(
     (set, get) => ({
-
-      drivers:     [],
-      missions:    [],
-      plans:       {},
-      startTimes:  {},
-      speeds:      {},
+      drivers: [],
+      missions: [],
+      plans: {},
+      startTimes: {},
+      speeds: {},
       unavailable: {},
       lockedPlans: {},
-      syncStatus:    'idle',
-      syncError:     null,
-      lastSyncedAt:  null,
-      _history:    [],
+      syncStatus: 'idle',
+      syncError: null,
+      lastSyncedAt: null,
+      _history: [],
       _historyIdx: 0,
-      _tip:        null,
+      _tip: null,
 
       setInitialData(drivers, missions) {
         set({ drivers, missions })
@@ -291,14 +327,14 @@ export const usePlanningStore = create<PlanningStore>()(
 
       mergePlansFromDB(dbPlans) {
         set(state => {
-          const plans      = { ...state.plans }
+          const plans = { ...state.plans }
           const startTimes = { ...state.startTimes }
-          const speeds     = { ...state.speeds }
+          const speeds = { ...state.speeds }
 
           for (const p of dbPlans) {
             plans[planKey(p.driverId, p.date)] = p.missions
             if (p.startTime) startTimes[planKey(p.driverId, p.date)] = p.startTime
-            if (p.speedKmh)  speeds[p.driverId]                      = p.speedKmh
+            if (p.speedKmh) speeds[p.driverId] = p.speedKmh
           }
 
           return { plans, startTimes, speeds }
@@ -312,18 +348,17 @@ export const usePlanningStore = create<PlanningStore>()(
 
       updateMission(id, data) {
         set(state => {
-
           const newPlans = { ...state.plans }
           let changed = false
           for (const k in newPlans) {
             const ms = newPlans[k]
             if (ms.some(m => m.id === id)) {
-              newPlans[k] = ms.map(m => m.id === id ? { ...m, ...data } : m)
+              newPlans[k] = ms.map(m => (m.id === id ? { ...m, ...data } : m))
               changed = true
             }
           }
           return {
-            missions: state.missions.map(m => m.id === id ? { ...m, ...data } : m),
+            missions: state.missions.map(m => (m.id === id ? { ...m, ...data } : m)),
             ...(changed ? { plans: newPlans } : {}),
           }
         })
@@ -362,7 +397,7 @@ export const usePlanningStore = create<PlanningStore>()(
             }
           }
           return {
-            missions: state.missions.map(m => m.id === id ? { ...m, archived: true } : m),
+            missions: state.missions.map(m => (m.id === id ? { ...m, archived: true } : m)),
             ...(changed ? { plans: newPlans } : {}),
           }
         })
@@ -371,7 +406,7 @@ export const usePlanningStore = create<PlanningStore>()(
 
       restoreMission(id) {
         set(state => ({
-          missions: state.missions.map(m => m.id === id ? { ...m, archived: false } : m),
+          missions: state.missions.map(m => (m.id === id ? { ...m, archived: false } : m)),
         }))
       },
 
@@ -382,7 +417,7 @@ export const usePlanningStore = create<PlanningStore>()(
 
       updateDriver(id, data) {
         set(state => ({
-          drivers: state.drivers.map(d => d.id === id ? { ...d, ...data } : d),
+          drivers: state.drivers.map(d => (d.id === id ? { ...d, ...data } : d)),
         }))
       },
 
@@ -392,7 +427,11 @@ export const usePlanningStore = create<PlanningStore>()(
           const startTimes = { ...state.startTimes }
           const speeds = { ...state.speeds }
           for (const key of Object.keys(plans)) {
-            if (key.startsWith(id + '|')) { delete plans[key]; delete startTimes[key]; delete speeds[key] }
+            if (key.startsWith(id + '|')) {
+              delete plans[key]
+              delete startTimes[key]
+              delete speeds[key]
+            }
           }
           return { drivers: state.drivers.filter(d => d.id !== id), plans, startTimes, speeds }
         })
@@ -400,22 +439,19 @@ export const usePlanningStore = create<PlanningStore>()(
 
       archiveDriver(id) {
         set(state => ({
-          drivers: state.drivers.map(d => d.id === id ? { ...d, archived: true } : d),
+          drivers: state.drivers.map(d => (d.id === id ? { ...d, archived: true } : d)),
         }))
       },
 
       restoreDriver(id) {
         set(state => ({
-          drivers: state.drivers.map(d => d.id === id ? { ...d, archived: false } : d),
+          drivers: state.drivers.map(d => (d.id === id ? { ...d, archived: false } : d)),
         }))
       },
 
       addDriversBulk(newDrivers) {
         set(state => ({
-          drivers: [
-            ...state.drivers,
-            ...newDrivers.map(d => ({ ...d, id: genId() })),
-          ],
+          drivers: [...state.drivers, ...newDrivers.map(d => ({ ...d, id: genId() }))],
         }))
       },
 
@@ -428,8 +464,8 @@ export const usePlanningStore = create<PlanningStore>()(
           const key0 = planKey(driverId, date)
           if ((state.plans[key0] ?? []).some(m => m.id === missionId)) return {}
 
-          const key          = planKey(driverId, date)
-          const existing     = state.plans[key] ?? []
+          const key = planKey(driverId, date)
+          const existing = state.plans[key] ?? []
           const sequenceOrder = existing.length + 1
 
           const planned: PlannedMission = {
@@ -451,7 +487,7 @@ export const usePlanningStore = create<PlanningStore>()(
       unassignFromDriver(missionId, driverId, date) {
         if (get().lockedPlans[`${driverId}|${date}`]) return
         set(state => {
-          const key     = planKey(driverId, date)
+          const key = planKey(driverId, date)
           const updated = (state.plans[key] ?? [])
             .filter(m => m.id !== missionId)
             .map((m, i) => ({ ...m, sequenceOrder: i + 1 }))
@@ -469,7 +505,7 @@ export const usePlanningStore = create<PlanningStore>()(
       clearDriverPlan(driverId, date) {
         if (get().lockedPlans[`${driverId}|${date}`]) return
         set(state => {
-          const key  = planKey(driverId, date)
+          const key = planKey(driverId, date)
           const snap: HistorySnapshot = { plans: state.plans, startTimes: state.startTimes }
 
           const existingIds = new Set(state.missions.map(m => m.id))
@@ -549,17 +585,18 @@ export const usePlanningStore = create<PlanningStore>()(
           }
 
           const existingIds = new Set(state.missions.map(m => m.id))
-          const toAdd       = unassigned.filter(m => !existingIds.has(m.id))
+          const toAdd = unassigned.filter(m => !existingIds.has(m.id))
 
-          const missionsChanged = toAdd.length > 0 || state.missions.some(m => assignedIds.has(m.id))
+          const missionsChanged =
+            toAdd.length > 0 || state.missions.some(m => assignedIds.has(m.id))
           const newMissions = missionsChanged
             ? [...state.missions.filter(m => !assignedIds.has(m.id)), ...toAdd]
             : state.missions
 
           return {
-            plans:      updatedPlans,
+            plans: updatedPlans,
             startTimes: updatedStartTimes,
-            missions:   newMissions,
+            missions: newMissions,
             ...pushHistory(state, snap),
           }
         })
@@ -571,9 +608,11 @@ export const usePlanningStore = create<PlanningStore>()(
       moveUp(missionId, driverId, date) {
         if (get().lockedPlans[`${driverId}|${date}`]) return
         set(state => {
-          const key  = planKey(driverId, date)
-          const list = (state.plans[key] ?? []).slice().sort((a, b) => a.sequenceOrder - b.sequenceOrder)
-          const idx  = list.findIndex(m => m.id === missionId)
+          const key = planKey(driverId, date)
+          const list = (state.plans[key] ?? [])
+            .slice()
+            .sort((a, b) => a.sequenceOrder - b.sequenceOrder)
+          const idx = list.findIndex(m => m.id === missionId)
           if (idx <= 0) return {}
 
           const snap: HistorySnapshot = { plans: state.plans, startTimes: state.startTimes }
@@ -581,7 +620,7 @@ export const usePlanningStore = create<PlanningStore>()(
           const prev = list[idx - 1]
           const curr = list[idx]
           list[idx - 1] = { ...curr, sequenceOrder: prev.sequenceOrder }
-          list[idx]     = { ...prev, sequenceOrder: curr.sequenceOrder }
+          list[idx] = { ...prev, sequenceOrder: curr.sequenceOrder }
 
           return {
             plans: { ...state.plans, [key]: list },
@@ -594,9 +633,11 @@ export const usePlanningStore = create<PlanningStore>()(
       moveDown(missionId, driverId, date) {
         if (get().lockedPlans[`${driverId}|${date}`]) return
         set(state => {
-          const key  = planKey(driverId, date)
-          const list = (state.plans[key] ?? []).slice().sort((a, b) => a.sequenceOrder - b.sequenceOrder)
-          const idx  = list.findIndex(m => m.id === missionId)
+          const key = planKey(driverId, date)
+          const list = (state.plans[key] ?? [])
+            .slice()
+            .sort((a, b) => a.sequenceOrder - b.sequenceOrder)
+          const idx = list.findIndex(m => m.id === missionId)
           if (idx < 0 || idx >= list.length - 1) return {}
 
           const snap: HistorySnapshot = { plans: state.plans, startTimes: state.startTimes }
@@ -604,7 +645,7 @@ export const usePlanningStore = create<PlanningStore>()(
           const next = list[idx + 1]
           const curr = list[idx]
           list[idx + 1] = { ...curr, sequenceOrder: next.sequenceOrder }
-          list[idx]     = { ...next, sequenceOrder: curr.sequenceOrder }
+          list[idx] = { ...next, sequenceOrder: curr.sequenceOrder }
 
           return {
             plans: { ...state.plans, [key]: list },
@@ -618,9 +659,12 @@ export const usePlanningStore = create<PlanningStore>()(
         if (get().lockedPlans[`${driverId}|${date}`]) return
         if (fromIndex === toIndex) return
         set(state => {
-          const key  = planKey(driverId, date)
-          const list = (state.plans[key] ?? []).slice().sort((a, b) => a.sequenceOrder - b.sequenceOrder)
-          if (fromIndex < 0 || fromIndex >= list.length || toIndex < 0 || toIndex >= list.length) return {}
+          const key = planKey(driverId, date)
+          const list = (state.plans[key] ?? [])
+            .slice()
+            .sort((a, b) => a.sequenceOrder - b.sequenceOrder)
+          if (fromIndex < 0 || fromIndex >= list.length || toIndex < 0 || toIndex >= list.length)
+            return {}
 
           const snap: HistorySnapshot = { plans: state.plans, startTimes: state.startTimes }
 
@@ -652,7 +696,7 @@ export const usePlanningStore = create<PlanningStore>()(
 
       toggleUnavailable(driverId, date) {
         set(state => {
-          const key  = planKey(driverId, date)
+          const key = planKey(driverId, date)
           const prev = state.unavailable[key] ?? false
           return { unavailable: { ...state.unavailable, [key]: !prev } }
         })
@@ -704,16 +748,17 @@ export const usePlanningStore = create<PlanningStore>()(
           if (state._historyIdx >= n) return {}
           // Capture the live state on the first undo since the last action, so
           // redo can eventually return to it — it is never stored in _history.
-          const tip = state._historyIdx === 0
-            ? { plans: state.plans, startTimes: state.startTimes }
-            : state._tip
+          const tip =
+            state._historyIdx === 0
+              ? { plans: state.plans, startTimes: state.startTimes }
+              : state._tip
           const newIdx = state._historyIdx + 1
-          const snap   = state._history[n - newIdx]
+          const snap = state._history[n - newIdx]
           return {
-            plans:       snap.plans,
-            startTimes:  snap.startTimes,
+            plans: snap.plans,
+            startTimes: snap.startTimes,
             _historyIdx: newIdx,
-            _tip:        tip,
+            _tip: tip,
           }
         })
         syncChangedDates(before, get, set)
@@ -727,16 +772,16 @@ export const usePlanningStore = create<PlanningStore>()(
           if (newIdx === 0) {
             if (!state._tip) return {}
             return {
-              plans:       state._tip.plans,
-              startTimes:  state._tip.startTimes,
+              plans: state._tip.plans,
+              startTimes: state._tip.startTimes,
               _historyIdx: 0,
             }
           }
-          const n    = state._history.length
+          const n = state._history.length
           const snap = state._history[n - newIdx]
           return {
-            plans:       snap.plans,
-            startTimes:  snap.startTimes,
+            plans: snap.plans,
+            startTimes: snap.startTimes,
             _historyIdx: newIdx,
           }
         })
@@ -759,7 +804,7 @@ export const usePlanningStore = create<PlanningStore>()(
           if (!list) return {}
           const idx = list.findIndex(m => m.id === missionId)
           if (idx === -1) return {}
-          const updated = list.map((m, i) => i === idx ? { ...m, ...data } : m)
+          const updated = list.map((m, i) => (i === idx ? { ...m, ...data } : m))
           return {
             plans: { ...state.plans, [key]: updated },
             ...pushHistory(state, { plans: state.plans, startTimes: state.startTimes }),
@@ -780,21 +825,25 @@ export const usePlanningStore = create<PlanningStore>()(
         })
         debouncedSyncPlan(driverId, date, get, set)
       },
-
     }),
 
     {
-      name:    'pathelix-planning-store',
+      name: 'pathelix-planning-store',
       version: 2,
 
       storage: createJSONStorage(() => idbStorage),
 
       migrate: () => ({
-        drivers: [], missions: [], plans: {}, startTimes: {},
-        speeds: {}, unavailable: {}, lockedPlans: {},
+        drivers: [],
+        missions: [],
+        plans: {},
+        startTimes: {},
+        speeds: {},
+        unavailable: {},
+        lockedPlans: {},
       }),
 
-      partialize: (state) => {
+      partialize: state => {
         const cutoff = new Date()
         cutoff.setDate(cutoff.getDate() - 7)
         const cutoffStr = cutoff.toISOString().split('T')[0]
@@ -822,10 +871,9 @@ export const usePlanningStore = create<PlanningStore>()(
         }
 
         return {
-
-          plans:       filteredPlans,
-          startTimes:  filteredStartTimes,
-          speeds:      state.speeds,
+          plans: filteredPlans,
+          startTimes: filteredStartTimes,
+          speeds: state.speeds,
           unavailable: filteredUnavailable,
           lockedPlans: filteredLockedPlans,
         }
@@ -836,13 +884,13 @@ export const usePlanningStore = create<PlanningStore>()(
         return {
           ...current,
           ...p,
-          drivers:     Array.isArray(p.drivers)     ? p.drivers     : [],
-          missions:    Array.isArray(p.missions)    ? p.missions    : [],
-          plans:       (p.plans       && typeof p.plans       === 'object') ? p.plans       : {},
-          startTimes:  (p.startTimes  && typeof p.startTimes  === 'object') ? p.startTimes  : {},
-          speeds:      (p.speeds      && typeof p.speeds      === 'object') ? p.speeds      : {},
-          unavailable: (p.unavailable && typeof p.unavailable === 'object') ? p.unavailable : {},
-          lockedPlans: (p.lockedPlans && typeof p.lockedPlans === 'object') ? p.lockedPlans : {},
+          drivers: Array.isArray(p.drivers) ? p.drivers : [],
+          missions: Array.isArray(p.missions) ? p.missions : [],
+          plans: p.plans && typeof p.plans === 'object' ? p.plans : {},
+          startTimes: p.startTimes && typeof p.startTimes === 'object' ? p.startTimes : {},
+          speeds: p.speeds && typeof p.speeds === 'object' ? p.speeds : {},
+          unavailable: p.unavailable && typeof p.unavailable === 'object' ? p.unavailable : {},
+          lockedPlans: p.lockedPlans && typeof p.lockedPlans === 'object' ? p.lockedPlans : {},
         }
       },
     },
