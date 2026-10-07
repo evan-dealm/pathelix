@@ -1812,3 +1812,22 @@ model IdempotencyKey {
   @@unique([tenantId, key])
   @@index([createdAt])
 }
+
+/// Demo request left on the public website (/contact). Platform-level: it belongs to no tenant
+/// and is read by the superadmin only. Purged after 3 years (src/app/api/demo-requests/route.ts).
+model DemoRequest {
+  id        String    @id @default(cuid())
+  firstName String
+  lastName  String
+  company   String
+  email     String
+  phone     String    @default("")
+  /// "" | 1-5 | 6-15 | 16-40 | 40+ (number of drivers)
+  fleetSize String    @default("")
+  message   String    @default("")
+  createdAt DateTime  @default(now())
+  /// Set when someone of the team has answered the prospect.
+  handledAt DateTime?
+
+  @@index([createdAt])
+}
