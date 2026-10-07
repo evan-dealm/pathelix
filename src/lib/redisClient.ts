@@ -39,6 +39,46 @@ function scheduleRetry(attemptNum: number): void {
 
 let _retryAttempt = 0
 
+const HEALTH_INTERVAL_MS = 5_000
+let _healthTimer: ReturnType<typeof setInterval> | null = null
+
+function stopHealthCheck(): void {
+  if (_healthTimer) { clearInterval(_healthTimer); _healthTimer = null }
+}
+
+/**
+ * Drops the current connection and switches to degraded mode until a retry succeeds.
+ * `disconnect()` also rejects the commands still waiting on the dead connection.
+ */
+function markUnavailable(reason: string): void {
+  const dead = _client
+  _client = null
+  _failed = true
+  stopHealthCheck()
+  try { dead?.disconnect() } catch { /* already closed */ }
+  log.warn('Redis injoignable — mode dégradé jusqu\'à la prochaine reconnexion', { reason })
+  scheduleRetry(_retryAttempt++)
+}
+
+/**
+ * Watches an established connection. A connection can go silent without being closed (network
+ * partition, proxy, paused VM): ioredis then never reconnects and every command waits for its
+ * timeout — each request paid about two seconds, and Redis was never used again until the
+ * application was restarted, even long after Redis was back. A failed PING drops the connection,
+ * callers skip Redis at once, and the usual retry builds a new one.
+ */
+function startHealthCheck(client: import('ioredis').Redis): void {
+  stopHealthCheck()
+  _healthTimer = setInterval(() => {
+    if (_client !== client) return
+    client.ping().catch((err: unknown) => {
+      if (_client === client) markUnavailable(err instanceof Error ? err.message : String(err))
+    })
+  }, HEALTH_INTERVAL_MS)
+  // Never keeps a worker or a script alive on its own.
+  _healthTimer.unref?.()
+}
+
 export async function getRedisClient(): Promise<import('ioredis').Redis | null> {
   if (!REDIS_AVAILABLE) return null
   if (_failed)          return null
@@ -59,6 +99,7 @@ export async function getRedisClient(): Promise<import('ioredis').Redis | null> 
           log.warn('Redis indisponible après 3 tentatives — retry avec backoff')
           _failed = true
           _client = null
+          stopHealthCheck()
           scheduleRetry(_retryAttempt++)
           return null
         }
@@ -84,6 +125,7 @@ export async function getRedisClient(): Promise<import('ioredis').Redis | null> 
     await _client.ping()
     log.info('Connexion Redis établie')
     _retryAttempt = 0
+    startHealthCheck(_client)
     return _client
   } catch (err) {
     log.warn('Redis connexion échouée — mode dégradé', {
@@ -99,6 +141,7 @@ export async function getRedisClient(): Promise<import('ioredis').Redis | null> 
 }
 
 export function resetRedisClient(): void {
+  stopHealthCheck()
   _client?.disconnect()
   _client    = null
   _failed    = false

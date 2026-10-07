@@ -146,7 +146,7 @@ Tous valident l'environnement au démarrage et s'arrêtent proprement sur SIGTER
 
 | Panne | Comportement |
 |---|---|
-| Redis | Optimisation synchrone, SSE en mémoire, rate limiting local ; appels bornés par timeout (jamais de requête bloquée) ; `/api/ready` reste 200 |
+| Redis | Optimisation synchrone, SSE en mémoire, rate limiting local ; appels bornés par timeout (jamais de requête bloquée) ; `/api/ready` reste 200. Une connexion devenue muette (coupure réseau sans fermeture) est détectée par un PING toutes les 5 s, abandonnée, puis reconstruite automatiquement au retour de Redis (essais à 5, 10, 20… 60 s) |
 | Valhalla / API de routage | Circuit breaker puis haversine ; `routingSource` indique la source utilisée |
 | Worker VRP | Mode synchrone |
 | Worker PDF | 503 explicite |
