@@ -1,0 +1,468 @@
+@config "../../../tailwind.site.config.js";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base ──────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  html {
+    background: #ffffff;
+    color: #000000;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: #0055a4;
+    color: #ffffff;
+  }
+
+  :focus-visible {
+    outline: 2px solid #0055a4;
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .on-dark :focus-visible {
+    outline-color: #ffffff;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+/* ─── Type scale ────────────────────────────────────────────────────────────── */
+
+@layer components {
+  .t-display {
+    font-size: clamp(2.5rem, 1.35rem + 4.9vw, 5.25rem);
+    line-height: 0.98;
+    letter-spacing: -0.045em;
+    font-weight: 600;
+  }
+
+  .t-h2 {
+    font-size: clamp(1.875rem, 1.2rem + 2.7vw, 3.375rem);
+    line-height: 1.04;
+    letter-spacing: -0.038em;
+    font-weight: 600;
+  }
+
+  .t-h3 {
+    font-size: 1.1875rem;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+    font-weight: 600;
+  }
+
+  .t-lead {
+    font-size: clamp(1.0625rem, 0.98rem + 0.4vw, 1.3125rem);
+    line-height: 1.5;
+    letter-spacing: -0.012em;
+  }
+
+  .t-body {
+    font-size: 1rem;
+    line-height: 1.62;
+  }
+
+  .t-small {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  /* Figures that must align in a column: hours, coordinates, durations. */
+  .t-num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── Layout ──────────────────────────────────────────────────────────────── */
+
+  /* One container width for the whole site: every section shares the header's left edge. */
+  .shell {
+    width: 100%;
+    max-width: 92rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+  }
+
+  .shell-wide {
+    width: 100%;
+    max-width: 92rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .shell,
+    .shell-wide {
+      padding-inline: 2rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .shell,
+    .shell-wide {
+      padding-inline: 3rem;
+    }
+  }
+
+  .band {
+    padding-block: clamp(4.5rem, 3rem + 7vw, 9.5rem);
+  }
+
+  /* ─── Buttons ─────────────────────────────────────────────────────────────── */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.625rem;
+    min-height: 2.875rem;
+    padding: 0.625rem 1.25rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease,
+      transform 90ms ease;
+  }
+
+  .btn:active {
+    transform: translateY(1px);
+  }
+
+  .btn-primary {
+    background: #0055a4;
+    color: #ffffff;
+  }
+
+  .btn-primary:hover {
+    background: #00468a;
+  }
+
+  .btn-quiet {
+    border-color: rgb(0 0 0 / 0.16);
+    color: #000000;
+  }
+
+  .btn-quiet:hover {
+    border-color: #000000;
+  }
+
+  .btn-light {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  .btn-light:hover {
+    background: #e2e2dd;
+  }
+
+  .btn-outline {
+    border-color: rgb(255 255 255 / 0.28);
+    color: #ffffff;
+  }
+
+  .btn-outline:hover {
+    border-color: #ffffff;
+  }
+
+  .btn-sm {
+    min-height: 2.375rem;
+    padding: 0.4375rem 0.875rem;
+    font-size: 0.875rem;
+  }
+
+  /* Text link: the underline retracts to the right on hover. */
+  .link {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 100% 1px;
+    padding-bottom: 2px;
+    transition: background-size 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .link:hover {
+    background-size: 0% 1px;
+    background-position: 100% 100%;
+  }
+
+  /* ─── Product frame ───────────────────────────────────────────────────────── */
+
+  .frame {
+    position: relative;
+    overflow: hidden;
+    border-radius: 6px;
+    background: #f7f7f4;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.1),
+      0 30px 60px -30px rgb(0 0 0 / 0.22);
+  }
+
+  .frame-dark {
+    background: #000000;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14);
+  }
+
+  /* ─── Long-form pages (legal, security) ───────────────────────────────────── */
+
+  .prose-site {
+    max-width: 42rem;
+    font-size: 1rem;
+    line-height: 1.68;
+    color: #1f1f1f;
+  }
+
+  .prose-site h2 {
+    margin-top: 3rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.375rem;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    color: #000000;
+  }
+
+  .prose-site p + p,
+  .prose-site ul + p,
+  .prose-site p + ul {
+    margin-top: 1rem;
+  }
+
+  .prose-site ul {
+    list-style: none;
+  }
+
+  .prose-site li {
+    position: relative;
+    padding-left: 1.25rem;
+  }
+
+  .prose-site li + li {
+    margin-top: 0.5rem;
+  }
+
+  .prose-site li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.72em;
+    width: 0.5rem;
+    height: 1px;
+    background: #5f636b;
+  }
+
+  .prose-site a {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  .prose-site a:hover {
+    color: #0055a4;
+  }
+}
+
+/* ─── Motion ────────────────────────────────────────────────────────────────── */
+
+/* One orchestrated moment on arrival: the headline settles, then the product rises into place
+   while the orbit is drawn once around it. Nothing loops. */
+
+@keyframes site-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes site-unveil {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 42px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes site-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes site-travel {
+  from {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  to {
+    offset-distance: 100%;
+    opacity: 1;
+  }
+}
+
+@keyframes site-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.enter-1 {
+  animation: site-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.enter-2 {
+  animation: site-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 90ms both;
+}
+
+.enter-3 {
+  animation: site-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 180ms both;
+}
+
+.enter-product {
+  animation: site-unveil 1100ms cubic-bezier(0.2, 0.7, 0.2, 1) 260ms both;
+}
+
+.orbit-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: site-draw 2200ms cubic-bezier(0.45, 0.05, 0.25, 1) 500ms forwards;
+}
+
+.orbit-draw-late {
+  animation-delay: 900ms;
+}
+
+.orbit-point {
+  offset-rotate: 0deg;
+  animation: site-travel 2600ms cubic-bezier(0.45, 0.05, 0.25, 1) 700ms both;
+}
+
+.dialog-in {
+  animation: site-fade 220ms ease both;
+}
+
+/* Scroll-linked reveals for the large product images, where the browser supports them natively.
+   No scroll listener, no layout work: transform and clip only. Elsewhere the image is simply there. */
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes site-settle {
+      from {
+        transform: scale(1.045);
+      }
+      to {
+        transform: none;
+      }
+    }
+
+    @keyframes site-open {
+      from {
+        clip-path: inset(7% 5% 0 5%);
+      }
+      to {
+        clip-path: inset(0);
+      }
+    }
+
+    .scroll-settle {
+      animation: site-settle linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 38%;
+      transform-origin: 50% 0;
+    }
+
+    .scroll-open {
+      animation: site-open linear both;
+      animation-timeline: view();
+      animation-range: entry 5% cover 32%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .orbit-draw {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ─── Details / FAQ ─────────────────────────────────────────────────────────── */
+
+details.faq > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+details.faq > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.faq .faq-mark {
+  transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+details.faq[open] .faq-mark {
+  transform: rotate(45deg);
+}
+
+/* ─── Film dialog ───────────────────────────────────────────────────────────── */
+
+dialog.film {
+  max-width: none;
+  max-height: none;
+}
+
+dialog.film::backdrop {
+  background: rgb(0 0 0 / 0.94);
+}

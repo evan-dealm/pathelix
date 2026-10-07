@@ -31,7 +31,21 @@ const _anonRl = createRateLimiter(GLOBAL_RL_MAX_ANON, GLOBAL_RL_WINDOW, {
 })
 
 const PUBLIC_PATHS: Array<string | RegExp> = [
-  /^\/$/, // public landing page (signed-in users are redirected by the page itself)
+  // Public website (src/app/(site)): pages, its media, and what search engines fetch. No tenant
+  // data anywhere in there. A signed-in user asking for `/` is sent to their workspace below.
+  /^\/$/,
+  '/produit',
+  '/metiers',
+  '/securite',
+  '/contact',
+  '/mentions-legales',
+  '/confidentialite',
+  '/site-media',
+  '/sitemap.xml',
+  '/robots.txt',
+  /^\/opengraph-image/,
+  // Demo request form of the website: POST only, validated and rate limited in the route.
+  '/api/demo-requests',
   '/login',
   /^\/api\/auth\/(?!me)/,
   '/api/health',
@@ -192,6 +206,22 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
   }
 
   if (isPublic(pathname)) {
+    // The home page is static marketing content: someone already signed in wants their workspace.
+    // Decided here (not in the page) so the page never reads a cookie and stays cacheable.
+    if (pathname === '/') {
+      const homeToken = request.cookies.get(SESSION_COOKIE)?.value
+      const homeSession = homeToken ? await verifySession(homeToken) : null
+      if (homeSession) {
+        const workspace = request.nextUrl.clone()
+        workspace.pathname =
+          homeSession.role === 'superadmin'
+            ? '/superadmin'
+            : homeSession.role === 'driver'
+              ? `/driver/${homeSession.driverRef ?? homeSession.sub}`
+              : '/admin'
+        return withContext(NextResponse.redirect(workspace))
+      }
+    }
     return withContext(NextResponse.next({ request: { headers: requestHeaders } }))
   }
 

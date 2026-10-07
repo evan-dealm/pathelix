@@ -1,3 +1,7 @@
+/* Explicit on purpose: the public website has its own Tailwind config (src/app/(site)/site.css),
+   and Tailwind 3 otherwise applies whichever config the previously compiled stylesheet named. */
+@config "../../tailwind.config.js";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -39,6 +39,8 @@ const scriptSrc = isDev
 
 const nextConfig = {
   output: 'standalone',
+  // NEXT_DIST_DIR lets a verification build run next to a server already using `.next`.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   compress: true,
 
   env: {
@@ -115,6 +117,11 @@ const nextConfig = {
       {
         source: '/_next/static/:path*',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
+        // Website film, excerpts and poster: stable names, a week in the browser cache.
+        source: '/site-media/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=604800' }],
       },
       {
         source: '/fonts/:path*',

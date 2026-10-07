@@ -248,6 +248,62 @@ describe('middleware', () => {
     expect(res.status).toBe(200)
   })
 
+  // ─── Public website ───────────────────────────────────────────────────────
+
+  it('serves the public website, its media and its SEO files without a session', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    for (const path of [
+      '/',
+      '/produit',
+      '/metiers',
+      '/securite',
+      '/contact',
+      '/mentions-legales',
+      '/confidentialite',
+      '/site-media/pathelix-film-720.mp4',
+      '/sitemap.xml',
+      '/robots.txt',
+      '/opengraph-image-abc123',
+    ]) {
+      expect((await middleware(makeReq(path))).status, path).toBe(200)
+    }
+    expect((await middleware(makeReq('/api/demo-requests', { method: 'POST' }))).status).toBe(200)
+  })
+
+  it('keeps everything next to the website private: a look-alike path still needs a session', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    for (const path of ['/produits', '/contacts', '/site-media-private/x.mp4', '/securite-interne']) {
+      const res = await middleware(makeReq(path))
+      expect(res.status, path).toBe(307)
+      expect(res.headers.get('location'), path).toContain('/login')
+    }
+    expect((await middleware(makeReq('/api/demo-requests-export'))).status).toBe(401)
+    expect((await middleware(makeReq('/api/superadmin/demo-requests'))).status).toBe(401)
+  })
+
+  it('sends a signed-in user who opens the home page to their workspace, by role', async () => {
+    mockVerifySession.mockResolvedValue(makeSession())
+    const admin = await middleware(makeReq('/', { cookie: 'session=tok' }))
+    expect(admin.status).toBe(307)
+    expect(new URL(admin.headers.get('location') ?? '').pathname).toBe('/admin')
+
+    mockVerifySession.mockResolvedValue(makeSession({ role: 'superadmin' }))
+    const sa = await middleware(makeReq('/', { cookie: 'session=tok' }))
+    expect(new URL(sa.headers.get('location') ?? '').pathname).toBe('/superadmin')
+
+    mockVerifySession.mockResolvedValue(makeSession({ role: 'driver', driverRef: 'd-7' }))
+    const driver = await middleware(makeReq('/', { cookie: 'session=tok' }))
+    expect(new URL(driver.headers.get('location') ?? '').pathname).toBe('/driver/d-7')
+  })
+
+  it('shows the home page to a visitor whose session cookie is invalid, and never verifies one for other website pages', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    expect((await middleware(makeReq('/', { cookie: 'session=expired' }))).status).toBe(200)
+    mockVerifySession.mockClear()
+    expect((await middleware(makeReq('/produit', { cookie: 'session=tok' }))).status).toBe(200)
+    expect(mockVerifySession).not.toHaveBeenCalled()
+  })
+
   // ─── Header stripping ─────────────────────────────────────────────────────
 
   it('strips x-user-id and x-user-role from inbound requests on non-Nessy paths', async () => {
