@@ -32,6 +32,7 @@ export type UnassignedReasonCode =
   | 'WORK_TIME'            // would exceed the daily working time
   | 'NO_EXUTOIRE'          // no exutoire accepts this waste that day
   | 'NEEDS_GEOCODE'        // address not geolocated
+  | 'DEPENDENCY'           // must come after another mission that is not planned / cannot come first
   | 'OTHER'
 
 export interface UnassignedReason {
@@ -93,6 +94,8 @@ export function validateAndRepair(
   drivers: Driver[],
   ctx: CostContext,
   deadline: number = Date.now() + 1500,
+  /** Ids of every mission of the day being planned (to tell an unplanned prerequisite from one that is not part of this day). */
+  dayMissionIds?: ReadonlySet<string>,
 ): { solution: VRPSolution; removed: Map<string, { mission: Mission; code: UnassignedReasonCode }> } {
   const routes: Route[] = solution.routes.map(r => ({ driverId: r.driverId, missions: [...r.missions] }))
   const removed = new Map<string, { mission: Mission; code: UnassignedReasonCode }>()
@@ -170,7 +173,93 @@ export function validateAndRepair(
     }
   }
 
+  // 4. Dependencies hold across the whole plan, not only inside one truck's route.
+  enforceDependencies(routes, removed, drivers, ctx, dayMissionIds)
+
   return { solution: { routes, cost: solution.cost }, removed }
+}
+
+/**
+ * A mission that depends on another one (a pickup after the new bin was dropped…) must start
+ * after it is finished. The search only penalised the wrong order inside one route: with the two
+ * missions on different trucks nothing was checked, and the dependent one was routinely planned
+ * hours before its prerequisite — or planned while the prerequisite was not planned at all.
+ *
+ * Here every dependent mission is checked against the simulated times of the final routes. A
+ * wrong order is repaired by moving the dependent mission to the cheapest position that respects
+ * it (after the prerequisite in its route, or later in its own) without creating a hard problem;
+ * when there is none, or when the prerequisite is not planned, the dependent mission leaves the
+ * plan with the reason, rather than being done in the wrong order.
+ */
+function enforceDependencies(
+  routes: Route[],
+  removed: Map<string, { mission: Mission; code: UnassignedReasonCode }>,
+  drivers: Driver[],
+  ctx: CostContext,
+  dayMissionIds?: ReadonlySet<string>,
+): void {
+  const dependents = () => routes.flatMap(r => r.missions).filter(m => m.dependsOnId)
+  if (dependents().length === 0) return
+
+  /** Start and end of every planned mission, from the same simulator as the plan shown. */
+  const timesOf = (): Map<string, { start: number; end: number; route: Route }> => {
+    const t = new Map<string, { start: number; end: number; route: Route }>()
+    for (const route of routes) {
+      const trace = simulateRouteTrace(route, ctx, drivers)
+      for (const e of trace?.events ?? []) if (e.kind === 'mission') t.set(e.mission.id, { start: e.startMin, end: e.departureMin, route })
+    }
+    return t
+  }
+  const drop = (m: Mission) => {
+    for (const r of routes) r.missions = r.missions.filter(x => x.id !== m.id)
+    removed.set(m.id, { mission: m, code: 'DEPENDENCY' })
+  }
+  const feasible = (trial: Route): boolean => {
+    const { missionLevel, routeLevel, late } = hardProblems(trial, ctx, drivers)
+    return missionLevel.length === 0 && routeLevel.length === 0 && late.length === 0
+  }
+
+  // Each pass fixes or removes at least one mission; moving one can shift others, hence the loop.
+  for (let pass = 0; pass < 200; pass++) {
+    const times = timesOf()
+    const planned = new Set(times.keys())
+    const bad = dependents().find(m => {
+      const pre = m.dependsOnId as string
+      if (!planned.has(pre)) return removed.has(pre) || (dayMissionIds?.has(pre) ?? false)
+      return (times.get(m.id)?.start ?? 0) < (times.get(pre)?.end ?? 0)
+    })
+    if (!bad) return
+    const pre = bad.dependsOnId as string
+    if (!planned.has(pre)) { drop(bad); continue }
+
+    const home = times.get(bad.id)!.route
+    const preRoute = times.get(pre)!.route
+    home.missions = home.missions.filter(x => x.id !== bad.id)
+    const d = (r: Route) => drivers.find(x => x.id === r.driverId)
+    let best: { route: Route; pos: number; cost: number } | null = null
+    for (const route of new Set([preRoute, home])) {
+      const driver = d(route)
+      if (!driver || !isHfvrpCompatible(bad, driver) || loadIssueAlone(bad, driver)) continue
+      if (bad.requiredSkills?.some(sk => !(driver.skills ?? []).includes(sk))) continue
+      if (!isAllerRetourCompatible(route.missions, bad.type)) continue
+      const from = route === preRoute ? route.missions.findIndex(x => x.id === pre) + 1 : 0
+      const base = computeRouteCost(route, ctx, drivers)
+      for (let pos = from; pos <= route.missions.length; pos++) {
+        const trial: Route = { driverId: route.driverId, missions: [...route.missions.slice(0, pos), bad, ...route.missions.slice(pos)] }
+        if (!feasible(trial)) continue
+        // The order must hold with the times of the trial itself (the prerequisite may be in it).
+        const trace = simulateRouteTrace(trial, ctx, drivers)
+        const ev = trace?.events.find(e => e.kind === 'mission' && e.mission.id === bad.id)
+        const preEv = route === preRoute ? trace?.events.find(e => e.kind === 'mission' && e.mission.id === pre) : undefined
+        const preEnd = preEv && preEv.kind === 'mission' ? preEv.departureMin : times.get(pre)!.end
+        if (!ev || ev.kind !== 'mission' || ev.startMin < preEnd) continue
+        const cost = computeRouteCost(trial, ctx, drivers) - base
+        if (!best || cost < best.cost) best = { route, pos, cost }
+      }
+    }
+    if (best) best.route.missions.splice(best.pos, 0, bad)
+    else removed.set(bad.id, { mission: bad, code: 'DEPENDENCY' })
+  }
 }
 
 function fmtKg(kg: number): string {
@@ -180,6 +269,7 @@ function fmtKg(kg: number): string {
 /** Human explanation of a reason code for one mission. */
 export function reasonMessage(code: UnassignedReasonCode, m: Mission, ctx?: CostContext): string {
   switch (code) {
+    case 'DEPENDENCY':          return "Doit être réalisée après une autre mission, qui n'est pas planifiée ce jour-là ou ne peut pas l'être avant elle"
     case 'NO_DRIVER':           return 'Aucun chauffeur disponible ce jour-là'
     case 'VEHICLE_UNAVAILABLE': return 'Les camions des chauffeurs disponibles sont immobilisés'
     case 'BIN_SIZE':            return `Benne de ${m.binSizeM3 ?? '?'} m³ : aucun camion disponible ne peut la porter`

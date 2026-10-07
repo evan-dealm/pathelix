@@ -430,7 +430,7 @@ export async function runVRP(
 
   // Nothing non-executable leaves the optimiser: hard problems are taken out (and re-inserted
   // elsewhere when another truck can take them), the rest is explained below.
-  const repaired = validateAndRepair(best, drivers, ctx, Date.now() + Math.max(500, Math.round(timeBudgetMs * 0.1)))
+  const repaired = validateAndRepair(best, drivers, ctx, Date.now() + Math.max(500, Math.round(timeBudgetMs * 0.1)), new Set(missions.map(m => m.id)))
   best = repaired.solution
   for (const [id, r] of repaired.removed) knownReasons.set(id, r.code)
 

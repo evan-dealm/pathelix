@@ -28,7 +28,7 @@ export function reportFromResult(result: OptimizationResult): OptimizationReport
 const CODE_LABEL: Record<string, string> = {
   PAYLOAD: 'Poids', VOLUME: 'Volume', BIN_SIZE: 'Taille benne', SKILL: 'Compétence', CAPACITY: 'Capacité',
   TIME_WINDOW: 'Horaire', P1_DEADLINE: 'Urgence P1', DRIVING_TIME: 'Temps de conduite', WORK_TIME: 'Temps de travail',
-  NO_EXUTOIRE: 'Exutoire', NO_DRIVER: 'Chauffeurs', VEHICLE_UNAVAILABLE: 'Véhicules', NEEDS_GEOCODE: 'Adresse', OTHER: 'Autre',
+  NO_EXUTOIRE: 'Exutoire', NO_DRIVER: 'Chauffeurs', VEHICLE_UNAVAILABLE: 'Véhicules', DEPENDENCY: 'Dépendance', NEEDS_GEOCODE: 'Adresse', OTHER: 'Autre',
 }
 
 export function OptimizationReport({ data, onDismiss }: { data: OptimizationReportData; onDismiss: () => void }) {
