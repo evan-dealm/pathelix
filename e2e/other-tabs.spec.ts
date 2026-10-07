@@ -118,7 +118,7 @@ test.describe('Audit Tab', () => {
 
   test('shows audit log entries or empty state', async ({ page }) => {
     const emptyState = page.locator('#tabpanel-audit').getByText(/Aucune entr/i).first()
-    const tableRow   = page.locator('#tabpanel-audit table tbody tr, #tabpanel-audit .rounded-xl').first()
+    const tableRow   = page.locator('#tabpanel-audit table tbody tr:visible, #tabpanel-audit .rounded-xl:visible').first()
     const hasEmpty   = await emptyState.isVisible({ timeout: 5_000 }).catch(() => false)
     const hasEntries = await tableRow.isVisible({ timeout: 5_000 }).catch(() => false)
     expect(hasEmpty || hasEntries).toBe(true)

@@ -108,7 +108,7 @@ test.describe('Users Tab', () => {
   })
 
   test('edit user opens pre-filled form', async ({ page }) => {
-    const editBtn = page.locator('[role="tabpanel"] button:has-text("Modifier")').first()
+    const editBtn = page.locator('[role="tabpanel"] button:has-text("Modifier"):visible').first()
     await expect(editBtn).toBeVisible({ timeout: 5_000 })
     await editBtn.click()
     await page.waitForTimeout(500)
@@ -120,11 +120,11 @@ test.describe('Users Tab', () => {
   })
 
   test('edit modal shows password reset section', async ({ page }) => {
-    const editBtn = page.locator('[role="tabpanel"] button:has-text("Modifier")').first()
+    const editBtn = page.locator('[role="tabpanel"] button:has-text("Modifier"):visible').first()
     await expect(editBtn).toBeVisible({ timeout: 5_000 })
     await editBtn.click()
     await page.waitForTimeout(500)
-    const resetSection = page.locator('[role="dialog"]').getByText(/reinitialiser le mot de passe/i).first()
+    const resetSection = page.locator('[role="dialog"]').getByText(/r[ée]initialiser le mot de passe/i).first()
     await expect(resetSection).toBeVisible({ timeout: 10_000 })
     await closeModal(page)
   })

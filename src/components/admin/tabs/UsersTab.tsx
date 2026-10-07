@@ -382,12 +382,12 @@ export function UsersTab() {
             <Field label="Rôle">
               <SelectInput value={form.role} onChange={v => setForm(f => ({ ...f, role: v as UserForm['role'] }))} options={[
                 { value: 'ADMIN', label: 'Administrateur' },
-                { value: 'DISPATCHER', label: 'Dispatcher' },
+                { value: 'DISPATCHER', label: 'Exploitant' },
                 { value: 'DRIVER', label: 'Chauffeur' },
               ]} />
             </Field>
             {form.role === 'DRIVER' && (
-              <Field label="Chauffeur associe">
+              <Field label="Chauffeur associé">
                 <SelectInput value={form.driverRef} onChange={v => setForm(f => ({ ...f, driverRef: v }))} options={[
                   { value: '', label: '-- Aucun --' },
                   ...activeDrivers.map(d => ({ value: d.id, label: `${d.firstName} ${d.lastName}` })),

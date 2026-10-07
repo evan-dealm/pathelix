@@ -20,10 +20,12 @@ async function openFirstMissionDetail(page: import('@playwright/test').Page) {
 }
 
 async function openFirstDriverDetail(page: import('@playwright/test').Page) {
-  await navigateToTab(page, 'drivers')
-  const driverRow = page.locator('[role="tabpanel"] tbody tr').first()
-  await expect(driverRow).toBeVisible({ timeout: 15_000 })
-  await driverRow.click()
+  // The driver detail opens from the planning timeline (name button of a driver row),
+  // on the dashboard — not from the Chauffeurs table, whose rows only carry inline actions.
+  await navigateToTab(page, 'dashboard')
+  const driverBtn = page.locator('button[class*="group/drv"]:visible').first()
+  await expect(driverBtn).toBeVisible({ timeout: 15_000 })
+  await driverBtn.click()
   await expect(modalDialog(page)).toBeVisible({ timeout: 10_000 })
 }
 

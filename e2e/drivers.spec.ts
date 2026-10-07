@@ -84,7 +84,7 @@ test.describe('Drivers Tab', () => {
       await driverRow.hover()
       await page.waitForTimeout(300)
 
-      const editBtn = page.locator('button:has-text("Modifier")').first()
+      const editBtn = page.locator('button:has-text("Modifier"):visible').first()
       if (await editBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
         await editBtn.click()
         await page.waitForTimeout(500)

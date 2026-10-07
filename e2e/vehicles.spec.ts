@@ -77,7 +77,7 @@ test.describe('Vehicles Tab', () => {
     await expect(tableRows.first()).toBeVisible({ timeout: 5_000 })
     await tableRows.first().hover()
     await page.waitForTimeout(300)
-    const deleteBtn = page.locator('[role="tabpanel"] button:has-text("Supprimer")').first()
+    const deleteBtn = page.locator('[role="tabpanel"] button:has-text("Supprimer"):visible').first()
     await expect(deleteBtn).toBeVisible({ timeout: 5_000 })
     await expect(deleteBtn).toBeEnabled()
   })
