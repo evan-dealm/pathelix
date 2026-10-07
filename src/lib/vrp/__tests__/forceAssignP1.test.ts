@@ -53,7 +53,7 @@ describe('forceAssignP1', () => {
     const emptyRoute = result.routes.find(r => r.driverId === 'd-empty')!
     expect(emptyRoute.missions.map(m => m.id)).toEqual(['m-p1'])
     // Placed into a genuinely compatible route — no need to warn about a violated constraint.
-    expect(warnings.find(w => w.message.includes('m-p1'))).toBeUndefined()
+    expect(warnings.find(w => w.message.includes('forcée sur une tournée'))).toBeUndefined()
   })
 
   it('forces the mission through and warns when NO route respects ALLER_RETOUR', () => {
@@ -76,8 +76,10 @@ describe('forceAssignP1', () => {
     expect(placedIn).toHaveLength(1)
 
     // But since this violates ALLER_RETOUR, it must be surfaced to the dispatcher.
-    const warning = warnings.find(w => w.message.includes('m-p1'))
+    // Worded for the dispatcher: the customer and the address, never the internal id.
+    const warning = warnings.find(w => w.message.includes('forcée sur une tournée'))
     expect(warning).toBeDefined()
+    expect(warning!.message).not.toContain('m-p1')
     expect(warning!.severity).toBe('warning')
   })
 

@@ -100,9 +100,16 @@ export async function getPlanningDrivers(tenantId: string, date: string): Promis
 
 /** Message shown with an optimisation result for each driver left out. */
 export function exclusionMessage(e: ExcludedDriver): string {
+  // `detail` carries stored reason codes (conge, breakdown…): the dispatcher reads words.
+  const detail = e.detail.replace(/\b(conge|maladie|formation|autre|maintenance|inspection|breakdown|other|decommissioned)\b/g, code => REASON_LABEL[code] ?? code)
   return e.reason === 'DRIVER_UNAVAILABLE'
-    ? `${e.name} n'est pas planifié : indisponible (${e.detail})`
-    : `${e.name} n'est pas planifié : camion immobilisé (${e.detail})`
+    ? `${e.name} n'est pas planifié : indisponible (${detail})`
+    : `${e.name} n'est pas planifié : camion immobilisé (${detail})`
+}
+
+const REASON_LABEL: Record<string, string> = {
+  conge: 'congé', maladie: 'maladie', formation: 'formation', autre: 'autre motif',
+  maintenance: 'en maintenance', inspection: 'contrôle technique', breakdown: 'panne', other: 'autre motif', decommissioned: 'retiré du parc',
 }
 
 interface MaterialRow { id: string; name: string; densityKgM3: number | null; fillFactor: number; uncertaintyPct: number }

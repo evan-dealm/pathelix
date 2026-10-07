@@ -159,7 +159,7 @@ describe('formatSolutionForAPI — time window', () => {
     mockRealDurationMin.mockReturnValue(20)
     const m = mission('m-1', { timeWindow: { openMin: 480, closeMin: 490 } })
     const result = formatSolutionForAPI(solution('d-1', [m]), [driver()], ctx())
-    const warn = result.warnings.find(w => w.message.includes('m-1'))
+    const warn = result.warnings.find(w => w.message.includes('après la fin du créneau'))
     expect(warn).toBeDefined()
     expect(warn!.severity).toBe('warning')
   })
@@ -245,7 +245,7 @@ describe('formatSolutionForAPI — P1 deadline warning', () => {
     mockRealDurationMin.mockReturnValue(300)
     const m = mission('p1', { priority: 1, estimatedDurationMin: 5, maneuverTimeMin: 0 })
     const result = formatSolutionForAPI(solution('d-1', [m]), [driver()], ctx())
-    const warn = result.warnings.find(w => w.driverId === 'd-1' && w.severity === 'error' && w.message.includes('P1'))
+    const warn = result.warnings.find(w => w.driverId === 'd-1' && w.severity === 'error' && w.message.startsWith('Urgence'))
     expect(warn).toBeDefined()
   })
 })
@@ -294,5 +294,16 @@ describe('formatSolutionForAPI — exutoire congestion', () => {
     const warn = result.warnings.find(w => w.message.includes('Congestion'))
     expect(warn).toBeDefined()
     expect(warn!.severity).toBe('warning')
+  })
+})
+
+describe('formatSolutionForAPI — an urgent mission with the customer\'s own afternoon slot', () => {
+  // Found on realistic data: "P1 served after 11:00 (14:00)" was raised as an error for a
+  // mission the customer had asked for between 14:00 and 16:00.
+  it('is not reported late when its time window opens after the urgent deadline', () => {
+    mockRealDurationMin.mockReturnValue(300)
+    const m = mission('p1', { priority: 1, estimatedDurationMin: 5, maneuverTimeMin: 0, timeWindow: { openMin: 14 * 60, closeMin: 16 * 60 } })
+    const result = formatSolutionForAPI(solution('d-1', [m]), [driver()], ctx())
+    expect(result.warnings.filter(w => w.message.startsWith('Urgence'))).toEqual([])
   })
 })

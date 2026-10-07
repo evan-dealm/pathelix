@@ -164,7 +164,7 @@ export async function runVRP(
       knownReasons.set(mission.id, 'BIN_SIZE')
       hfvrpWarnings.push({
         driverId: '',
-        message:  `Mission ${mission.id} (${mission.address}) : benne ${mission.binSizeM3} m³ incompatible avec tous les véhicules disponibles`,
+        message:  `${mission.clientName || 'Mission'} (${mission.address}) : benne ${mission.binSizeM3} m³ incompatible avec tous les véhicules disponibles`,
         severity: 'error',
       })
       continue
@@ -174,7 +174,7 @@ export async function runVRP(
       const code = loadIssues.includes('PAYLOAD') ? 'PAYLOAD' : 'VOLUME'
       unassignableByCapacity.push(mission)
       knownReasons.set(mission.id, code)
-      hfvrpWarnings.push({ driverId: '', message: `Mission ${mission.id} (${mission.address}) : ${reasonMessage(code, mission)}`, severity: 'error' })
+      hfvrpWarnings.push({ driverId: '', message: `${mission.clientName || 'Mission'} (${mission.address}) : ${reasonMessage(code, mission)}`, severity: 'error' })
       continue
     }
     assignableMissions.push(mission)
@@ -477,7 +477,7 @@ export function enforceMissionConservation(result: OptimizationResult, inputMiss
     })
   }
   for (const m of tooBig) {
-    result.warnings.push({ driverId: '', message: `Mission ${m.id} (${m.address}) : benne ${m.binSizeM3} m³ trop grande pour le véhicule — à replanifier`, severity: 'error' })
+    result.warnings.push({ driverId: '', message: `${m.clientName || 'Mission'} (${m.address}) : benne ${m.binSizeM3} m³ trop grande pour le véhicule — à replanifier`, severity: 'error' })
   }
   const unassignedIds = new Set(result.unassignedMissions.map(m => m.id))
   result.unassignedMissions = result.unassignedMissions.filter(m => !seen.has(m.id))
@@ -761,7 +761,7 @@ export function forceAssignP1(
         if (bestRouteIdx === -1) bestRouteIdx = 0
         warnings?.push({
           driverId: result.routes[bestRouteIdx]?.driverId ?? '',
-          message:  `Mission P1 ${mission.id} (${mission.address}) forcée sur une tournée sans respecter toutes ses contraintes (véhicule/ALLER_RETOUR) — aucune tournée compatible disponible`,
+          message:  `Urgence ${mission.clientName || ''} (${mission.address}) forcée sur une tournée sans respecter toutes ses contraintes (véhicule/ALLER_RETOUR) — aucune tournée compatible disponible`,
           severity: 'warning',
         })
       }

@@ -394,10 +394,13 @@ function traceWarnings(trace: RouteTrace, ctx: CostContext, maxWorkMin: number):
     const label = m ? (m.clientName || m.address) : (v.missionId ?? '')
     switch (v.code) {
       case 'TIME_WINDOW':
-        if (ev && m?.timeWindow) push(`Mission ${m.id} (${m.address}) : arrivée à ${minToHHMM(ev.startMin)}, après la fermeture de la fenêtre (${minToHHMM(m.timeWindow.closeMin)})`, 'warning')
+        if (ev && m?.timeWindow) push(`${label} (${m.address}) : arrivée à ${minToHHMM(ev.startMin)}, après la fin du créneau (${minToHHMM(m.timeWindow.closeMin)})`, 'warning')
         break
       case 'P1_LATE':
-        if (ev && m) push(`Mission P1 ${m.id} servie après ${minToHHMM(p1Deadline)} (${minToHHMM(ev.startMin)})`, 'error')
+        // A slot the customer asked for after the urgent deadline is not a late urgent mission.
+        if (ev && m && !(m.timeWindow && m.timeWindow.openMin >= p1Deadline)) {
+          push(`Urgence ${label} (${m.address}) servie à ${minToHHMM(ev.startMin)}, après ${minToHHMM(p1Deadline)}`, 'error')
+        }
         break
       case 'EXUTOIRE_CLOSED': {
         const ex = v.exutoireId ? exById.get(v.exutoireId) : undefined

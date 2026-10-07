@@ -258,7 +258,7 @@ describe('runVRP — HFVRP incompatibility', () => {
     const m = mission('m-big', { binSizeM3: 100 })
     const d = driver('d-1', { maxBinSizeM3: 4 })
     const result = await runVRP([m], [d], [], DATE, FAST)
-    expect(result.warnings.some(w => w.message.includes('m-big') && w.severity === 'error')).toBe(true)
+    expect(result.warnings.some(w => w.message.includes('incompatible avec tous les véhicules') && w.severity === 'error')).toBe(true)
   })
 })
 

@@ -185,7 +185,7 @@ export function reasonMessage(code: UnassignedReasonCode, m: Mission, ctx?: Cost
     case 'BIN_SIZE':            return `Benne de ${m.binSizeM3 ?? '?'} m³ : aucun camion disponible ne peut la porter`
     case 'PAYLOAD': {
       const w = planningWeightKg(m)
-      return `Poids prévu ${w !== undefined ? fmtKg(w) : 'inconnu'}${m.weightSource === 'ESTIMATED' ? ' (estimé)' : ''} : dépasse la charge utile / le PTAC de tous les camions disponibles`
+      return `Poids prévu ${w !== undefined ? fmtKg(w) : 'inconnu'}${m.weightSource === 'ESTIMATED' ? ' (estimé d\'après la matière et le volume de la benne)' : ''} : dépasse la charge utile / le PTAC de tous les camions disponibles${m.weightSource === 'ESTIMATED' ? ' — saisir le poids réel s\'il est connu, ou prévoir une benne plus petite' : ''}`
     }
     case 'VOLUME':              return `Benne de ${m.binSizeM3 ?? '?'} m³ : dépasse le volume utile de tous les camions disponibles`
     case 'SKILL':               return `Compétence requise (${(m.requiredSkills ?? []).join(', ')}) : aucun chauffeur disponible ne l'a`
