@@ -15,6 +15,10 @@ const GLOBAL_RL_MAX_ANON = parseInt(process.env.RATE_LIMIT_IP_PER_MIN ?? '300', 
 const GLOBAL_RL_WINDOW = 60_000
 // Counted in Redis so the budget holds across instances (each used to grant the full budget);
 // without Redis, per process as before.
+/** Body size accepted by ordinary JSON routes; larger bodies only on LARGE_BODY_PATHS. */
+const SMALL_BODY_BYTES = 100 * 1024
+const LARGE_BODY_PATHS = new RegExp('^/api/(?:plans|import|driver-photos|delivery-proof|documents|ai/ocr|optimize|weekly-plan|settings|webhooks/|portal/requests)(?:/|$)')
+
 const _userRl = createRateLimiter(GLOBAL_RL_MAX_USER, GLOBAL_RL_WINDOW, {
   redis: true,
   prefix: 'rl:global:u',
@@ -123,6 +127,12 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const contentLength = request.headers.get('content-length')
   if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
     return NextResponse.json({ error: 'Requête trop volumineuse (max 5 MB)' }, { status: 413 })
+  }
+  // Ordinary API calls carry a few kilobytes. Only the routes that really receive files, photos,
+  // imports or whole plans may take more — the others answer 413 instead of storing megabytes
+  // of text in a field (and instead of exposing them to the large-body issue described in apiRoute).
+  if (contentLength && pathname.startsWith('/api/') && parseInt(contentLength, 10) > SMALL_BODY_BYTES && !LARGE_BODY_PATHS.test(pathname)) {
+    return NextResponse.json({ error: 'Requête trop volumineuse pour cette opération (max 100 Ko)' }, { status: 413 })
   }
 
   const requestId = crypto.randomUUID()

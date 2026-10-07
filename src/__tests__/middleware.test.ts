@@ -113,6 +113,20 @@ describe('middleware', () => {
     expect((await middleware(makeReq('/api/docs-internal'))).status).toBe(401)
   })
 
+  // Megabytes of text could be stored in a note, and bodies above ~100 KB hit an intermittent
+  // framework error on routes that do not read them first.
+  it('ordinary API routes refuse a body over 100 KB; file, import and plan routes still take large ones', async () => {
+    mockVerifySession.mockResolvedValue(makeSession())
+    const big = { cookie: 'session=tok', headers: { 'content-length': String(300 * 1024) }, method: 'POST' }
+    expect((await middleware(makeReq('/api/drivers/abc', { ...big, method: 'PUT' }))).status).toBe(413)
+    expect((await middleware(makeReq('/api/clients', big))).status).toBe(413)
+    for (const path of ['/api/plans', '/api/import', '/api/driver-photos', '/api/delivery-proof', '/api/optimize']) {
+      expect((await middleware(makeReq(path, big))).status, path).not.toBe(413)
+    }
+    const small = { ...big, headers: { 'content-length': '2048' } }
+    expect((await middleware(makeReq('/api/clients', small))).status).not.toBe(413)
+  })
+
   it('passes /api/auth/login without auth', async () => {
     const req = makeReq('/api/auth/login')
     const res = await middleware(req)

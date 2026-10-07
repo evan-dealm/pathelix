@@ -82,14 +82,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const tenantId = getTenantId(req)
   const { userId, role } = getRequestContext(req)
+  // Read first: a large body read after another await is intermittently lost behind the
+  // middleware (see apiRoute) — saving the routes of a whole fleet failed about once in ten.
+  let body: unknown
+  let bodyError = false
+  try { body = await req.json() } catch { bodyError = true }
   // Writing plans = publishing tours to drivers: same permission as optimising.
   if (!(await hasPermission(userId, role, 'optimize'))) {
     return NextResponse.json({ error: 'Permission refusée' }, { status: 403 })
   }
-
-  let body: unknown
-  try { body = await req.json() }
-  catch { return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 }) }
+  if (bodyError) return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 })
 
   const arr     = Array.isArray(body) ? body : [body]
 

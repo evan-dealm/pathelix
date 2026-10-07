@@ -142,6 +142,12 @@ export function apiRoute<B = undefined>(
         status = 403
         return NextResponse.json({ error: 'Accès refusé', code: 'FORBIDDEN' }, { status })
       }
+      // The body is read before anything else is awaited. Behind the middleware, a body of
+      // ~100 KB or more that is read only after another await is intermittently lost by the
+      // framework ("Response body object should not be disturbed or locked"): about one request
+      // in ten then answered an HTML 500 page — saving many routes at once could fail at random.
+      let rawText: string | null = null
+      if (opts.schema) rawText = await req.text().catch(() => null)
       if (opts.permission && !(await hasPermission(userId, role, opts.permission))) {
         status = 403
         return NextResponse.json({ error: 'Permission refusée', code: 'FORBIDDEN' }, { status })
@@ -150,7 +156,8 @@ export function apiRoute<B = undefined>(
       if (opts.schema) {
         let raw: unknown
         try {
-          raw = await req.json()
+          if (rawText === null) throw new Error('unreadable body')
+          raw = JSON.parse(rawText)
         } catch {
           status = 400
           return NextResponse.json({ error: 'Corps JSON invalide', code: 'BAD_JSON' }, { status })
