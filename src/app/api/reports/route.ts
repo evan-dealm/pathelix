@@ -15,6 +15,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const refDate = req.nextUrl.searchParams.get('date') ?? new Date().toISOString().slice(0, 10)
 
   const ref = new Date(refDate + 'T12:00:00Z')
+  // An unparsable date used to reach the database as "Invalid Date" and come back as a 500.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(refDate) || Number.isNaN(ref.getTime())) {
+    return NextResponse.json({ error: 'Paramètre date invalide (format attendu : AAAA-MM-JJ)' }, { status: 400 })
+  }
   let startDate: Date
   let prevStartDate: Date
   let prevEndDate: Date

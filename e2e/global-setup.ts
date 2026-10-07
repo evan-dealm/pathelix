@@ -115,6 +115,42 @@ export default async function globalSetup() {
       }
     }
 
+    // ── Baseline the specs rely on, restored before every run ───────────────────────────────
+    // Several specs open "the first driver / vehicle / user row" or the day's routes. They used
+    // to pass only as long as an earlier run had left such rows behind: one spec deletes a
+    // driver, and after a few runs the tenant had none — 20 tests then failed on an empty table.
+    const baselineDrivers = [
+      { firstName: 'Alice', lastName: 'Martin', sector: 'Nord', depotName: 'Dépôt Nord', depotLat: 48.90, depotLng: 2.35 },
+      { firstName: 'Bruno', lastName: 'Petit',  sector: 'Sud',  depotName: 'Dépôt Sud',  depotLat: 48.83, depotLng: 2.32 },
+      { firstName: 'Chloé', lastName: 'Dubois', sector: 'Est',  depotName: 'Dépôt Est',  depotLat: 48.86, depotLng: 2.42 },
+    ]
+    const drivers = []
+    for (const d of baselineDrivers) {
+      const found = await prisma.driver.findFirst({ where: { tenantId: tenant.id, firstName: d.firstName, lastName: d.lastName, archived: false } })
+      drivers.push(found ?? await prisma.driver.create({ data: { tenantId: tenant.id, vehicleCapacity: 2, maxBinSizeM3: 35, ...d } }))
+    }
+    for (const licensePlate of ['AA-002-TEST', 'AA-003-TEST']) {
+      const found = await prisma.vehicle.findFirst({ where: { tenantId: tenant.id, licensePlate } })
+      if (!found) await prisma.vehicle.create({ data: { tenantId: tenant.id, licensePlate, type: 'benne' } })
+    }
+    for (const [email, firstName] of [['exploitant1@excoffier.fr', 'Emma'], ['exploitant2@excoffier.fr', 'Hugo']] as const) {
+      const found = await prisma.user.findFirst({ where: { email } })
+      if (!found) await prisma.user.create({ data: { tenantId: tenant.id, email, passwordHash, role: 'DISPATCHER', firstName, lastName: 'Test' } })
+    }
+    // A real route for today (first driver, the day's first two missions).
+    const todays = await prisma.mission.findMany({
+      where: { tenantId: tenant.id, date: today, archived: false, type: { not: { in: ['VIDER', 'PAUSE'] } } },
+      orderBy: { createdAt: 'asc' }, take: 2,
+    })
+    const planned = todays.map((m, i) => ({ ...m, sequenceOrder: i + 1 }))
+    const existingPlan = await prisma.plan.findFirst({ where: { tenantId: tenant.id, driverId: drivers[0].id, date: today } })
+    if (!existingPlan && planned.length > 0) {
+      await prisma.plan.create({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { tenantId: tenant.id, driverId: drivers[0].id, date: today, missions: planned as any, startTime: '07:00', speedKmh: 50 },
+      })
+    }
+
     console.log(`[E2E globalSetup] seed OK — admin@excoffier.fr (tenant: ${tenant.id})`)
   } finally {
     await prisma.$disconnect()

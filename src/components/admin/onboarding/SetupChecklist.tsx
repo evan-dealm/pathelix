@@ -23,6 +23,9 @@ const DISMISS_KEY = 'pathelix-setup-dismissed'
 export function SetupChecklist({ onNavigate }: { onNavigate: (_tab: string) => void }) {
   const [steps, setSteps] = useState<Step[] | null>(null)
   const [hidden, setHidden] = useState(true)
+  // One line by default: the full list (≈ 300 px) pushed the planning panel off a laptop
+  // screen and its controls could no longer be clicked.
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     let dismissed = false
@@ -37,16 +40,24 @@ export function SetupChecklist({ onNavigate }: { onNavigate: (_tab: string) => v
   const done = steps.filter(s => s.done).length
   const next = steps.find(s => !s.done)
   return (
-    <section aria-labelledby="setup-title" className="mx-4 mt-3 rounded-xl bg-white p-4 ring-1 ring-surface-200">
+    <section aria-labelledby="setup-title" className="mx-4 mt-3 flex-shrink-0 rounded-xl bg-white px-4 py-2.5 ring-1 ring-surface-200">
       <div className="flex flex-wrap items-baseline gap-3">
         <h2 id="setup-title" className="font-display text-base font-semibold text-surface-900">Mise en route</h2>
         <span className="text-sm text-surface-600">{done} étape{done > 1 ? 's' : ''} sur {steps.length}</span>
         <div className="h-1.5 min-w-[120px] flex-1 overflow-hidden rounded-full bg-surface-100" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={done} aria-label="Avancement de la mise en route">
           <div className="h-full rounded-full bg-brand-500" style={{ width: `${done / steps.length * 100}%` }} />
         </div>
+        {next && !open && (
+          <button type="button" onClick={() => onNavigate(next.tab)} className="rounded-lg bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 ring-1 ring-brand-200 hover:bg-brand-100">
+            Étape suivante : {COPY[next.id]?.title ?? next.id}
+          </button>
+        )}
+        <button type="button" aria-expanded={open} aria-controls="setup-steps" onClick={() => setOpen(o => !o)} className="text-xs font-medium text-surface-700 hover:text-surface-900">
+          {open ? 'Replier' : 'Voir les étapes'}
+        </button>
         <button type="button" className="text-xs text-surface-500 hover:text-surface-800" onClick={() => { try { localStorage.setItem(DISMISS_KEY, '1') } catch { /* ignore */ } setHidden(true) }}>Masquer</button>
       </div>
-      <ol className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <ol id="setup-steps" hidden={!open} className={open ? 'mt-3 grid max-h-[38vh] gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3' : undefined}>
         {steps.map((s, i) => (
           <li key={s.id}>
             <button type="button" onClick={() => onNavigate(s.tab)}

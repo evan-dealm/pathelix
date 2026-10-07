@@ -48,7 +48,7 @@ export async function navigateToTab(page: Page, tabName: string) {
     tours: 'Tournées',
     stats: 'Statistiques',
     history: 'Historique',
-    catalogue: 'Catalogue',
+    catalogue: 'Clients & sites',
     drivers: 'Chauffeurs',
     vehicles: 'Camions',
     exutoires: 'Exutoires',
