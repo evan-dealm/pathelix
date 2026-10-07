@@ -6,7 +6,7 @@ export function Faq() {
     <section className="band" aria-labelledby="questions">
       <div className="shell grid gap-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-20">
         <h2 id="questions" className="t-h2 self-start lg:sticky lg:top-28">
-          Les questions qu’on nous pose.
+          Avant de demander une démo.
         </h2>
         <div className="border-t border-ink">
           {FAQ.map(entry => (
