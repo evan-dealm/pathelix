@@ -5,9 +5,25 @@ vi.mock('@/lib/logger', () => ({
 }))
 
 const mockFindMany = vi.hoisted(() => vi.fn())
+const mockFindUnique = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/tenantDb', () => ({
-  unscopedPrisma: { customTrade: { findMany: mockFindMany } },
+  unscopedPrisma: { customTrade: { findMany: mockFindMany, findUnique: mockFindUnique } },
 }))
+
+// Same contract as the real bus: bust() runs this process's handlers, then tells the others.
+const bus = vi.hoisted(() => ({
+  handlers: [] as Array<(_key: string) => void>,
+  published: [] as Array<{ kind: string; key: string }>,
+}))
+vi.mock('@/lib/cacheBus', () => ({
+  onBust: (_kind: string, handler: (_key: string) => void) => { bus.handlers.push(handler) },
+  bust: (kind: string, key: string) => { for (const h of bus.handlers) h(key); bus.published.push({ kind, key }) },
+}))
+/** What an instance receives when another one changed a trade. */
+const fromAnotherInstance = async (tradeKey: string) => {
+  for (const h of bus.handlers) h(tradeKey)
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
 
 import {
   customTradeRowToConfig, loadCustomTradesFromDb, syncCustomTradeRegistered, syncCustomTradeUnregistered,
@@ -76,5 +92,40 @@ describe('loadCustomTradesFromDb / syncCustomTradeRegistered / syncCustomTradeUn
     syncCustomTradeRegistered(ROW)
     syncCustomTradeUnregistered('transport_medical')
     expect(getTradeConfig('transport_medical').id).not.toBe('transport_medical')
+  })
+})
+
+// The registry is per process: without this, a second instance kept serving the default trade.
+describe('custom trades across instances', () => {
+  it('a change is announced to the other instances, and the instance that made it does not re-read the database', () => {
+    bus.published.length = 0
+    syncCustomTradeRegistered(ROW)
+    syncCustomTradeUnregistered('transport_medical')
+    expect(bus.published).toEqual([
+      { kind: 'trades', key: 'transport_medical' },
+      { kind: 'trades', key: 'transport_medical' },
+    ])
+    expect(mockFindUnique).not.toHaveBeenCalled()
+  })
+
+  it('an instance told about a new or edited trade reads it and resolves it', async () => {
+    mockFindUnique.mockResolvedValue({ ...ROW, tradeName: 'Transport sanitaire' })
+    await fromAnotherInstance('transport_medical')
+    expect(mockFindUnique).toHaveBeenCalledWith({ where: { tradeKey: 'transport_medical' } })
+    expect(getTradeConfig('transport_medical').vocabulary.tradeName).toBe('Transport sanitaire')
+  })
+
+  it('an instance told about a deleted trade stops resolving it', async () => {
+    syncCustomTradeRegistered(ROW)
+    mockFindUnique.mockResolvedValue(null)
+    await fromAnotherInstance('transport_medical')
+    expect(getTradeConfig('transport_medical').id).not.toBe('transport_medical')
+  })
+
+  it('keeps the trade it knows when the database cannot be read', async () => {
+    syncCustomTradeRegistered(ROW)
+    mockFindUnique.mockRejectedValue(new Error('DB unavailable'))
+    await fromAnotherInstance('transport_medical')
+    expect(getTradeConfig('transport_medical').id).toBe('transport_medical')
   })
 })

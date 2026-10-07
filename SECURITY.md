@@ -94,7 +94,7 @@ désactive les actions correspondantes.
 |---|---|
 | CSP avec `'unsafe-inline'` (scripts, styles) | Requis par Next.js sans nonces ; les contenus utilisateur sont échappés. Passage aux nonces possible |
 | DNS rebinding entre contrôle SSRF et connexion | Endpoints configurés par un admin ; une résolution épinglée fermerait le risque |
-| Caches de révocation/suspension par process (30 s) | Serveur unique ; un déploiement multi-instance demanderait une invalidation partagée |
+| Caches de révocation/suspension par process (30 s) | Invalidés sur toutes les instances via Redis (`src/lib/cacheBus.ts`) ; sans Redis ou si la publication échoue, une autre instance garde l'entrée jusqu'à son TTL (30 s) |
 | Pas de Row-Level Security PostgreSQL | L'extension `getTenantDb` est la barrière ; RLS (politiques par modèle + transaction posant `app.tenant_id`) est conçue mais coûterait une transaction par requête — à mesurer en charge avant décision |
 | Dépendance `swagger-ui-react` (chaîne modérée) | N'interprète que notre propre spécification |
 | Trackdéchets | HALT appliqué dans le code — voir OPERATIONS.md §8 |

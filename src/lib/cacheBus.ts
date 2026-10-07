@@ -11,13 +11,13 @@ const log = createLogger('cacheBus')
 /**
  * Cross-instance cache invalidation. Several caches are kept per process for speed (permissions,
  * session versions, API keys, tenant suspension, feature flags, webhook endpoints, integrations,
- * the local layer of redisCache). Dropping an entry only on the instance that made the change
+ * custom trades, the local layer of redisCache). Dropping an entry only on the instance that made the change
  * left the others serving it until their TTL (30 s – 5 min): a revoked API key or a removed
  * permission kept working there. `bust()` drops it here and tells every other instance through
  * one Redis channel; each process runs the handlers its caches registered with `onBust()`.
  * Without Redis (single instance) it is local only, as before.
  */
-export type BustKind = 'perm' | 'sessionVersion' | 'apiKeys' | 'suspension' | 'tenantRevoked' | 'tenantRestored' | 'flags' | 'webhooks' | 'integrations' | 'cache'
+export type BustKind = 'perm' | 'sessionVersion' | 'apiKeys' | 'suspension' | 'tenantRevoked' | 'tenantRestored' | 'flags' | 'webhooks' | 'integrations' | 'cache' | 'trades'
 type Handler = (_key: string) => void
 
 const CHANNEL = 'pathelix:cache-bust'

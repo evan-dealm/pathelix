@@ -163,8 +163,12 @@ Levée du HALT : ces 6 étapes validées, établissements réels inscrits, Sentr
 - **Dépendances** : `npm audit --omit=dev` signale une chaîne modérée via `swagger-ui-react`
   (`remarkable`/`argparse`/`sprintf-js`, déni de service sur du markdown) ; elle ne traite que
   notre propre spécification OpenAPI. Seule « correction » proposée : revenir à la v3 — refusé.
-- **Multi-instance** : caches de session/suspension/permissions par process (TTL 30–60 s) et
-  repli en mémoire sans Redis — conçu pour un serveur unique.
+- **Multi-instance** : possible **avec Redis** — limites de débit, verrouillage de compte,
+  alertes d'incident, invalidation des caches (sessions, permissions, clés API, suspension,
+  drapeaux, intégrations, webhooks, métiers personnalisés) et positions GPS sont partagés entre
+  instances. Restent par process : le plafond de 200 connexions SSE par organisation (donc
+  200 × instances) et les métriques Prometheus (à collecter sur chaque instance). Sans Redis,
+  tout est en mémoire : un seul serveur.
 
 ## 10. Développement local
 

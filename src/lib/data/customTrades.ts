@@ -1,5 +1,6 @@
 import { unscopedPrisma } from '@/lib/tenantDb'
 import { createLogger } from '@/lib/logger'
+import { bust, onBust } from '@/lib/cacheBus'
 import { registerCustomTrade, unregisterCustomTrade, type TradeConfig, type TradeVocabulary } from '@/lib/trades'
 import type { MissionType } from '@/lib/types'
 
@@ -73,10 +74,35 @@ export async function loadCustomTradesFromDb(): Promise<void> {
   }
 }
 
+// The registry of custom trades lives in each process. A trade created, edited or deleted by the
+// superadmin on one instance was unknown (or stale) on the others until they restarted: their
+// tenants fell back to the default trade's vocabulary and mission types. The instance that made
+// the change applies it directly; the others re-read the row when told.
+let announcing = false
+onBust('trades', tradeKey => { if (!announcing) void refreshCustomTrade(tradeKey) })
+
+function announce(tradeKey: string): void {
+  announcing = true
+  try { bust('trades', tradeKey) } finally { announcing = false }
+}
+
+/** Re-reads one custom trade from the database into this process's registry (drops it if gone). */
+export async function refreshCustomTrade(tradeKey: string): Promise<void> {
+  try {
+    const row = await unscopedPrisma.customTrade.findUnique({ where: { tradeKey } })
+    if (row) registerCustomTrade(row.tradeKey, customTradeRowToConfig(row))
+    else unregisterCustomTrade(tradeKey)
+  } catch (err) {
+    log.warn('Failed to refresh custom trade', { tradeKey, err: err instanceof Error ? err.message : String(err) })
+  }
+}
+
 export function syncCustomTradeRegistered(row: CustomTradeRow): void {
   registerCustomTrade(row.tradeKey, customTradeRowToConfig(row))
+  announce(row.tradeKey)
 }
 
 export function syncCustomTradeUnregistered(tradeKey: string): void {
   unregisterCustomTrade(tradeKey)
+  announce(tradeKey)
 }
