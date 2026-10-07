@@ -173,8 +173,26 @@ export function validateAndRepair(
     }
   }
 
-  // 4. Dependencies hold across the whole plan, not only inside one truck's route.
-  enforceDependencies(routes, removed, drivers, ctx, dayMissionIds)
+  // 4. Dependencies hold across the whole plan, not only inside one truck's route. Moving or
+  //    removing a mission can leave a later drop without its empty bin, and removing that drop can
+  //    in turn orphan a dependent mission: repeat until nothing changes.
+  for (let round = 0; round < 6; round++) {
+    const before = removed.size
+    enforceDependencies(routes, removed, drivers, ctx, dayMissionIds)
+    for (const route of routes) {
+      for (let guard = 0; guard <= route.missions.length; guard++) {
+        const { missionLevel } = hardProblems(route, ctx, drivers)
+        if (missionLevel.length === 0) break
+        const ids = new Set(missionLevel.map(v => v.missionId!))
+        for (const v of missionLevel) {
+          const m = route.missions.find(x => x.id === v.missionId)
+          if (m && !removed.has(m.id)) removed.set(m.id, { mission: m, code: toReason(v.code) })
+        }
+        route.missions = route.missions.filter(m => !ids.has(m.id))
+      }
+    }
+    if (removed.size === before) break
+  }
 
   return { solution: { routes, cost: solution.cost }, removed }
 }

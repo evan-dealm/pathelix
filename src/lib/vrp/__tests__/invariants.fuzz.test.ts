@@ -50,7 +50,7 @@ function generateDay(seed: number): { missions: Mission[]; drivers: Driver[]; ex
   return { missions, drivers, exutoires }
 }
 
-const SEEDS = Array.from({ length: 24 }, (_, i) => 1000 + i * 37)
+const SEEDS = Array.from({ length: 40 }, (_, i) => 1000 + i * 37)
 
 describe('optimiser invariants on generated days', () => {
   it.each(SEEDS)('seed %i: every mission is planned once or explained, and no hard rule is broken', async seed => {
