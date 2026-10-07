@@ -52,11 +52,26 @@ interface RouteOptions<B> {
   schema?:      ZodType<B>
 }
 
-type Handler = (_req: NextRequest, _ctx?: { params: Promise<Record<string, string>> }) => Promise<NextResponse>
+/**
+ * What a route file exports. Next validates the second parameter of every exported handler at
+ * build time and refuses one typed optional (`next build` failed on "undefined is not assignable
+ * to RouteContext" for every route built with this wrapper). It reads the last signature, which
+ * takes the context; the first one keeps direct one-argument calls (tests) valid.
+ */
+export interface RouteHandler {
+  (_req: NextRequest): Promise<NextResponse>
+  (_req: NextRequest, _ctx: { params: Promise<Record<string, string>> }): Promise<NextResponse>
+}
+type Handler = RouteHandler
+
+// Compile-time guard (`npm run typecheck`): fails if the context parameter Next reads becomes
+// optional again — the production build would break without any test noticing.
+type SecondParameter<F> = F extends (..._args: infer A) => unknown ? A[1] : never
+export const ROUTE_CONTEXT_IS_REQUIRED: undefined extends SecondParameter<RouteHandler> ? never : true = true
 
 export function apiRoute<B = undefined>(opts: RouteOptions<B>, fn: (_ctx: RouteContext<B>) => Promise<unknown>): Handler {
   const log = createLogger(opts.name)
-  return async (req, routeCtx) => {
+  return async (req: NextRequest, routeCtx?: { params: Promise<Record<string, string>> }) => {
     const t0 = Date.now()
     let status = 200
     try {

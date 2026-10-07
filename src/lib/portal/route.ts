@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { ZodType } from 'zod'
-import { ApiError } from '@/lib/api/route'
+import { ApiError, type RouteHandler } from '@/lib/api/route'
 import { handleApiError } from '@/lib/apiError'
 import { createLogger } from '@/lib/logger'
 import { requirePortal, type PortalContext } from './auth'
 
-type Handler = (_req: NextRequest, _ctx?: { params: Promise<Record<string, string>> }) => Promise<NextResponse>
+type Handler = RouteHandler
 
 /**
  * Route wrapper of the customer portal: portal session required, body validated, and the
@@ -13,7 +13,7 @@ type Handler = (_req: NextRequest, _ctx?: { params: Promise<Record<string, strin
  */
 export function portalRoute<B = undefined>(opts: { name: string; schema?: ZodType<B> }, fn: (_c: PortalContext & { req: NextRequest; body: B; params: Record<string, string> }) => Promise<unknown>): Handler {
   const log = createLogger(opts.name)
-  return async (req, routeCtx) => {
+  return async (req: NextRequest, routeCtx?: { params: Promise<Record<string, string>> }) => {
     try {
       const ctx = await requirePortal(req)
       if (ctx instanceof NextResponse) return ctx
