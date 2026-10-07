@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { createLogger } from '@/lib/logger'
+import { bust, onBust } from '@/lib/cacheBus'
 
 const log = createLogger('apiKeyAuth')
 
@@ -99,7 +100,9 @@ export async function authenticateApiKey(raw: string): Promise<ApiKeyIdentity | 
   return identity
 }
 
-/** Drops cached identities so a revocation takes effect immediately on this instance. */
+onBust('apiKeys', () => { _cache.clear() })
+
+/** Drops cached identities so a revocation takes effect at once, on every instance. */
 export function invalidateApiKeyCache(): void {
-  _cache.clear()
+  bust('apiKeys')
 }

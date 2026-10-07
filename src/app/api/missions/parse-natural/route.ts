@@ -8,8 +8,8 @@ import { getCircuitBreaker } from '@/lib/circuitBreaker'
 import { groundFields, missingFields, parseMissionRules, sanitizeLlmFields, type ParsedMission } from '@/lib/nl/missionText'
 
 const log = createLogger('/api/missions/parse-natural')
-const _ipRl     = createRateLimiter(30, 60_000)
-const _tenantRl = createRateLimiter(30, 60_000)
+const _ipRl     = createRateLimiter(30, 60_000, { redis: true, prefix: 'rl:nl-ip' })
+const _tenantRl = createRateLimiter(30, 60_000, { redis: true, prefix: 'rl:nl-tenant' })
 // After 3 failures the LLM is skipped for a minute: the rules answer at once instead of making
 // every dispatcher wait for timeouts.
 const llmCircuit = getCircuitBreaker('ollama', { failureThreshold: 3, recoveryTimeMs: 60_000, halfOpenSuccesses: 1 })

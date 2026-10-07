@@ -5,6 +5,7 @@ import { safeFetch } from '@/lib/outboundUrl'
 import { createLogger } from '@/lib/logger'
 import { metrics } from '@/lib/metrics'
 import { onBusinessEvent, type BusinessEvent } from '@/lib/events/outbound'
+import { bust, onBust } from '@/lib/cacheBus'
 
 const log = createLogger('webhooks')
 
@@ -39,7 +40,8 @@ export function verifySignature(secret: string, header: string, body: string, no
 }
 
 const _cache = new Map<string, { at: number; endpoints: Array<{ id: string; events: string[] }> }>()
-export function invalidateWebhookCache(tenantId: string): void { _cache.delete(tenantId) }
+onBust('webhooks', tenantId => { _cache.delete(tenantId) })
+export function invalidateWebhookCache(tenantId: string): void { bust('webhooks', tenantId) }
 
 async function subscribers(tenantId: string, type: string): Promise<string[]> {
   let hit = _cache.get(tenantId)

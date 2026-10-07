@@ -1,4 +1,5 @@
 import type { SessionPayload } from '@/lib/session'
+import { bust, onBust } from '@/lib/cacheBus'
 
 /**
  * Server-side session revocation. Session JWTs are stateless (24h), so without this a deleted
@@ -55,15 +56,17 @@ export async function isSessionCurrent(session: SessionPayload): Promise<boolean
   return version === (session.sv ?? 0)
 }
 
-/** Invalidates every session of a user (password/role change, deletion). */
+onBust('sessionVersion', userId => { _cache.delete(userId) })
+
+/** Invalidates every session of a user (password/role change, deletion) — on every instance. */
 export async function revokeUserSessions(userId: string): Promise<void> {
   _cache.delete(userId)
   const { unscopedPrisma: prisma } = await import('@/lib/tenantDb')
   await prisma.user.updateMany({ where: { id: userId }, data: { sessionVersion: { increment: 1 } } })
-  _cache.delete(userId)
+  bust('sessionVersion', userId)
 }
 
 /** Drops the cached version (call after deleting a user so the next request re-checks). */
 export function forgetSessionVersion(userId: string): void {
-  _cache.delete(userId)
+  bust('sessionVersion', userId)
 }

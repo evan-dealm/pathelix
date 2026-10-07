@@ -3,6 +3,7 @@ import { timingSafeEqual }            from 'crypto'
 import { signSession, SESSION_COOKIE, COOKIE_OPTIONS } from '@/lib/session'
 import { LoginSchema }                from '@/lib/schemas'
 import { getClientIp } from '@/lib/rateLimit'
+import { getRedisClient } from '@/lib/redisClient'
 import { createLogger }               from '@/lib/logger'
 import { metrics, METRIC }            from '@/lib/metrics'
 
@@ -21,26 +22,64 @@ const USE_MOCK       = process.env.USE_MOCK_DATA !== 'false'
  * accumulate: legitimate sign-ins — a shared tablet, a whole office behind one public IP at 8 am —
  * never lock anyone out. At capacity only expired or below-limit entries are evicted, so a flood
  * of junk keys cannot flush an active lockout.
+ *
+ * Counts live in Redis when it is available, so a lockout holds on every instance (each process
+ * used to grant its own budget); the in-memory counts are the fallback.
  */
 class FailureLimiter {
+  private readonly prefix: string
   private entries = new Map<string, { count: number; resetAt: number }>()
   readonly max: number
   readonly windowMs: number
   private readonly cap: number
-  constructor(max: number, windowMs: number, cap = 10_000) {
+  constructor(prefix: string, max: number, windowMs: number, cap = 10_000) {
+    this.prefix = `lf:${prefix}:`
     this.max = max
     this.windowMs = windowMs
     this.cap = cap
   }
 
-  locked(key: string): boolean {
+  async locked(key: string): Promise<boolean> {
+    const r = await Promise.resolve(getRedisClient()).catch(() => null)
+    if (r) {
+      try { return Number(await r.get(this.prefix + key) ?? 0) >= this.max } catch { /* fall back */ }
+    }
+    return this.lockedLocal(key)
+  }
+
+  async reserve(key: string): Promise<void> {
+    const r = await Promise.resolve(getRedisClient()).catch(() => null)
+    if (r) {
+      try {
+        const n = await r.incr(this.prefix + key)
+        if (n === 1) await r.pexpire(this.prefix + key, this.windowMs)
+        return
+      } catch { /* fall back */ }
+    }
+    this.reserveLocal(key)
+  }
+
+  /** The reserved attempt succeeded: give it back. */
+  async release(key: string, clear = false): Promise<void> {
+    const r = await Promise.resolve(getRedisClient()).catch(() => null)
+    if (r) {
+      try {
+        if (clear) await r.del(this.prefix + key)
+        else if (await r.decr(this.prefix + key) <= 0) await r.del(this.prefix + key)
+        return
+      } catch { /* fall back */ }
+    }
+    this.releaseLocal(key, clear)
+  }
+
+  private lockedLocal(key: string): boolean {
     const e = this.entries.get(key)
     if (!e) return false
     if (Date.now() > e.resetAt) { this.entries.delete(key); return false }
     return e.count >= this.max
   }
 
-  reserve(key: string): void {
+  private reserveLocal(key: string): void {
     const now = Date.now()
     const e = this.entries.get(key)
     if (e && now <= e.resetAt) { e.count++; return }
@@ -56,8 +95,7 @@ class FailureLimiter {
     this.entries.set(key, { count: 1, resetAt: now + this.windowMs })
   }
 
-  /** The reserved attempt succeeded: give it back. */
-  release(key: string, clear = false): void {
+  private releaseLocal(key: string, clear = false): void {
     const e = this.entries.get(key)
     if (!e) return
     if (clear || e.count <= 1) this.entries.delete(key)
@@ -66,8 +104,8 @@ class FailureLimiter {
 }
 
 // Per IP: brute force from one address. Per account: distributed guessing on one account.
-const _ipFailures      = new FailureLimiter(20, 60_000)
-const _accountFailures = new FailureLimiter(10, 15 * 60_000)
+const _ipFailures      = new FailureLimiter('ip', 20, 60_000)
+const _accountFailures = new FailureLimiter('account', 10, 15 * 60_000)
 
 // bcrypt hash of a random string — compared against when the email is unknown, so a miss costs
 // the same time as a wrong password and response timing doesn't reveal which emails exist.
@@ -85,7 +123,7 @@ function safePasswordCompare(input: string, expected: string): boolean {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const ip = getClientIp(req.headers)
 
-  if (_ipFailures.locked(ip)) {
+  if (await _ipFailures.locked(ip)) {
     return NextResponse.json(
       { error: 'Trop de tentatives. Réessayez dans une minute.' },
       { status: 429, headers: { 'Retry-After': '60' } },
@@ -102,7 +140,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const { password, email } = parsed.data
-  _ipFailures.reserve(ip)
+  await _ipFailures.reserve(ip)
 
   const deny = async (msg: string, status = 401): Promise<NextResponse> => {
     await new Promise(r => setTimeout(r, 200))
@@ -117,14 +155,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const normalizedEmail = email.trim().toLowerCase()
-    if (_accountFailures.locked(normalizedEmail)) {
-      _ipFailures.release(ip)
+    if (await _accountFailures.locked(normalizedEmail)) {
+      await _ipFailures.release(ip)
       return NextResponse.json(
         { error: 'Trop de tentatives pour ce compte. Réessayez dans quelques minutes.' },
         { status: 429, headers: { 'Retry-After': String(_accountFailures.windowMs / 1000) } },
       )
     }
-    _accountFailures.reserve(normalizedEmail)
+    await _accountFailures.reserve(normalizedEmail)
 
     try {
       const { prisma } = await import('@/lib/db')
@@ -136,8 +174,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const { compare } = await import('bcryptjs')
       const ok = await compare(password, user?.passwordHash ?? DUMMY_HASH)
       if (!user || !ok) return deny('Identifiants incorrects')
-      _accountFailures.release(normalizedEmail, true)
-      _ipFailures.release(ip)
+      await _accountFailures.release(normalizedEmail, true)
+      await _ipFailures.release(ip)
 
       if (user.tenant?.suspendedAt && user.role !== 'SUPERADMIN') {
         return deny('Compte suspendu. Contactez votre administrateur.', 403)
@@ -186,7 +224,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!safePasswordCompare(password, ADMIN_PASSWORD)) {
     return deny('Mot de passe incorrect')
   }
-  _ipFailures.release(ip)
+  await _ipFailures.release(ip)
 
   let mockTrade: string | undefined
   try {

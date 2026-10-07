@@ -4,6 +4,7 @@
 // fix for a real gap. Left on the raw client rather than changing hasPermission()'s signature
 // (used at ~40 call sites) for a purely defense-in-depth gain with no real exposure today.
 import prisma from '@/lib/db'
+import { bust, onBust } from '@/lib/cacheBus'
 
 export const ALL_PERMISSIONS = [
   'optimize',
@@ -69,6 +70,9 @@ export async function hasPermission(
   return perms.has(permission)
 }
 
+onBust('perm', userId => { _permCache.delete(userId) })
+
+/** Drops a user's cached permissions here and on every other instance. */
 export function invalidatePermCache(userId: string): void {
-  _permCache.delete(userId)
+  bust('perm', userId)
 }

@@ -18,7 +18,7 @@ import { broadcastToTenant, type PushSubRecord } from '@/lib/webPush'
 import { getRedisClient }               from '@/lib/redisClient'
 
 const log   = createLogger('/api/optimize')
-const _ipRl = createRateLimiter(10, 60_000)
+const _ipRl = createRateLimiter(10, 60_000, { redis: true, prefix: 'rl:optimize-ip' })
 
 const PUSH_THROTTLE_TTL_S = 120
 

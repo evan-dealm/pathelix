@@ -26,6 +26,8 @@ import type { ParetoSolution } from './paretoFront'
 
 const DEFAULT_TIME_BUDGET_MS = 15_000
 const DEFAULT_SEED            = 42
+/** Per-tenant lookups made before solving (calibration, routing licence) give up after this. */
+const TENANT_LOOKUP_TIMEOUT_MS = 2_000
 const DEFAULT_DESTROY_RATIO   = 0.25
 
 const SECTOR_THRESHOLD = 20
@@ -130,9 +132,11 @@ export async function runVRP(
   let effectiveDefaultSpeedKmh = options?.defaultSpeedKmh
   if (options?.tenantId) {
     try {
-      calibratedMissions = await applyMLCoefficients(options.tenantId, missions)
+      // Calibration is a refinement: a slow or unreachable database must not hold the solver.
+      const { withTimeout } = await import('@/lib/queue/connection')
+      calibratedMissions = await withTimeout(applyMLCoefficients(options.tenantId, missions), TENANT_LOOKUP_TIMEOUT_MS, 'ML calibration')
 
-      const travelCoeff = await getTravelCoeff(options.tenantId)
+      const travelCoeff = await withTimeout(getTravelCoeff(options.tenantId), TENANT_LOOKUP_TIMEOUT_MS, 'travel coefficient')
       if (travelCoeff !== 1.0) {
         if (effectiveDefaultSpeedKmh) {
           effectiveDefaultSpeedKmh = Math.round(effectiveDefaultSpeedKmh / travelCoeff)
@@ -273,7 +277,9 @@ export async function runVRP(
         hazmat:    drivers.some(d => d.vehicleDimensions?.hazmat === true),
       }
 
-      const provider = options?.tenantId ? await (await import('./routingProvider')).tenantRoutingProvider(options.tenantId) : null
+      const provider = options?.tenantId
+        ? await (await import('@/lib/queue/connection')).withTimeout((await import('./routingProvider')).tenantRoutingProvider(options.tenantId), TENANT_LOOKUP_TIMEOUT_MS, 'routing provider').catch(() => null)
+        : null
       const apiMatrix = await buildExternalRoutingMatrix(allGeoPoints, undefined, provider)
       if (apiMatrix) {
         ctx.osrmMatrix = apiMatrix

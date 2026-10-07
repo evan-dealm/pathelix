@@ -1,4 +1,5 @@
 import { unscopedPrisma, getTenantDb } from '@/lib/tenantDb'
+import { bust, onBust } from '@/lib/cacheBus'
 
 export interface FeatureFlags {
   gantt:         boolean
@@ -57,8 +58,10 @@ export async function getFeatureFlags(tenantId: string): Promise<FeatureFlags> {
   }
 }
 
+onBust('flags', tenantId => { _cache.delete(tenantId) })
+
 export function invalidateFlagsCache(tenantId: string): void {
-  _cache.delete(tenantId)
+  bust('flags', tenantId)
 }
 
 export async function hasFeature(tenantId: string, flag: keyof FeatureFlags): Promise<boolean> {

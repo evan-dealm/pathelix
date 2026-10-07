@@ -8,7 +8,7 @@ import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 import { decryptConfig } from '@/lib/configCrypto'
 import prisma from '@/lib/db'
 
-const _obdRl = createRateLimiter(200, 60_000)
+const _obdRl = createRateLimiter(200, 60_000, { redis: true, prefix: 'rl:obd' })
 
 const log = createLogger('/api/webhooks/obd')
 

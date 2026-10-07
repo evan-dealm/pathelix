@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { bust, onBust } from '@/lib/cacheBus'
 
 // Autorise cuid (t7abc…), slugs avec tirets, et IDs préfixés type "t_xxx" (seed/import).
 // Défense en profondeur seulement : le header est réinjecté par le middleware depuis le JWT vérifié.
@@ -46,11 +47,7 @@ export function getTenantId(req: NextRequest): string {
   return tenantId
 }
 
-// In-memory, per-process cache — relies on the documented single-instance deployment topology
-// (see OPERATIONS.md §8: "serveur cloud dédié unique"). If Pathélix ever moves to multiple app
-// instances, this cache needs a shared invalidation mechanism (e.g. Redis pub/sub) or a
-// suspended tenant could keep working for up to SUSPENSION_CACHE_TTL on instances that haven't
-// seen the suspension yet.
+// Per-process cache; a suspension or reactivation is broadcast to every instance (cacheBus).
 // On globalThis: the middleware and the route handlers are separate bundles (separate module
 // instances, same process) — a module-level Map let a route invalidate its own copy while the
 // middleware kept serving the stale entry from the other until the TTL expired.
@@ -104,6 +101,8 @@ export async function checkTenantSuspension(
   return null
 }
 
+onBust('suspension', tenantId => { _suspensionCache.delete(tenantId) })
+
 export function invalidateSuspensionCache(tenantId: string): void {
-  _suspensionCache.delete(tenantId)
+  bust('suspension', tenantId)
 }

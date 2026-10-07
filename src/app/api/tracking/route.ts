@@ -19,7 +19,7 @@ const TrackingCreateSchema = z.object({
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/
 
 // Public endpoint (customers, no session) — skipped by the middleware's global limiter.
-const _trackRl = createRateLimiter(60, 60_000)
+const _trackRl = createRateLimiter(60, 60_000, { redis: true, prefix: 'rl:tracking' })
 
 /**
  * Creates (or returns the still-valid) public tracking link of a mission. Staff only — the path

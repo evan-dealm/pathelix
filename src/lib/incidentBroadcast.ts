@@ -1,5 +1,9 @@
-import { getRedisClient, REDIS_AVAILABLE } from './redisClient'
+import { getRedisClient } from './redisClient'
+
 import { createLogger } from './logger'
+
+// Read here rather than imported: test doubles of redisClient often omit the constant.
+const REDIS_AVAILABLE = Boolean(process.env.REDIS_URL || process.env.REDIS_HOST) && process.env.REDIS_DISABLED !== 'true'
 
 const log = createLogger('incidentBroadcast')
 

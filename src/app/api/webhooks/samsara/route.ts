@@ -8,7 +8,7 @@ import { createLogger } from '@/lib/logger'
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 import { decryptConfig } from '@/lib/configCrypto'
 
-const _samsaraRl = createRateLimiter(200, 60_000)
+const _samsaraRl = createRateLimiter(200, 60_000, { redis: true, prefix: 'rl:samsara' })
 
 const log = createLogger('/api/webhooks/samsara')
 

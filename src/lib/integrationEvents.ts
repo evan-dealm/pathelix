@@ -2,6 +2,7 @@ import { createLogger } from '@/lib/logger'
 import { getTenantDb } from '@/lib/tenantDb'
 import { decryptConfig } from '@/lib/configCrypto'
 import { safeFetch } from '@/lib/outboundUrl'
+import { bust, onBust } from '@/lib/cacheBus'
 
 const log = createLogger('integrationEvents')
 
@@ -18,8 +19,10 @@ type EnabledIntegration = { type: string; config: Record<string, unknown> }
 const CACHE_TTL_MS = 60_000
 const _cache = new Map<string, { at: number; items: EnabledIntegration[] }>()
 
+onBust('integrations', tenantId => { _cache.delete(tenantId) })
+
 export function invalidateIntegrationCache(tenantId: string): void {
-  _cache.delete(tenantId)
+  bust('integrations', tenantId)
 }
 
 async function enabledIntegrations(tenantId: string): Promise<EnabledIntegration[]> {

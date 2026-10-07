@@ -7,7 +7,7 @@ import { mapTdStatus }               from '@/lib/trackdechets/bsdService'
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 
 const log = createLogger('/api/webhooks/trackdechets')
-const _tdRl = createRateLimiter(200, 60_000)
+const _tdRl = createRateLimiter(200, 60_000, { redis: true, prefix: 'rl:trackdechets' })
 
 const WebhookPayloadSchema = z.object({
   type: z.string(),

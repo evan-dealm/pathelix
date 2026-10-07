@@ -1,6 +1,7 @@
 import { getRedisClient }    from '@/lib/redisClient'
 import { TtlCache }          from '@/lib/cache'
 import { createLogger }      from '@/lib/logger'
+import { bust, onBust } from '@/lib/cacheBus'
 
 const log = createLogger('redisCache')
 
@@ -14,6 +15,8 @@ export const CACHE_TTL = {
 export type CacheNamespace = keyof typeof CACHE_TTL
 
 const _localCache = new TtlCache<string, unknown>(50_000)
+// The local layer is read before Redis: another instance's invalidation must reach it too.
+onBust('cache', prefix => _localCache.invalidate(k => k.startsWith(prefix)))
 
 const _inflight = new Map<string, Promise<unknown>>()
 
@@ -77,7 +80,7 @@ export const redisCache = {
     const key   = cacheKey(namespace, tenantId, qualifier)
     const redis = await getRedisClient()
 
-    _localCache.delete(key)
+    bust('cache', key)
 
     if (redis) {
       try { await redis.del(key) }
@@ -88,7 +91,7 @@ export const redisCache = {
   async invalidateAll(namespace: CacheNamespace | string, tenantId: string): Promise<void> {
     const pattern = `cache:${namespace}:${tenantId}*`
 
-    _localCache.invalidate(k => k.startsWith(`cache:${namespace}:${tenantId}`))
+    bust('cache', `cache:${namespace}:${tenantId}`)
 
     const redis = await getRedisClient()
     if (!redis) return

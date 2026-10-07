@@ -10,7 +10,7 @@ import { revokeUserSessions }        from '@/lib/sessionRevocation'
 import { auditAsync }                from '@/lib/audit'
 
 const log = createLogger('/api/users/[id]/reset-password')
-const _resetRl = createRateLimiter(10, 60_000)
+const _resetRl = createRateLimiter(10, 60_000, { redis: true, prefix: 'rl:pwd-reset' })
 type Params = { params: Promise<{ id: string }> }
 
 const ResetPasswordSchema = z.object({

@@ -8,7 +8,7 @@ import { createLogger } from '@/lib/logger'
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 import { decryptConfig } from '@/lib/configCrypto'
 
-const _geotabRl = createRateLimiter(200, 60_000)
+const _geotabRl = createRateLimiter(200, 60_000, { redis: true, prefix: 'rl:geotab' })
 
 const log = createLogger('/api/webhooks/geotab')
 

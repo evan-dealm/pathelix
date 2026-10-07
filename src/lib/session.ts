@@ -1,4 +1,5 @@
 import { TENANT_ID_RE } from './data/context'
+import { bust, onBust } from '@/lib/cacheBus'
 
 function getSessionSecret(): string {
   const secret = process.env.SESSION_SECRET
@@ -29,14 +30,20 @@ export interface SessionPayload {
 
 export const SESSION_COOKIE = 'session'
 
-const _revokedTenants = new Set<string>()
+// Tenants whose sessions are refused (suspension). Shared by the middleware and route bundles,
+// and kept in step on every instance through the cache bus; after a restart the database
+// suspension check (data/context.ts) still refuses them.
+const _gr = globalThis as typeof globalThis & { __pathelixRevokedTenants?: Set<string> }
+const _revokedTenants = (_gr.__pathelixRevokedTenants ??= new Set<string>())
+onBust('tenantRevoked', tenantId => { _revokedTenants.add(tenantId) })
+onBust('tenantRestored', tenantId => { _revokedTenants.delete(tenantId) })
 
 export function revokeSessionsForTenant(tenantId: string): void {
-  _revokedTenants.add(tenantId)
+  bust('tenantRevoked', tenantId)
 }
 
 export function unrevokeSessionsForTenant(tenantId: string): void {
-  _revokedTenants.delete(tenantId)
+  bust('tenantRestored', tenantId)
 }
 
 export const COOKIE_OPTIONS = {

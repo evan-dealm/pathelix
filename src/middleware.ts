@@ -4,47 +4,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { checkTenantSuspension } from '@/lib/data/context'
 import { isSessionCurrent } from '@/lib/sessionRevocation'
-import { getClientIp } from '@/lib/rateLimit'
+import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 import { authenticateApiKey, scopeAllows, API_KEY_ROLE } from '@/lib/apiKeyAuth'
 
-const _globalRl = new Map<string, { count: number; resetAt: number }>()
 // Requests per minute. Authenticated traffic is counted per user, anonymous traffic per IP: a
 // whole office behind one public (NAT) address used to share a single 300/min budget, and one
 // admin page load alone issues dozens of calls.
 const GLOBAL_RL_MAX_USER = parseInt(process.env.RATE_LIMIT_USER_PER_MIN ?? '600', 10) || 600
 const GLOBAL_RL_MAX_ANON = parseInt(process.env.RATE_LIMIT_IP_PER_MIN ?? '300', 10) || 300
 const GLOBAL_RL_WINDOW = 60_000
-const GLOBAL_RL_CAP    = 10_000
-let _lastSweep = 0
-
-function globalRlCheck(key: string, max: number): boolean {
-  const now = Date.now()
-
-  // At capacity (many distinct IPs — typically an attack), sweeping the whole map on every request
-  // made each request O(cap). Sweep at most once a second; if still full, drop the oldest entries.
-  if (_globalRl.size >= GLOBAL_RL_CAP && now - _lastSweep > 1000) {
-    _lastSweep = now
-    for (const [key, bucket] of _globalRl) {
-      if (now > bucket.resetAt) _globalRl.delete(key)
-    }
-  }
-  if (_globalRl.size >= GLOBAL_RL_CAP) {
-    let toDrop = Math.ceil(GLOBAL_RL_CAP * 0.1)
-    for (const key of _globalRl.keys()) {
-      _globalRl.delete(key)
-      if (--toDrop <= 0) break
-    }
-  }
-
-  const bucket = _globalRl.get(key)
-  if (!bucket || now > bucket.resetAt) {
-    _globalRl.set(key, { count: 1, resetAt: now + GLOBAL_RL_WINDOW })
-    return true
-  }
-  if (bucket.count >= max) return false
-  bucket.count++
-  return true
-}
+// Counted in Redis so the budget holds across instances (each used to grant the full budget);
+// without Redis, per process as before.
+const _userRl = createRateLimiter(GLOBAL_RL_MAX_USER, GLOBAL_RL_WINDOW, { redis: true, prefix: 'rl:global:u' })
+const _anonRl = createRateLimiter(GLOBAL_RL_MAX_ANON, GLOBAL_RL_WINDOW, { redis: true, prefix: 'rl:global:ip' })
 
 const PUBLIC_PATHS: Array<string | RegExp> = [
   /^\/$/,  // public landing page (signed-in users are redirected by the page itself)
@@ -176,8 +148,8 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   // Signature check first (cheap, unforgeable without the secret), so the budget can be per user;
   // anything unauthenticated is counted against its IP before any database lookup.
   const rlAllowed = verified
-    ? globalRlCheck(`u:${verified.sub}`, GLOBAL_RL_MAX_USER)
-    : globalRlCheck(`ip:${getClientIp(request.headers)}`, GLOBAL_RL_MAX_ANON)
+    ? await _userRl.check(verified.sub)
+    : await _anonRl.check(getClientIp(request.headers))
   if (!rlAllowed) {
     return withContext(NextResponse.json(
       { error: 'Trop de requêtes. Réessayez dans une minute.' },

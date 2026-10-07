@@ -7,7 +7,7 @@ import { createLogger } from '@/lib/logger'
 import { getTenantDb } from '@/lib/tenantDb'
 
 const log = createLogger('/api/auth/change-password')
-const _pwdRl = createRateLimiter(3, 3600_000)
+const _pwdRl = createRateLimiter(3, 3600_000, { redis: true, prefix: 'rl:pwd-change' })
 
 const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(1000, 'Mot de passe trop long'),
