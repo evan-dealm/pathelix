@@ -95,12 +95,16 @@ test.describe('Drivers Tab — Advanced Features', () => {
       const availBtnAfter = page.locator(
         'table tbody button:has-text("Disponible"), table tbody button:has-text("Indisponible")'
       ).first()
-      const textAfter = await availBtnAfter.textContent() || ''
 
       if (textBefore.includes('Indisponible')) {
-        expect(textAfter).toContain('Disponible')
+        expect(await availBtnAfter.textContent() || '').toContain('Disponible')
       } else {
-        expect(textAfter).toContain('Indisponible')
+        // Marking a driver unavailable asks for the reason and the end date first.
+        const dialog = page.locator('[role="dialog"]').filter({ hasText: /Indisponibilité/ })
+        await expect(dialog).toBeVisible({ timeout: 3000 })
+        await expect(dialog.getByText('Motif')).toBeVisible()
+        await dialog.getByRole('button', { name: 'Annuler' }).click()
+        expect(await availBtnAfter.textContent() || '').toContain('Disponible')
       }
     }
   })
@@ -499,16 +503,14 @@ test.describe('Drivers Tab — Advanced Features', () => {
       await firstCheckbox.click()
       await page.waitForTimeout(300)
 
-      const deleteBtn = page.locator('button:has-text("Supprimer")').first()
-      if (await deleteBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const dialogPromise = page.waitForEvent('dialog', { timeout: 3000 }).catch(() => null)
-        await deleteBtn.click()
-        const dialog = await dialogPromise
-        if (dialog) {
-          expect(dialog.message()).toContain('Supprimer définitivement')
-          await dialog.dismiss()
-        }
-      }
+      // The selection bar must appear, and its delete asks ONE question for the whole selection
+      // (dismissed by dismissDialogs above), saying what really happens: drivers are archived.
+      await expect(page.getByText(/1 sélectionné/).first()).toBeVisible({ timeout: 2000 })
+      const deleteBtn = page.locator('[role="tabpanel"] button:has-text("Supprimer"):visible').first()
+      const dialogPromise = page.waitForEvent('dialog', { timeout: 3000 })
+      await deleteBtn.click()
+      const dialog = await dialogPromise
+      expect(dialog.message()).toMatch(/Supprimer 1 chauffeur\(s\) \? Ils seront archivés/)
     }
   })
 

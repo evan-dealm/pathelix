@@ -22,7 +22,7 @@ const REASON_LABELS: Record<string, string> = {
 export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
   onEdit: (_d: Driver) => void
   onNew: () => void
-  onDelete: (_id: string) => void
+  onDelete: (_id: string, _opts?: { confirmed?: boolean }) => void
   onImportDriversCSV: (_drivers: Array<Omit<Driver, 'id'>>) => Promise<void>
 }) {
   const drivers = usePlanningStore(s => s.drivers)
@@ -77,8 +77,9 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
     setSelectedIds(new Set())
   }
   function bulkDelete() {
-    if (!confirm(`Supprimer définitivement ${selectedIds.size} chauffeur(s) ? Cette action est irréversible.`)) return
-    selectedIds.forEach(id => onDelete(id))
+    // One question for the whole selection, saying what really happens (drivers are archived).
+    if (!confirm(`Supprimer ${selectedIds.size} chauffeur(s) ? Ils seront archivés et retirés du planning.`)) return
+    selectedIds.forEach(id => onDelete(id, { confirmed: true }))
     setSelectedIds(new Set())
   }
   async function bulkSetUnavailable() {
@@ -340,7 +341,10 @@ export function DriversTab({ onEdit, onNew, onDelete, onImportDriversCSV }: {
                 return (
                   <tr key={d.id} className={`border-b border-surface-100 hover:bg-surface-50 transition-colors group ${isSelected ? 'bg-[#0055A4]/8' : ''}`}>
                     <td className="px-3 py-3" onClick={e => { e.stopPropagation(); toggleSelect(d.id) }}>
+                      {/* The cell toggles too (larger target): without stopping the click here the
+                          row was toggled twice and never ended up selected. */}
                       <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(d.id)}
+                        onClick={e => e.stopPropagation()}
                         aria-label={`Sélectionner ${d.firstName} ${d.lastName}`}
                         className="w-3.5 h-3.5 rounded accent-[#0055A4] cursor-pointer" />
                     </td>

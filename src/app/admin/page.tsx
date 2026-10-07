@@ -224,8 +224,8 @@ export default function AdminPage() {
     if (failed > 0) throw new Error(`${failed} sur ${driversList.length} ${vocab.driver.toLowerCase()}(s) n'ont pas pu être importés.`)
   }
 
-  async function handleDeleteDriver(id: string) {
-    if (!confirm(`Supprimer ce ${vocab.driver.toLowerCase()} ? Il sera archivé et retiré du planning.`)) return
+  async function handleDeleteDriver(id: string, opts?: { confirmed?: boolean }) {
+    if (!opts?.confirmed && !confirm(`Supprimer ce ${vocab.driver.toLowerCase()} ? Il sera archivé et retiré du planning.`)) return
     const before = (Array.isArray(drivers) ? drivers : []).find(d => d.id === id)
     removeDriver(id)
     const res = await apiRequest(`/api/drivers/${id}`, { method: 'DELETE' })
@@ -858,7 +858,7 @@ export default function AdminPage() {
         <DriversTab
           onEdit={(d) => setDriverModal({ kind: 'edit', driver: d })}
           onNew={() => setDriverModal({ kind: 'new' })}
-          onDelete={(id) => handleDeleteDriver(id).catch(()=>{})}
+          onDelete={(id, opts) => handleDeleteDriver(id, opts).catch(()=>{})}
           onImportDriversCSV={handleImportDriversCSV}
         />
         </div>

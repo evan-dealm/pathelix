@@ -510,7 +510,10 @@ export function MissionsTab({ onEdit, onNew, onView, onDelete, onDuplicate, onIm
                   <tr key={m.id} onClick={() => onView(m)}
                     className={`border-b border-surface-100 hover:bg-surface-50 transition-colors cursor-pointer group ${isSelected ? 'bg-[#0055A4]/8' : ''}`}>
                     <td className="px-3 py-2.5" onClick={e => { e.stopPropagation(); toggleSelect(m.id) }}>
+                      {/* The cell toggles too (larger target): without stopping the click here the
+                          row was toggled twice and never ended up selected. */}
                       <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(m.id)}
+                        onClick={e => e.stopPropagation()}
                         aria-label={`Sélectionner mission ${mTitle(m)}`}
                         className="w-3.5 h-3.5 rounded accent-[#0055A4] cursor-pointer" />
                     </td>
