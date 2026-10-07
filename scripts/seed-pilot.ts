@@ -21,9 +21,11 @@ const ADMIN_EMAIL = 'direction@bennes-dauphine.example'
 const PASSWORD = process.env.PILOT_PASSWORD ?? 'Pilote-Dauphine-2026!'
 const DEPOT = { name: 'Dépôt Saint-Égrève', lat: 45.2312, lng: 5.6803 }
 
+// PILOT_DAY_OFFSET=1 prepares the company the evening before: its « today » is tomorrow.
+const DAY_SHIFT = Number.parseInt(process.env.PILOT_DAY_OFFSET ?? '0', 10) || 0
 const day = (offset: number): string => {
   const d = new Date()
-  d.setDate(d.getDate() + offset)
+  d.setDate(d.getDate() + offset + DAY_SHIFT)
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(d)
 }
 const TODAY = day(0)
