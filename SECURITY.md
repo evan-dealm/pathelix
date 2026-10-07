@@ -43,7 +43,12 @@ Modèle de sécurité, contrôles en place et risques résiduels. Vérifié cont
 - **Clés API** (`X-API-Key: ef_live_…`) : stockées hachées (SHA-256), expirables, révocables.
   Une clé agit comme un exploitant de son organisation, limitée à ses scopes ; toute route non
   couverte par un scope répond 403 (refus par défaut : utilisateurs, paramètres, clés, audit ne
-  sont jamais accessibles). Suspension d'organisation appliquée.
+  sont jamais accessibles). Suspension d'organisation appliquée. Une clé n'a que les droits
+  d'un exploitant, plus la facturation si elle porte un scope factures/paiements ; elle peut
+  écrire clients et sites (réservés aux admins pour les utilisateurs) si l'admin lui a donné ce
+  scope. Aucune clé ne peut inviter un utilisateur du portail client (le lien d'invitation
+  ouvrirait un compte client). La référence d'API (`/api-docs`, `/api/docs`) est publique : elle
+  ne contient que la description du code.
 
 ## 3. Autorisations
 

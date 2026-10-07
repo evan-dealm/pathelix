@@ -1,27 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { SiteCreateSchema } from '@/lib/crm/schemas'
+import { isApiKeyRequest } from '@/lib/apiKeyAuth'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { redisCache } from '@/lib/redisCache'
 import { getTenantDb } from '@/lib/tenantDb'
-
-const SiteCreateSchema = z.object({
-  name:               z.string().min(1).max(200),
-  address:            z.string().max(500).optional(),
-  latitude:           z.number().min(-90).max(90).optional(),
-  longitude:          z.number().min(-180).max(180).optional(),
-  accessNotes:        z.string().max(2000).optional(),
-  defaultManeuverMin: z.number().int().min(0).max(120).optional(),
-  sector:             z.string().max(100).optional(),
-
-  city:               z.string().max(100).optional(),
-  zipCode:            z.string().max(20).optional(),
-  country:            z.string().max(10).optional(),
-  siteType:           z.enum(['chantier', 'entrepot', 'usine', 'bureau', 'autre', '']).optional(),
-
-  openingHoursOpen:   z.number().int().min(0).max(1439).optional().nullable(),
-  openingHoursClose:  z.number().int().min(0).max(1439).optional().nullable(),
-  clientIds:          z.array(z.string().max(100)).max(100).optional(),
-})
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId = getTenantId(req)
@@ -72,8 +54,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  // Admins only for interactive users; an API key gets here only with the matching write scope.
+  if (role !== 'admin' && !isApiKeyRequest(userId)) return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
 
   let rawBody: unknown
   try { rawBody = await req.json() } catch { return NextResponse.json({ error: 'JSON invalide' }, { status: 400 }) }

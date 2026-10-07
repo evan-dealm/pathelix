@@ -153,3 +153,12 @@ export const WeighingSchema = z.object({
 export const WeighingReviewSchema = WeighingSchema.partial().extend({
   status: z.enum(['VALIDATED', 'REJECTED']).optional(),
 })
+
+/** Sending a quote or an invoice: e-mail it, or only mark it as sent. */
+export const SendDocumentSchema = z.object({ email: z.string().email().optional(), message: z.string().max(5000).optional(), markOnly: z.boolean().optional() })
+
+export const CreditNoteSchema = z.object({ lines: z.array(SalesLineSchema).max(500).optional() })
+
+export const InvoicePreviewSchema = z.object({ clientId: z.string().min(1), contractId: z.string().nullable().optional(), orderId: z.string().nullable().optional(), periodStart: day, periodEnd: day })
+
+export const PaymentAllocateSchema = z.object({ invoiceId: z.string().nullable() })

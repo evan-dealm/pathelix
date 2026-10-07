@@ -8,6 +8,13 @@ export const API_SCOPES = [
   'plans:read',    'plans:write',
   'optimize',
   'reports:read',
+  'containers:read', 'containers:write',
+  'weighings:read',  'weighings:write',
+  'quotes:read',     'quotes:write',
+  'orders:read',     'orders:write',
+  'contracts:read',  'contracts:write',
+  'invoices:read',   'invoices:write',
+  'payments:read',   'payments:write',
 ] as const
 
 export type ApiScope = typeof API_SCOPES[number]

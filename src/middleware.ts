@@ -28,6 +28,10 @@ const PUBLIC_PATHS: Array<string | RegExp> = [
   '/api/status',
   '/status',
   '/help',
+  // API reference: generated from the code, no tenant data. It has to be readable by the
+  // integrator who only holds an API key (or nothing yet) — it used to redirect to the login.
+  '/api-docs',
+  '/api/docs',
   // Customer-facing tracking page + its read endpoint, authenticated by the opaque token itself.
   // POST /api/tracking (link creation) verifies the staff session in the handler.
   '/track',

@@ -5,6 +5,7 @@
 // (used at ~40 call sites) for a purely defense-in-depth gain with no real exposure today.
 import prisma from '@/lib/db'
 import { bust, onBust } from '@/lib/cacheBus'
+import { API_KEY_USER_PREFIX, apiKeyPermissions } from '@/lib/apiKeyAuth'
 
 export const ALL_PERMISSIONS = [
   'optimize',
@@ -45,6 +46,13 @@ export async function hasPermission(
 ): Promise<boolean> {
 
   if (role === 'admin' || role === 'superadmin') return true
+
+  // An API key is not a user: it has the dispatcher defaults plus what its scopes bring. The
+  // middleware has already limited it to the paths and methods of those scopes.
+  if (userId.startsWith(API_KEY_USER_PREFIX)) {
+    if ((DEFAULT_PERMISSIONS[role] ?? []).includes(permission)) return true
+    return (await apiKeyPermissions(userId.slice(API_KEY_USER_PREFIX.length))).has(permission)
+  }
 
   const now = Date.now()
   const cached = _permCache.get(userId)

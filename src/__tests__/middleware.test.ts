@@ -101,6 +101,16 @@ describe('middleware', () => {
     expect(mockVerifySession).not.toHaveBeenCalled()
   })
 
+  // The integrator reading the reference has an API key at best — it used to redirect to /login.
+  it('passes the API reference (/api-docs page and /api/docs spec) without auth, and nothing next to it', async () => {
+    expect((await middleware(makeReq('/api-docs'))).status).toBe(200)
+    expect((await middleware(makeReq('/api/docs'))).status).toBe(200)
+    expect(mockVerifySession).not.toHaveBeenCalled()
+    mockVerifySession.mockResolvedValue(null)
+    expect((await middleware(makeReq('/api/documents'))).status).toBe(401)
+    expect((await middleware(makeReq('/api/docs-internal'))).status).toBe(401)
+  })
+
   it('passes /api/auth/login without auth', async () => {
     const req = makeReq('/api/auth/login')
     const res = await middleware(req)
@@ -436,6 +446,15 @@ describe('middleware — X-API-Key', () => {
     expect((await middleware(makeReq('/api/missions', { method: 'POST', headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
     expect((await middleware(makeReq('/api/users', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
     expect((await middleware(makeReq('/api/api-keys', { headers: { 'x-api-key': 'ef_live_x' } }))).status).toBe(403)
+  })
+
+  it('a billing key reaches the invoices, a customer key never reaches portal invitations', async () => {
+    mockAuthenticateApiKey.mockResolvedValue({ id: 'k2', tenantId: 'tenant-9', scopes: ['invoices:read', 'clients:write'] })
+    const key = { headers: { 'x-api-key': 'ef_live_x' } }
+    expect((await middleware(makeReq('/api/invoices/export', key))).status).toBe(200)
+    expect((await middleware(makeReq('/api/invoices', { ...key, method: 'POST' }))).status).toBe(403)
+    expect((await middleware(makeReq('/api/clients', { ...key, method: 'POST' }))).status).toBe(200)
+    expect((await middleware(makeReq('/api/clients/c1/portal-users', { ...key, method: 'POST' }))).status).toBe(403)
   })
 
   it('401 for an unknown/revoked key', async () => {

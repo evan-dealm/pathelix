@@ -1,12 +1,10 @@
-import { z } from 'zod'
+import { SendDocumentSchema } from '@/lib/sales/schemas'
 import { apiRoute, notFound, unprocessable } from '@/lib/api/route'
 import { deliverSalesDocument } from '@/lib/sales/delivery'
 import { emitBusinessEvent } from '@/lib/events/outbound'
 
-const SendSchema = z.object({ email: z.string().email().optional(), message: z.string().max(5000).optional(), markOnly: z.boolean().optional() })
-
 /** E-mails an issued invoice (PDF attached) — or only marks it as sent (posted, handed over…). */
-export const POST = apiRoute({ name: '/api/invoices/[id]/send', permission: 'manage_billing', schema: SendSchema }, async ({ db, tenantId, body, params }) => {
+export const POST = apiRoute({ name: '/api/invoices/[id]/send', permission: 'manage_billing', schema: SendDocumentSchema }, async ({ db, tenantId, body, params }) => {
   const inv = await db.invoice.findFirst({ where: { id: params.id }, select: { id: true, status: true, number: true } })
   if (!inv) throw notFound('Facture')
   if (inv.status === 'DRAFT') throw unprocessable('Émettez la facture avant de l\'envoyer', 'NOT_ISSUED')

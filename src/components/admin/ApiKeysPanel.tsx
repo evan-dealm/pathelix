@@ -30,6 +30,20 @@ const SCOPE_LABELS: Record<string, string> = {
   'plans:write':    'Tournées — écriture',
   'optimize':       'Lancer une optimisation',
   'reports:read':   'Rapports — lecture',
+  'containers:read':  'Parc de bennes — lecture',
+  'containers:write': 'Parc de bennes — écriture',
+  'weighings:read':   'Pesées — lecture',
+  'weighings:write':  'Pesées — écriture',
+  'quotes:read':      'Devis — lecture',
+  'quotes:write':     'Devis — écriture',
+  'orders:read':      'Commandes — lecture',
+  'orders:write':     'Commandes — écriture',
+  'contracts:read':   'Contrats — lecture',
+  'contracts:write':  'Contrats — écriture',
+  'invoices:read':    'Factures — lecture et export comptable',
+  'invoices:write':   'Factures — écriture, émission, envoi',
+  'payments:read':    'Paiements — lecture',
+  'payments:write':   'Paiements — écriture',
 }
 
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr-FR') : '—')

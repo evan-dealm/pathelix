@@ -5,7 +5,7 @@ const update = vi.hoisted(() => vi.fn(() => Promise.resolve({})))
 vi.mock('@/lib/tenantDb', () => ({ unscopedPrisma: { apiKey: { findUnique, update } } }))
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }))
 
-import { scopeAllows, authenticateApiKey, invalidateApiKeyCache, hashApiKey } from '@/lib/apiKeyAuth'
+import { scopeAllows, authenticateApiKey, apiKeyPermissions, isApiKeyRequest, invalidateApiKeyCache, hashApiKey } from '@/lib/apiKeyAuth'
 
 describe('scopeAllows — deny by default', () => {
   it('read scope covers GET only, on its own resource', () => {
@@ -32,6 +32,80 @@ describe('scopeAllows — deny by default', () => {
   it('optimize covers every method under /api/optimize', () => {
     expect(scopeAllows(['optimize'], 'POST', '/api/optimize')).toBe(true)
     expect(scopeAllows(['optimize'], 'GET', '/api/optimize/job-1')).toBe(true)
+  })
+})
+
+describe('scopeAllows — business resources', () => {
+  it('each business scope covers its own routes, read and write apart', () => {
+    expect(scopeAllows(['containers:read'], 'GET', '/api/containers/stats')).toBe(true)
+    expect(scopeAllows(['containers:read'], 'GET', '/api/container-types')).toBe(true)
+    expect(scopeAllows(['containers:read'], 'POST', '/api/containers/c1/relocate')).toBe(false)
+    expect(scopeAllows(['containers:write'], 'POST', '/api/containers/c1/relocate')).toBe(true)
+    expect(scopeAllows(['orders:write'], 'POST', '/api/orders/o1/missions')).toBe(true)
+    expect(scopeAllows(['quotes:write'], 'POST', '/api/quotes/q1/convert')).toBe(true)
+    expect(scopeAllows(['invoices:read'], 'GET', '/api/invoices/export')).toBe(true)
+    expect(scopeAllows(['invoices:read'], 'POST', '/api/invoices/i1/issue')).toBe(false)
+    expect(scopeAllows(['payments:write'], 'POST', '/api/payments')).toBe(true)
+    expect(scopeAllows(['weighings:read'], 'GET', '/api/weighings')).toBe(true)
+    expect(scopeAllows(['contracts:read'], 'GET', '/api/contracts/k1')).toBe(true)
+  })
+
+  it('a business scope opens nothing else', () => {
+    expect(scopeAllows(['invoices:write'], 'POST', '/api/payments')).toBe(false)
+    expect(scopeAllows(['orders:read'], 'GET', '/api/quotes')).toBe(false)
+    expect(scopeAllows(['containers:write'], 'POST', '/api/container-types-admin')).toBe(false)
+    expect(scopeAllows(['quotes:read', 'orders:read', 'invoices:read'], 'GET', '/api/price-lists')).toBe(false)
+    expect(scopeAllows(['invoices:write'], 'POST', '/api/webhook-endpoints')).toBe(false)
+  })
+
+  // The invite answer carries a one-time link that opens a customer portal account.
+  it('no key can invite or list portal users, whatever its scopes', () => {
+    const all = ['clients:read', 'clients:write', 'invoices:write', 'optimize']
+    expect(scopeAllows(all, 'POST', '/api/clients/c1/portal-users')).toBe(false)
+    expect(scopeAllows(all, 'GET', '/api/clients/c1/portal-users')).toBe(false)
+    expect(scopeAllows(all, 'POST', '/api/clients/c1/contacts')).toBe(true)
+  })
+
+  it('a scope named after an object built-in is ignored, not a crash', () => {
+    expect(scopeAllows(['constructor:read', 'toString:write'], 'GET', '/api/missions')).toBe(false)
+  })
+})
+
+describe('isApiKeyRequest', () => {
+  it('recognises only the identity the middleware gives a key', () => {
+    expect(isApiKeyRequest('apikey:k1')).toBe(true)
+    expect(isApiKeyRequest('cmucc9nff00013snw00jwr2k4')).toBe(false)
+    expect(isApiKeyRequest('sa:apikey:k1')).toBe(false)
+    expect(isApiKeyRequest(undefined)).toBe(false)
+  })
+})
+
+describe('apiKeyPermissions', () => {
+  const RAW = 'ef_live_' + 'b'.repeat(64)
+  beforeEach(() => { vi.clearAllMocks(); invalidateApiKeyCache(); process.env.USE_MOCK_DATA = 'false' })
+  afterEach(() => { delete process.env.USE_MOCK_DATA })
+
+  it('billing scopes bring the billing permission; the others bring nothing extra', async () => {
+    findUnique.mockResolvedValue({ id: 'k-bill', tenantId: 't1', scopes: ['invoices:read', 'missions:write'], revoked: false, expiresAt: null })
+    await authenticateApiKey(RAW)
+    expect([...await apiKeyPermissions('k-bill')]).toEqual(['manage_billing'])
+    // Served from what the middleware just resolved: no second lookup.
+    expect(findUnique).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the key when nothing is cached, and grants nothing to a key without billing scopes', async () => {
+    findUnique.mockResolvedValue({ scopes: ['missions:read', 'orders:write'], revoked: false, expiresAt: null })
+    expect((await apiKeyPermissions('k-ops')).size).toBe(0)
+    expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'k-ops' } }))
+  })
+
+  it('a revoked, expired or unknown key grants nothing', async () => {
+    findUnique.mockResolvedValue({ scopes: ['invoices:write'], revoked: true, expiresAt: null })
+    expect((await apiKeyPermissions('k1')).size).toBe(0)
+    findUnique.mockResolvedValue({ scopes: ['invoices:write'], revoked: false, expiresAt: new Date(Date.now() - 1000) })
+    expect((await apiKeyPermissions('k2')).size).toBe(0)
+    findUnique.mockResolvedValue(null)
+    expect((await apiKeyPermissions('k3')).size).toBe(0)
   })
 })
 

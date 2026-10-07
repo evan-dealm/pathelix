@@ -8,6 +8,12 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
+const mockKeyPermissions = vi.hoisted(() => vi.fn(async (_keyId: string) => new Set<string>()))
+vi.mock('@/lib/apiKeyAuth', () => ({
+  API_KEY_USER_PREFIX: 'apikey:',
+  apiKeyPermissions: (keyId: string) => mockKeyPermissions(keyId),
+}))
+
 import {
   ALL_PERMISSIONS,
   DEFAULT_PERMISSIONS,
@@ -369,5 +375,40 @@ describe('invalidatePermCache', () => {
 
   it('can be called without error for a user not in cache', () => {
     expect(() => invalidatePermCache('non-existent-user')).not.toThrow()
+  })
+})
+
+// An API key reaches the routes as `apikey:<id>` with the dispatcher role.
+describe('hasPermission — API keys', () => {
+  beforeEach(() => { mockFindMany.mockReset(); mockKeyPermissions.mockReset() })
+
+  it('has the dispatcher defaults without any lookup', async () => {
+    expect(await hasPermission('apikey:k1', 'dispatcher', 'manage_missions')).toBe(true)
+    expect(await hasPermission('apikey:k1', 'dispatcher', 'manage_sales')).toBe(true)
+    expect(mockFindMany).not.toHaveBeenCalled()
+    expect(mockKeyPermissions).not.toHaveBeenCalled()
+  })
+
+  // Before: a key with invoices:read passed the middleware and got 403 from every billing route.
+  it('gets billing only from a billing scope', async () => {
+    mockKeyPermissions.mockResolvedValue(new Set(['manage_billing']))
+    expect(await hasPermission('apikey:k-bill', 'dispatcher', 'manage_billing')).toBe(true)
+    expect(mockKeyPermissions).toHaveBeenCalledWith('k-bill')
+
+    mockKeyPermissions.mockResolvedValue(new Set())
+    expect(await hasPermission('apikey:k-ops', 'dispatcher', 'manage_billing')).toBe(false)
+  })
+
+  it('never gets an administration permission, whatever its scopes', async () => {
+    mockKeyPermissions.mockResolvedValue(new Set(['manage_billing']))
+    for (const perm of ['manage_users', 'manage_settings', 'manage_integrations', 'api_access'] as Permission[]) {
+      expect(await hasPermission('apikey:k-bill', 'dispatcher', perm)).toBe(false)
+    }
+  })
+
+  it('a real user is not affected: a dispatcher still has no billing by default', async () => {
+    mockFindMany.mockResolvedValue([])
+    expect(await hasPermission('user-plain-dispatcher', 'dispatcher', 'manage_billing')).toBe(false)
+    expect(mockKeyPermissions).not.toHaveBeenCalled()
   })
 })

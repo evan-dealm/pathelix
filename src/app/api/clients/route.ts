@@ -1,30 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { ClientCreateSchema } from '@/lib/crm/schemas'
+import { isApiKeyRequest } from '@/lib/apiKeyAuth'
 import { getTenantId, getRequestContext } from '@/lib/data/context'
 import { getTenantDb } from '@/lib/tenantDb'
 import { redisCache } from '@/lib/redisCache'
-
-const ClientCreateSchema = z.object({
-  name:             z.string().min(1).max(200),
-  contact:          z.string().max(200).optional(),
-  phone:            z.string().max(50).optional(),
-  email:            z.string().max(200).optional(),
-  vip:              z.boolean().optional(),
-  requiresDeposit:  z.boolean().optional(),
-  ecoResponsable:   z.boolean().optional(),
-  requiresBsd:      z.boolean().optional(),
-  voucherRequired:  z.boolean().optional(),
-  notes:            z.string().max(2000).optional(),
-
-  siret:            z.string().max(100).optional(),
-  billingAddress:   z.string().max(500).optional(),
-  externalRef:      z.string().max(200).optional(),
-  sector:           z.string().max(100).optional(),
-  contractStart:    z.string().datetime({ offset: true }).optional().nullable(),
-  contractEnd:      z.string().datetime({ offset: true }).optional().nullable(),
-  paymentTermsDays: z.number().int().min(0).max(365).optional(),
-  siteIds:          z.array(z.string().max(100)).max(100).optional(),
-})
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId = getTenantId(req)
@@ -69,8 +48,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  // Admins only for interactive users; an API key gets here only with the matching write scope.
+  if (role !== 'admin' && !isApiKeyRequest(userId)) return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
 
   let rawBody: unknown
   try { rawBody = await req.json() } catch { return NextResponse.json({ error: 'JSON invalide' }, { status: 400 }) }

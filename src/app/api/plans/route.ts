@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isApiKeyRequest } from '@/lib/apiKeyAuth'
 import { assertTenantDrivers, ForeignTenantRefError } from '@/lib/tenantRefs'
 import { hasPermission } from '@/lib/permissions'
 import type { PlannedMission }       from '@/lib/types'
@@ -177,8 +178,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
-  const { tenantId, role } = getRequestContext(req)
-  if (role !== 'admin') return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
+  const { tenantId, role, userId } = getRequestContext(req)
+  // Admins only for interactive users; an API key gets here only with the matching write scope.
+  if (role !== 'admin' && !isApiKeyRequest(userId)) return NextResponse.json({ error: 'Admin requis' }, { status: 403 })
 
   const date = req.nextUrl.searchParams.get('date')
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {

@@ -1,11 +1,9 @@
-import { z } from 'zod'
+import { PaymentAllocateSchema } from '@/lib/sales/schemas'
 import { apiRoute, notFound, unprocessable } from '@/lib/api/route'
 import { refreshPaymentStatus } from '@/lib/sales/invoices'
 
-const AllocateSchema = z.object({ invoiceId: z.string().nullable() })
-
 /** Matches (or unmatches) a payment with an invoice of the same customer — manual reconciliation. */
-export const PUT = apiRoute({ name: '/api/payments/[id]', permission: 'manage_billing', schema: AllocateSchema }, async ({ db, body, params }) => {
+export const PUT = apiRoute({ name: '/api/payments/[id]', permission: 'manage_billing', schema: PaymentAllocateSchema }, async ({ db, body, params }) => {
   const p = await db.payment.findFirst({ where: { id: params.id }, select: { id: true, clientId: true, invoiceId: true } })
   if (!p) throw notFound('Paiement')
   if (body.invoiceId) {

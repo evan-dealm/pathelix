@@ -86,8 +86,12 @@ Détails : ARCHITECTURE.md §4.
 
 ## 6. API et intégrations
 
-**API REST** — authentification par clé (`X-API-Key`, scopes : missions, chauffeurs, véhicules,
-clients, sites, tournées en lecture/écriture ; optimisation ; rapports). Exemple :
+**API REST** — authentification par clé (`X-API-Key`). Scopes en lecture/écriture : missions,
+chauffeurs, véhicules, clients, sites, tournées, parc de bennes, pesées, devis, commandes,
+contrats, factures (dont export comptable), paiements ; plus optimisation et rapports. La
+référence `/api-docs` est publique et générée depuis le code : chaque opération indique son
+scope, les corps de requête sont ceux que les routes valident, les webhooks sortants y sont
+listés. Exemple :
 
 ```bash
 curl -H "X-API-Key: ef_live_…" "https://<hôte>/api/missions?date=2026-10-06"
