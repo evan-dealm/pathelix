@@ -135,10 +135,18 @@ button {
   opacity: 1;
 }
 
+/* Content sits beside the 64px rail — and takes the full width where the rail is hidden. */
+.admin-content {
+  margin-left: 64px;
+}
+
 /* Mobile: hide sidebar, show bottom nav */
 @media (max-width: 768px) {
   .sidebar {
     display: none;
+  }
+  .admin-content {
+    margin-left: 0;
   }
   .mobile-bottom-nav {
     display: flex;

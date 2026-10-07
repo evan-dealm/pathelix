@@ -175,6 +175,7 @@ function debouncedSyncAllForDate(
   date: string,
   get: () => PlanningStore,
   set: (_partial: Partial<PlanningState> | ((_state: PlanningStore) => Partial<PlanningState>)) => void,
+  delayMs = 500,
 ) {
 
   if (typeof window === 'undefined') return
@@ -210,13 +211,16 @@ function debouncedSyncAllForDate(
       for (let i = 0; i < plansForDate.length; i += BATCH) {
         batches.push(plansForDate.slice(i, i + BATCH))
       }
-      const results = await Promise.all(batches.map(batch =>
-        fetch('/api/plans', {
+      const results = await Promise.all(batches.map(batch => {
+        const body = JSON.stringify(batch)
+        return fetch('/api/plans', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(batch),
-        }),
-      ))
+          body,
+          // Lets the save finish if the page is left right away (browsers cap keepalive bodies at 64 KB).
+          keepalive: body.length < 60_000,
+        })
+      }))
       const failed = results.find(r => !r.ok)
       if (failed) throw new Error(apiErrorMessage(await failed.json().catch(() => null), failed.status))
       set({ syncStatus: 'synced', lastSyncedAt: new Date().toISOString() })
@@ -224,7 +228,7 @@ function debouncedSyncAllForDate(
       log.warn('sync (all for date) failed', { err: err instanceof Error ? err.message : String(err) })
       set({ syncStatus: 'error', syncError: err instanceof Error ? err.message : 'Sauvegarde impossible' })
     }
-  }, 500))
+  }, delayMs))
 }
 
 /** Saves every date whose tours differ between two plan maps (undo/redo, copy, archive…). */
@@ -559,7 +563,9 @@ export const usePlanningStore = create<PlanningStore>()(
             ...pushHistory(state, snap),
           }
         })
-        debouncedSyncAllForDate(date, get, set)
+        // Saved at once, not after the usual pause for drag-and-drop bursts: a dispatcher who
+        // optimises and leaves the page straight away must find the routes on return.
+        debouncedSyncAllForDate(date, get, set, 0)
       },
 
       moveUp(missionId, driverId, date) {

@@ -18,6 +18,12 @@ test.describe('Tours Tab — Advanced', () => {
       { timeout: 30_000 },
     ).catch(() => {})
     await page.waitForTimeout(300)
+    // Other specs empty the day (« Vider »): these tests need routes, so build them when absent.
+    if (await page.getByText('Aucune tournée planifiée pour ce jour').isVisible().catch(() => false)) {
+      await page.locator('button:has-text("Optimiser")').first().click()
+      await expect(page.getByText(/Optimisation terminée : \d+\/\d+ missions/).first()).toBeVisible({ timeout: 30_000 })
+      await expect(page.locator('button[title="Exporter en CSV"]').first()).toBeVisible({ timeout: 10_000 })
+    }
   })
 
   test('optimize button click shows loading state', async ({ page }) => {

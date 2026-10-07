@@ -76,7 +76,8 @@ test.describe('Users Tab', () => {
     await expect(roleSelect).toBeVisible({ timeout: 5_000 })
     const opts = await roleSelect.locator('option').allTextContents()
     expect(opts.some(o => /Administrateur|ADMIN/i.test(o))).toBe(true)
-    expect(opts.some(o => /Dispatcher|DISPATCHER/i.test(o))).toBe(true)
+    // The dispatcher role is called « Exploitant » everywhere in the interface.
+    expect(opts.some(o => /Exploitant/i.test(o))).toBe(true)
     expect(opts.some(o => /Chauffeur|DRIVER/i.test(o))).toBe(true)
     await closeModal(page)
   })

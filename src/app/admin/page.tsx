@@ -636,7 +636,7 @@ export default function AdminPage() {
       </aside>
 
       {}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative ml-16 md:ml-16">
+      <div className="admin-content flex-1 flex flex-col min-w-0 overflow-hidden relative">
 
         {}
         <header className="h-14 flex-shrink-0 flex items-center gap-3 px-5 border-b border-surface-200 z-20 topbar-bg">
@@ -644,8 +644,9 @@ export default function AdminPage() {
             <h1 className="text-base font-semibold text-surface-900 capitalize truncate">
               {NAV_ITEMS.find(n => n.id === activeTab)?.label || 'Dashboard'}
             </h1>
-            <span className="text-surface-300 text-sm">/</span>
-            <span className="text-surface-400 text-sm truncate">
+            {/* On a phone the title needs the room: the context line only shows from 640px up. */}
+            <span className="hidden sm:inline text-surface-300 text-sm">/</span>
+            <span className="hidden sm:inline text-surface-400 text-sm truncate">
               {activeTab === 'dashboard' ? 'Vue d\'ensemble' :
                activeTab === 'missions' ? `${(Array.isArray(missions) ? missions : []).filter(m => !SYNTHETIC_TYPES.includes(m.type) && !m.archived).length} missions` :
                activeTab === 'tours' ? planDate :
@@ -1063,7 +1064,7 @@ export default function AdminPage() {
       {}
       <nav className="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-surface-200 z-40 items-center justify-around px-1 py-1.5 safe-area-bottom">
         {[
-          { id: 'dashboard' as AppTab, icon: '⬡', label: 'Home' },
+          { id: 'dashboard' as AppTab, icon: '⬡', label: 'Accueil' },
           { id: 'missions' as AppTab, icon: '📋', label: 'Missions' },
           { id: 'tours' as AppTab, icon: '🗺', label: 'Tournées' },
           { id: 'stats' as AppTab, icon: '📊', label: 'Stats' },

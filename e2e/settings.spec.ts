@@ -87,7 +87,7 @@ test.describe('Settings Tab', () => {
     const panel = page.locator('[role="tabpanel"]')
     await expect(panel.locator('button:has-text("Archiver toutes les missions")')).toBeEnabled({ timeout: 5_000 })
     // Erasing plans is offered for one chosen day (today by default), never for everything.
-    await expect(panel.locator('#purge-plans-date')).toHaveValue(/^d{4}-d{2}-d{2}$/)
+    await expect(panel.locator('#purge-plans-date')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/)
     await expect(panel.locator('button:has-text("Effacer les tournées de cette date")')).toBeEnabled()
     // The manual purge of the audit log was removed on purpose (365-day retention only).
     await expect(panel.locator('button:has-text("Purger les logs")')).toHaveCount(0)

@@ -836,7 +836,7 @@ export function ToursTab({ onEditPlanned, onViewMission }: {
           <div className="flex flex-col items-center justify-center py-12 text-surface-400 gap-2">
             <div className="text-3xl">📋</div>
             <div className="text-sm">Aucune tournée planifiée pour ce jour</div>
-            <div className="text-xs text-surface-300">Cliquez sur « Lancer l&apos;optimisation » pour générer les tournées</div>
+            <div className="text-xs text-surface-300">Cliquez sur « Optimiser » pour générer les tournées</div>
           </div>
         )}
         {}

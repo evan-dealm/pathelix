@@ -17,8 +17,9 @@ export CSV/Excel ; saisie en langage naturel (si Ollama est configuré).
 
 **Tournées** — plan du jour par chauffeur (carte, liste ordonnée, Gantt) :
 - optimisation de toute la journée (asynchrone, résultat poussé en direct) ;
-- ré-optimisation en cours de journée depuis la position réelle des chauffeurs, sans toucher
-  aux arrêts faits ;
+- ré-optimisation en cours de journée (« Live ») depuis la position réelle des chauffeurs, sans
+  toucher aux arrêts faits ; dès qu'une mission du jour est commencée ou terminée, l'optimisation
+  complète est refusée et renvoie vers « Live » ;
 - reséquencement d'un chauffeur, redistribution entre chauffeurs, glisser-déposer, verrouillage ;
 - missions non affectées et avertissements expliqués (capacité, horaires, benne trop grande…) ;
 - annuler / rétablir ; feuilles de route PDF et CSV ; coûts par tournée (carburant, péages,
