@@ -184,7 +184,9 @@ describe('POST /api/import', () => {
     const res = await postImport(makePost('/api/import', {
       type: 'missions',
       data: [
-        { type: 'POSER', date: '2026-04-01' },
+        // The valid row carries an address: like POST /api/missions, the import refuses a
+        // mission without one (it used to be stored and could never be routed).
+        { type: 'POSER', date: '2026-04-01', address: '12 rue de la Paix, Paris' },
         { type: 'BAD', date: '2026-04-01' },
       ],
     }))
