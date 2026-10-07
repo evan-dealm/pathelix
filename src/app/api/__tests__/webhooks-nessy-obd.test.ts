@@ -43,12 +43,6 @@ const mockRedisCache = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/redisCache', () => ({ redisCache: mockRedisCache }))
 
-vi.mock('@/lib/obdStore', () => ({
-  recordOBDReading: vi.fn(),
-  pruneOldOBDData:  vi.fn(),
-  getOBDPositions:  vi.fn(() => []),
-}))
-
 import { POST as nessyPOST }                            from '@/app/api/webhooks/nessy/route'
 import { verifyNessySignature, nessyPayloadToMission }   from '@/services/nessy'
 

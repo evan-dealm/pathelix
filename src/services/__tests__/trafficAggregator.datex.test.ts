@@ -8,8 +8,8 @@ vi.mock('@/lib/traffic/trafficTarBuilder', () => ({
   buildTrafficTar: vi.fn(() => null),
   writeTrafficTar: vi.fn(),
 }))
-vi.mock('@/lib/obdStore', () => ({
-  getAllCurrentPositions: vi.fn(() => []),
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: { driverPosition: { findMany: vi.fn(async () => []) } },
 }))
 
 let collectDatexEvents: typeof TrafficAggregatorModule.collectDatexEvents

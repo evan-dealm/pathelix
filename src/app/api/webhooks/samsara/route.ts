@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { z } from 'zod'
-import { recordOBDReading, pruneOldOBDData } from '@/lib/obdStore'
 import { persistDriverPositions, type DriverPositionInput } from '@/lib/driverPositionPersist'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
@@ -50,8 +49,6 @@ function tokenMatches(stored: string, provided: string): boolean {
   const b = Buffer.alloc(maxLen); b.write(provided, 0, 'utf8')
   return timingSafeEqual(a, b) && stored.length === provided.length
 }
-
-let _pruneCounter = 0
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const ip = getClientIp(req.headers)
@@ -127,23 +124,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const timestamp = e.time ? new Date(e.time).getTime() : Date.now()
     const speedKmh = Number((location as Record<string, unknown>).speed ?? (location as Record<string, unknown>).speedKmh ?? 0)
-    recordOBDReading({
-      driverId,
-      timestamp,
-      lat,
-      lng,
-      speedKmh,
-      ignition:  Boolean(e.engineState?.value === 'On' || (location as { ignition?: unknown }).ignition !== false),
-    })
     toPersist.push({ driverId, lat, lng, speedKmh, timestamp })
     recorded++
   }
-  void persistDriverPositions(integration.tenantId, toPersist)
+  await persistDriverPositions(integration.tenantId, toPersist)
 
-  if (++_pruneCounter >= 500) {
-    _pruneCounter = 0
-    pruneOldOBDData()
-  }
 
   log.info('Samsara data received', { tenantId: integration.tenantId, recorded })
   return NextResponse.json({ ok: true, recorded })

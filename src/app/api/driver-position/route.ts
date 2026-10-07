@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  getAllCurrentPositions,
-  getSpeedHistoryForDate,
-  getAllSpeedHistories,
-} from '@/lib/obdStore'
+import { latestPositions, speedHistory } from '@/lib/positions'
 import { getDriver } from '@/lib/data/drivers'
 import { verifySession, SESSION_COOKIE } from '@/lib/session'
 import { getTenantDb } from '@/lib/tenantDb'
@@ -11,6 +7,8 @@ import { persistDriverPositions } from '@/lib/driverPositionPersist'
 
 const _driverIdCache = new Map<string, { ids: Set<string>; expiresAt: number }>()
 const DRIVER_ID_CACHE_TTL_MS = 60_000
+/** A position older than this is not "live" any more. */
+const POSITION_MAX_AGE_MS = 12 * 3600_000
 
 async function getTenantDriverIds(tenantId: string): Promise<Set<string>> {
   const now    = Date.now()
@@ -45,32 +43,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Paramètre date requis (YYYY-MM-DD)' }, { status: 400 })
   }
 
+  // Read from the database every GPS source writes to — any instance sees every position.
+  const db = getTenantDb(tenantHeader)
+  const since = new Date(Date.now() - POSITION_MAX_AGE_MS)
+  const settings = await db.tenantSettings.findUnique({ where: { tenantId: tenantHeader }, select: { timezone: true } })
+  const timeZone = settings?.timezone || 'Europe/Paris'
   if (driverId) {
 
     const driver = await getDriver(tenantHeader, driverId)
     if (!driver) {
       return NextResponse.json({ error: 'Chauffeur introuvable' }, { status: 404 })
     }
-    const positions = getAllCurrentPositions().filter(p => p.driverId === driverId)
-    const history   = getSpeedHistoryForDate(driverId, date)
-    return NextResponse.json({ positions, history: { [driverId]: history } })
+    const [positions, history] = await Promise.all([latestPositions(db, { since, driverIds: [driverId] }), speedHistory(db, date, timeZone, [driverId])])
+    return NextResponse.json({ positions, history: { [driverId]: history[driverId] ?? [] } })
   }
 
-  const allPositions    = getAllCurrentPositions()
-  const tenantDriverIds = await getTenantDriverIds(tenantHeader)
-
-  const positions = allPositions.filter(p => tenantDriverIds.has(p.driverId))
-  const allHistory = getAllSpeedHistories(date)
-  const history: Record<string, unknown> = {}
-  for (const [dId, h] of Object.entries(allHistory)) {
-    if (tenantDriverIds.has(dId)) history[dId] = h
-  }
-
+  const [positions, history] = await Promise.all([latestPositions(db, { since }), speedHistory(db, date, timeZone)])
   return NextResponse.json({ positions, history })
 }
 
 import { z } from 'zod'
-import { recordOBDReading } from '@/lib/obdStore'
 import { emitEvent } from '@/lib/integrationEvents'
 
 const PositionSchema = z.object({
@@ -116,15 +108,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (isNaN(ts)) {
     return NextResponse.json({ error: 'Timestamp invalide' }, { status: 400 })
   }
-  recordOBDReading({
-    driverId,
-    timestamp: ts,
-    lat: latitude,
-    lng: longitude,
-    speedKmh: speedKmh ?? 0,
-    ignition: true,
-  })
-  void persistDriverPositions(session.tenantId, [{ driverId, lat: latitude, lng: longitude, speedKmh, timestamp: ts }])
+  await persistDriverPositions(session.tenantId, [{ driverId, lat: latitude, lng: longitude, speedKmh, timestamp: ts }])
 
   void emitEvent(session.tenantId, 'driver.position', {
     driverId, latitude, longitude, speedKmh: speedKmh ?? 0,

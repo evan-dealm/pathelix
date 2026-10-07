@@ -7,6 +7,8 @@ const VALHALLA_URL            = process.env.VALHALLA_URL || ''
 
 const DATEX_II_URL            = process.env.DATEX_II_URL || ''
 const AGGREGATION_INTERVAL_MS = 120_000
+const GPS_FRESHNESS_MS        = 300_000
+const MAX_GPS_OBSERVATIONS    = 5_000
 
 export interface TrafficObservation {
   lat:       number
@@ -55,16 +57,20 @@ async function locateEdgesNearPoint(lat: number, lng: number): Promise<string[]>
 
 export async function collectGpsSpeeds(): Promise<TrafficObservation[]> {
   try {
-    const { getAllCurrentPositions } = await import('@/lib/obdStore')
-    const positions = getAllCurrentPositions()
-    const now       = Date.now()
-    const result: TrafficObservation[] = []
-
-    for (const pos of positions) {
-      if (now - pos.updatedAt > 300_000) continue
-      if (pos.speedKmh <= 2) continue
-      result.push({ lat: pos.lat, lng: pos.lng, speedKmh: pos.speedKmh, timestamp: pos.updatedAt, source: 'gps' })
-    }
+    // Cross-tenant on purpose: road speeds are anonymous (no driver or tenant leaves this
+    // function) and the aggregator runs in the VRP worker, which never saw the web process's
+    // memory. Latest reading of each truck over the last 5 minutes.
+    const { unscopedPrisma } = await import('@/lib/tenantDb')
+    const rows = await unscopedPrisma.driverPosition.findMany({
+      where:    { recordedAt: { gte: new Date(Date.now() - GPS_FRESHNESS_MS) }, speedKmh: { gt: 2 } },
+      orderBy:  { recordedAt: 'desc' },
+      distinct: ['driverId'],
+      select:   { latitude: true, longitude: true, speedKmh: true, recordedAt: true },
+      take:     MAX_GPS_OBSERVATIONS,
+    })
+    const result: TrafficObservation[] = rows.map(r => ({
+      lat: r.latitude, lng: r.longitude, speedKmh: r.speedKmh ?? 0, timestamp: r.recordedAt.getTime(), source: 'gps',
+    }))
 
     log.debug('GPS speeds collected', { count: result.length })
     return result

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
-import { recordOBDReading, pruneOldOBDData } from '@/lib/obdStore'
 import { persistDriverPositions, type DriverPositionInput } from '@/lib/driverPositionPersist'
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit'
 import { decryptConfig } from '@/lib/configCrypto'
@@ -32,8 +31,6 @@ function tokenMatches(stored: string, provided: string): boolean {
   const b = Buffer.alloc(maxLen); b.write(provided, 0, 'utf8')
   return timingSafeEqual(a, b) && stored.length === provided.length
 }
-
-let _pruneCounter = 0
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
 
@@ -104,23 +101,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       continue
     }
     const timestamp = r.timestamp ?? now
-    recordOBDReading({
-      driverId:  r.driverId,
-      timestamp,
-      lat:       r.lat,
-      lng:       r.lng,
-      speedKmh:  r.speedKmh,
-      ignition:  r.ignition,
-    })
     toPersist.push({ driverId: r.driverId, lat: r.lat, lng: r.lng, speedKmh: r.speedKmh, timestamp })
     recorded++
   }
-  void persistDriverPositions(tenantId, toPersist)
+  await persistDriverPositions(tenantId, toPersist)
 
-  if (++_pruneCounter >= 500) {
-    _pruneCounter = 0
-    pruneOldOBDData()
-  }
 
   log.debug(`OBD: ${recorded} lecture(s) enregistrée(s)`)
   return NextResponse.json({ ok: true, count: recorded })

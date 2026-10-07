@@ -16,11 +16,9 @@ vi.mock('@/lib/rateLimit', () => ({
   })),
   getClientIp: vi.fn(() => '127.0.0.1'),
 }))
-const mockRecordOBD = vi.hoisted(() => vi.fn())
-const mockPruneOBD  = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/obdStore', () => ({
-  recordOBDReading: mockRecordOBD,
-  pruneOldOBDData:  mockPruneOBD,
+const mockPersist = vi.hoisted(() => vi.fn(async (_tenantId: string, _readings: Array<{ driverId: string; timestamp: number }>) => undefined))
+vi.mock('@/lib/driverPositionPersist', () => ({
+  persistDriverPositions: mockPersist,
 }))
 
 // Trades deps
@@ -236,8 +234,8 @@ describe('POST /api/webhooks/obd', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.count).toBe(1)
-    expect(mockRecordOBD).toHaveBeenCalledOnce()
-    expect(mockRecordOBD.mock.calls[0][0].driverId).toBe('d1')
+    expect(mockPersist).toHaveBeenCalledOnce()
+    expect(mockPersist.mock.calls[0][1].map(r => r.driverId)).toEqual(['d1'])
   })
 
   it('records batch OBD readings', async () => {
@@ -250,7 +248,7 @@ describe('POST /api/webhooks/obd', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.count).toBe(3)
-    expect(mockRecordOBD).toHaveBeenCalledTimes(3)
+    expect(mockPersist.mock.calls[0][1]).toHaveLength(3)
   })
 
   it('skips a reading whose driverId does not belong to the resolved tenant', async () => {
@@ -259,7 +257,7 @@ describe('POST /api/webhooks/obd', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.count).toBe(0)
-    expect(mockRecordOBD).not.toHaveBeenCalled()
+    expect(mockPersist.mock.calls.flatMap(c => c[1])).toEqual([])
   })
 })
 
@@ -307,16 +305,6 @@ describe('POST /api/webhooks/obd — additional branches', () => {
     const ts = 1_700_000_000
     const res = await freshPost(makeOBD({ driverId: 'd5', lat: 48.85, lng: 2.35, speedKmh: 60, timestamp: ts }))
     expect(res.status).toBe(200)
-    expect(mockRecordOBD).toHaveBeenCalledWith(expect.objectContaining({ timestamp: ts }))
-  })
-
-  it('calls pruneOldOBDData after 500 readings (_pruneCounter branch)', async () => {
-    vi.resetModules()
-    const { POST: freshPost } = await import('@/app/api/webhooks/obd/route')
-    const reading = { driverId: 'd1', lat: 48.85, lng: 2.35, speedKmh: 50 }
-    for (let i = 0; i < 500; i++) {
-      await freshPost(makeOBD(reading))
-    }
-    expect(mockPruneOBD).toHaveBeenCalledOnce()
+    expect(mockPersist).toHaveBeenCalledWith(expect.any(String), [expect.objectContaining({ timestamp: ts })])
   })
 })

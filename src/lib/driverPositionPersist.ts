@@ -13,9 +13,9 @@ export interface DriverPositionInput {
 }
 
 /**
- * Persists GPS readings to the `DriverPosition` table, in addition to the in-memory
- * `obdStore` used for live dashboard reads. Non-fatal on failure — a DB write hiccup must
- * never break the webhook's 200 response to the telemetry provider.
+ * Persists GPS readings to the `DriverPosition` table — the single source the live map, the
+ * speed history and the traffic aggregator read (`src/lib/positions.ts`). Non-fatal on failure:
+ * a DB write hiccup must never break the webhook's 200 response to the telemetry provider.
  */
 export async function persistDriverPositions(
   tenantId:  string,
@@ -35,7 +35,7 @@ export async function persistDriverPositions(
       })) as Parameters<typeof db.driverPosition.createMany>[0]['data'],
     })
   } catch (err) {
-    log.warn('Failed to persist driver positions (non-fatal, in-memory store still updated)', {
+    log.warn('Failed to persist driver positions (non-fatal)', {
       tenantId, count: readings.length, err: err instanceof Error ? err.message : String(err),
     })
   }

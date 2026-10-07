@@ -8,10 +8,11 @@ vi.mock('@/lib/traffic/trafficTarBuilder', () => ({
   writeTrafficTar:  vi.fn(),
 }))
 
-const mockGetAllCurrentPositions = vi.fn(() => [] as { lat: number; lng: number; speedKmh: number; updatedAt: number }[])
+type Row = { latitude: number; longitude: number; speedKmh: number | null; recordedAt: Date }
+const mockFindPositions = vi.fn(async (_args: unknown) => [] as Row[])
 
-vi.mock('@/lib/obdStore', () => ({
-  getAllCurrentPositions: mockGetAllCurrentPositions,
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: { driverPosition: { findMany: (args: unknown) => mockFindPositions(args) } },
 }))
 
 import {
@@ -28,53 +29,35 @@ beforeEach(() => {
 
 describe('collectGpsSpeeds', () => {
   it('returns empty array when no positions', async () => {
-    mockGetAllCurrentPositions.mockReturnValueOnce([])
+    mockFindPositions.mockResolvedValueOnce([])
     expect(await collectGpsSpeeds()).toEqual([])
   })
 
-  it('filters positions older than 5 minutes', async () => {
-    mockGetAllCurrentPositions.mockReturnValueOnce([
-      { lat: 45.9, lng: 6.1, speedKmh: 50, updatedAt: Date.now() - 400_000 },
-    ])
-    expect(await collectGpsSpeeds()).toHaveLength(0)
+  // The worker used to read a memory store only the web process filled: it never saw a speed.
+  it('reads the stored positions: only the last 5 minutes, only moving trucks, one per truck', async () => {
+    const before = Date.now()
+    await collectGpsSpeeds()
+    const args = mockFindPositions.mock.calls[0][0] as {
+      where: { recordedAt: { gte: Date }; speedKmh: { gt: number } }; distinct: string[]; orderBy: { recordedAt: string }
+    }
+    expect(args.where.speedKmh).toEqual({ gt: 2 })
+    // The cut-off is taken a few ms after `before`, so the window seen from here is ≤ 5 min.
+    expect(before - args.where.recordedAt.gte.getTime()).toBeLessThanOrEqual(300_000)
+    expect(before - args.where.recordedAt.gte.getTime()).toBeGreaterThan(295_000)
+    expect(args.distinct).toEqual(['driverId'])
+    expect(args.orderBy).toEqual({ recordedAt: 'desc' })
   })
 
-  it('filters positions with speed ≤ 2 km/h', async () => {
-    mockGetAllCurrentPositions.mockReturnValueOnce([
-      { lat: 45.9, lng: 6.1, speedKmh: 2, updatedAt: Date.now() - 1000 },
-    ])
-    expect(await collectGpsSpeeds()).toHaveLength(0)
-  })
-
-  it('returns valid recent fast observations', async () => {
-    mockGetAllCurrentPositions.mockReturnValueOnce([
-      { lat: 45.9, lng: 6.1, speedKmh: 50, updatedAt: Date.now() - 5000 },
-    ])
+  it('returns anonymous observations: coordinates, speed and time, no driver or tenant', async () => {
+    const recordedAt = new Date(Date.now() - 5000)
+    mockFindPositions.mockResolvedValueOnce([{ latitude: 45.9, longitude: 6.1, speedKmh: 50, recordedAt }])
     const result = await collectGpsSpeeds()
-    expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({ lat: 45.9, lng: 6.1, speedKmh: 50, source: 'gps' })
+    expect(result).toEqual([{ lat: 45.9, lng: 6.1, speedKmh: 50, timestamp: recordedAt.getTime(), source: 'gps' }])
   })
 
-  it('accepts positions at exactly 3 km/h', async () => {
-    mockGetAllCurrentPositions.mockReturnValueOnce([
-      { lat: 45.9, lng: 6.1, speedKmh: 3, updatedAt: Date.now() - 1000 },
-    ])
-    expect(await collectGpsSpeeds()).toHaveLength(1)
-  })
-
-  it('returns empty array when obdStore throws', async () => {
-    mockGetAllCurrentPositions.mockImplementationOnce(() => { throw new Error('unavailable') })
+  it('returns empty array when the database is unavailable', async () => {
+    mockFindPositions.mockRejectedValueOnce(new Error('unavailable'))
     expect(await collectGpsSpeeds()).toEqual([])
-  })
-
-  it('filters multiple positions correctly', async () => {
-    const now = Date.now()
-    mockGetAllCurrentPositions.mockReturnValueOnce([
-      { lat: 45.9, lng: 6.1, speedKmh: 50, updatedAt: now - 5000 },   // valid
-      { lat: 46.0, lng: 6.2, speedKmh: 1,  updatedAt: now - 5000 },   // too slow
-      { lat: 46.1, lng: 6.3, speedKmh: 60, updatedAt: now - 400_000 }, // too old
-    ])
-    expect(await collectGpsSpeeds()).toHaveLength(1)
   })
 })
 

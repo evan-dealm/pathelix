@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { z } from 'zod'
-import { recordOBDReading, pruneOldOBDData } from '@/lib/obdStore'
 import { persistDriverPositions, type DriverPositionInput } from '@/lib/driverPositionPersist'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
@@ -40,8 +39,6 @@ function apiKeyMatches(stored: string, provided: string): boolean {
   const b = Buffer.alloc(maxLen); b.write(provided, 0, 'utf8')
   return timingSafeEqual(a, b) && stored.length === provided.length
 }
-
-let _pruneCounter = 0
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
 
@@ -128,23 +125,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const timestamp = r.timestamp ? new Date(r.timestamp).getTime() : Date.now()
     const speedKmh = r.speed ?? r.speedKmh ?? 0
-    recordOBDReading({
-      driverId,
-      timestamp,
-      lat,
-      lng,
-      speedKmh,
-      ignition: r.ignition ?? r.engineRunning ?? true,
-    })
     toPersist.push({ driverId, lat, lng, speedKmh, timestamp })
     recorded++
   }
-  void persistDriverPositions(integration.tenantId, toPersist)
+  await persistDriverPositions(integration.tenantId, toPersist)
 
-  if (++_pruneCounter >= 500) {
-    _pruneCounter = 0
-    pruneOldOBDData()
-  }
 
   log.info('Geotab data received', { tenantId: integration.tenantId, recorded })
   return NextResponse.json({ ok: true, recorded })

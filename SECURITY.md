@@ -11,7 +11,8 @@ Modèle de sécurité, contrôles en place et risques résiduels. Vérifié cont
    `tenantId`. Un modèle tenant-scoped non couvert fait échouer l'appel (fail-closed). L'accès
    brut (`@/lib/db`, `unscopedPrisma`) est interdit par ESLint hors d'une liste blanche relue :
    webhooks (organisation résolue par son secret), superadmin, workers, sondes, agrégats
-   volontairement transverses.
+   volontairement transverses (dont les vitesses de trafic : coordonnées et vitesse seules,
+   sans chauffeur ni organisation).
 2. **Identité dérivée du jeton uniquement.** Le middleware supprime `x-user-id`, `x-user-role`,
    `x-tenant-id` (et `x-tenant-trade`, `x-driver-ref`) entrants, vérifie le jeton, puis les
    ré-injecte. Les routes lisent l'identité via `getRequestContext(req)` — jamais un en-tête.

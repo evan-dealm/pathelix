@@ -114,6 +114,9 @@ recalcule chaque nuit des coefficients par organisation/chauffeur/type/site, ave
   qui rechargent l'état depuis la base à la connexion. Sans Redis : diffusion en mémoire
   (mono-instance) et rechargement périodique.
 - Positions GPS : application chauffeur (toutes les 30 s) ou boîtiers (Geotab, Samsara, OBD).
+  Toutes les sources écrivent dans `DriverPosition` ; la carte, l'historique de vitesse (minutes
+  à l'heure de l'organisation) et l'agrégateur de trafic du worker VRP relisent cette table
+  (`src/lib/positions.ts`) — aucune position ne vit dans la mémoire d'un process.
 - Limite : 200 connexions SSE par organisation.
 
 ## 6. Application chauffeur hors ligne

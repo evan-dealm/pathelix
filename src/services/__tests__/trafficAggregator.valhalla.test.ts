@@ -15,8 +15,13 @@ vi.mock('@/lib/traffic/trafficTarBuilder', () => ({
   buildTrafficTar:  mockBuildTrafficTar,
   writeTrafficTar:  mockWriteTrafficTar,
 }))
-vi.mock('@/lib/obdStore', () => ({
-  getAllCurrentPositions: mockGetAllCurrentPositions,
+vi.mock('@/lib/tenantDb', () => ({
+  unscopedPrisma: {
+    driverPosition: {
+      // Rows as the database returns them, built from the compact fixtures of this file.
+      findMany: async () => mockGetAllCurrentPositions().map(p => ({ latitude: p.lat, longitude: p.lng, speedKmh: p.speedKmh, recordedAt: new Date(p.updatedAt) })),
+    },
+  },
 }))
 
 let startTrafficAggregation: () => void

@@ -28,6 +28,10 @@ const { mockPrisma } = vi.hoisted(() => {
     tenantSettings: {
       findUnique: vi.fn(),
     },
+    driverPosition: {
+      createMany: vi.fn(async () => ({ count: 1 })),
+      findMany: vi.fn(async () => []),
+    },
     exutoire: {
       findMany: vi.fn(),
     },
@@ -89,13 +93,6 @@ vi.mock('@/lib/vrp/index', () => ({
 
 vi.mock('@/lib/integrationEvents', () => ({
   emitEvent: vi.fn(),
-}))
-
-vi.mock('@/lib/obdStore', () => ({
-  getAllCurrentPositions: vi.fn(() => []),
-  recordOBDReading: vi.fn(),
-  getSpeedHistoryForDate: vi.fn(() => []),
-  getAllSpeedHistories: vi.fn(() => ({})),
 }))
 
 vi.mock('@/lib/session', () => ({
@@ -223,8 +220,6 @@ describe('POST /api/driver-position', () => {
     // POST now uses getTenantDriverIds → findMany cache instead of getDriver
     mockPrisma.driver.findMany.mockResolvedValue([{ id: 'd1' }])
 
-    const { recordOBDReading } = await import('@/lib/obdStore')
-
     const { POST } = await import('@/app/api/driver-position/route')
     const req = makeRequest('http://localhost:3000/api/driver-position', {
       method: 'POST',
@@ -236,12 +231,14 @@ describe('POST /api/driver-position', () => {
 
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
-    expect(recordOBDReading).toHaveBeenCalledWith(expect.objectContaining({
-      driverId: 'd1',
-      lat: 45.76,
-      lng: 6.05,
-      speedKmh: 42,
-    }))
+    expect(mockPrisma.driverPosition.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({
+        driverId: 'd1',
+        latitude: 45.76,
+        longitude: 6.05,
+        speedKmh: 42,
+      })],
+    })
   })
 
   it('[SEC-C1] driver cannot post position for another driver in same tenant', async () => {

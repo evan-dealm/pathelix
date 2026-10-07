@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server'
 
 const mockVerifySession = vi.fn()
 const mockGetDriver = vi.fn()
-const mockRecordOBDReading = vi.fn()
+const mockPersist = vi.fn(async (..._args: unknown[]) => undefined)
 const mockEmitEvent = vi.fn()
 
 vi.mock('@/lib/session', () => ({
@@ -21,11 +21,8 @@ vi.mock('@/lib/data/drivers', () => ({
   getDriver: (...args: unknown[]) => mockGetDriver(...args),
 }))
 
-vi.mock('@/lib/obdStore', () => ({
-  recordOBDReading: (...args: unknown[]) => mockRecordOBDReading(...args),
-  getAllCurrentPositions: vi.fn(() => []),
-  getSpeedHistoryForDate: vi.fn(() => []),
-  getAllSpeedHistories: vi.fn(() => ({})),
+vi.mock('@/lib/driverPositionPersist', () => ({
+  persistDriverPositions: (...args: unknown[]) => mockPersist(...args),
 }))
 
 vi.mock('@/lib/integrationEvents', () => ({
@@ -220,21 +217,21 @@ describe('POST /api/driver-position — input validation', () => {
 // ── 4. Happy path: position recorded ─────────────────────────────────────────
 
 describe('POST /api/driver-position — position recording', () => {
-  it('calls recordOBDReading with correct coords', async () => {
+  it('persists the position with correct coords', async () => {
     mockVerifySession.mockResolvedValue({
       sub: DRIVER_A, role: 'driver', tenantId: TENANT,
     })
     const { POST } = await import('@/app/api/driver-position/route')
     await POST(makeReq(validBody))
 
-    expect(mockRecordOBDReading).toHaveBeenCalledWith(
+    expect(mockPersist).toHaveBeenCalledWith(TENANT, [
       expect.objectContaining({
         driverId: DRIVER_A,
         lat: 45.75,
         lng: 4.83,
         speedKmh: 30,
       }),
-    )
+    ])
   })
 
   it('emits driver.position event', async () => {

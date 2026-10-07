@@ -9,10 +9,9 @@ const mockFindMany = vi.fn()
 const mockFindFirst = vi.fn()
 const mockVerifySession = vi.fn()
 const mockGetDriver = vi.fn()
-const mockRecordOBDReading = vi.fn()
 const mockEmitEvent = vi.fn()
-const mockGetAllCurrentPositions = vi.fn(() => [])
-const mockGetAllSpeedHistories = vi.fn(() => ({}))
+const mockPositionFindMany = vi.fn()
+const mockPositionCreateMany = vi.fn(async (_args: unknown) => ({ count: 1 }))
 
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
@@ -20,7 +19,11 @@ vi.mock('@/lib/tenantDb', () => ({
       findMany:  (args: unknown) => mockFindMany(args),
       findFirst: (args: unknown) => mockFindFirst(args),
     },
-    driverPosition: { createMany: vi.fn(async () => ({ count: 0 })) },
+    driverPosition: {
+      createMany: (args: unknown) => mockPositionCreateMany(args),
+      findMany:   (args: unknown) => mockPositionFindMany(args),
+    },
+    tenantSettings: { findUnique: vi.fn(async () => ({ timezone: 'Europe/Paris' })) },
   }),
 }))
 vi.mock('@/lib/session', () => ({
@@ -29,12 +32,6 @@ vi.mock('@/lib/session', () => ({
 }))
 vi.mock('@/lib/data/drivers', () => ({
   getDriver: (...args: unknown[]) => mockGetDriver(...args),
-}))
-vi.mock('@/lib/obdStore', () => ({
-  recordOBDReading:        (r: unknown) => mockRecordOBDReading(r),
-  getAllCurrentPositions:   () => mockGetAllCurrentPositions(),
-  getAllSpeedHistories:     () => mockGetAllSpeedHistories(),
-  getSpeedHistoryForDate:  vi.fn(() => []),
 }))
 vi.mock('@/lib/integrationEvents', () => ({
   emitEvent: (...args: unknown[]) => mockEmitEvent(...args),
@@ -62,27 +59,27 @@ function makePostReq(driverId: string): NextRequest {
 
 import { GET, POST } from '@/app/api/driver-position/route'
 
-describe('GET /api/driver-position — cache driver IDs sous volume', () => {
+describe('GET /api/driver-position — positions lues en base sous volume', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockVerifySession.mockResolvedValue(ADMIN_SESSION)
     mockFindMany.mockResolvedValue(DRIVER_IDS.map(id => ({ id })))
-    mockGetAllCurrentPositions.mockReturnValue(
-      DRIVER_IDS.map((id, i) => ({ driverId: id, lat: 45.7 + i * 0.001, lng: 4.8, speedKmh: 50, ignition: true, updatedAt: Date.now() })) as ReturnType<typeof mockGetAllCurrentPositions>,
+    mockPositionFindMany.mockResolvedValue(
+      DRIVER_IDS.map((id, i) => ({ driverId: id, latitude: 45.7 + i * 0.001, longitude: 4.8, speedKmh: 50, recordedAt: new Date() })),
     )
-    mockGetAllSpeedHistories.mockReturnValue({})
   })
 
-  it('30 requêtes GET simultanées ne font qu\'une seule requête DB findMany (cache actif)', async () => {
-    // Warm cache with first call
+  // Positions come from the table shared by every instance; the cost must not grow with the fleet.
+  it('une requête GET lit 150 chauffeurs en 2 requêtes (dernières positions + historique), pas une par chauffeur', async () => {
     await GET(makeGetReq())
-    const callsAfterWarm = mockFindMany.mock.calls.length
+    expect(mockPositionFindMany).toHaveBeenCalledTimes(2)
+    expect(mockFindMany).not.toHaveBeenCalled()
+  })
 
-    // 29 more calls — should all hit cache
-    await Promise.all(Array.from({ length: 29 }, () => GET(makeGetReq())))
-
-    // Cache should have absorbed all subsequent calls
-    expect(mockFindMany.mock.calls.length).toBe(callsAfterWarm)
+  it('30 requêtes GET simultanées répondent toutes 200', async () => {
+    const results = await Promise.all(Array.from({ length: 30 }, () => GET(makeGetReq())))
+    expect(results.every(r => r.status === 200)).toBe(true)
+    expect(mockPositionFindMany).toHaveBeenCalledTimes(60)
   })
 
   it('réponse GET contient positions des 150 chauffeurs', async () => {
@@ -103,7 +100,7 @@ describe('POST /api/driver-position — driver validation sous volume', () => {
     mockGetDriver.mockImplementation(async (_tenantId: string, driverId: string) =>
       DRIVER_IDS.includes(driverId) ? { id: driverId, tenantId: 'tenant-perf' } : null,
     )
-    mockRecordOBDReading.mockReturnValue(undefined)
+    mockFindMany.mockResolvedValue(DRIVER_IDS.map(id => ({ id })))
     mockEmitEvent.mockResolvedValue(undefined)
   })
 
@@ -121,5 +118,7 @@ describe('POST /api/driver-position — driver validation sous volume', () => {
     const results = await Promise.all(requests)
     const successes = results.filter(r => r.status === 200).length
     expect(successes).toBe(60)
+    // Every accepted position is written before the 200: nothing left in process memory.
+    expect(mockPositionCreateMany).toHaveBeenCalledTimes(60)
   })
 })
