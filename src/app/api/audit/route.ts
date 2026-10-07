@@ -10,6 +10,12 @@ const log = createLogger('/api/audit')
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const t0       = Date.now()
   const tenantId = getTenantId(req)
+  // Who did what, across the whole organisation: for its administrators only. Any dispatcher
+  // could read it (and with it the activity of every colleague) by calling the API directly.
+  const { role } = getRequestContext(req)
+  if (role !== 'admin' && role !== 'superadmin') {
+    return NextResponse.json({ error: 'Réservé aux administrateurs' }, { status: 403 })
+  }
   const params   = req.nextUrl.searchParams
   const page     = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
   const limit    = Math.min(100, Math.max(1, parseInt(params.get('limit') ?? '50', 10) || 50))

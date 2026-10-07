@@ -73,7 +73,7 @@ export function ImpersonationBanner() {
       } else {
 
         await usePlanningStore.persist.clearStorage()
-        await fetch('/api/auth/logout')
+        await fetch('/api/auth/logout', { method: 'POST' })
         window.location.href = '/login'
       }
     } catch {

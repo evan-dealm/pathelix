@@ -16,9 +16,9 @@ vi.mock('@/lib/superadminAudit', () => ({ logSuperadminAction: vi.fn() }))
 
 import { GET } from '@/app/api/audit/route'
 
-function makeReq(params: string = ''): NextRequest {
+function makeReq(params: string = '', role: string = 'admin'): NextRequest {
   return new NextRequest(`http://localhost/api/audit${params}`, {
-    headers: { 'x-tenant-id': 'tenant-abc123' },
+    headers: { 'x-tenant-id': 'tenant-abc123', 'x-user-id': 'admin-1', 'x-user-role': role },
   })
 }
 
@@ -141,5 +141,24 @@ describe('GET /api/audit — userName resolution', () => {
     const res = await GET(makeReq())
     const body = await res.json()
     expect(body.pagination.total).toBe(491)
+  })
+})
+
+// The Audit tab is hidden from dispatchers, but the API answered them: any dispatcher could read
+// who did what across the organisation by calling it directly.
+describe('GET /api/audit — administrators only', () => {
+  it('refuses a dispatcher and a driver without reading anything', async () => {
+    mockFindMany.mockClear()
+    expect((await GET(makeReq('', 'dispatcher'))).status).toBe(403)
+    expect((await GET(makeReq('', 'driver'))).status).toBe(403)
+    expect(mockFindMany).not.toHaveBeenCalled()
+  })
+
+  it('answers an admin and an impersonating superadmin', async () => {
+    mockFindMany.mockResolvedValue([])
+    mockCount.mockResolvedValue(0)
+    mockUserFindMany.mockResolvedValue([])
+    expect((await GET(makeReq('', 'admin'))).status).toBe(200)
+    expect((await GET(makeReq('', 'superadmin'))).status).toBe(200)
   })
 })
