@@ -210,6 +210,22 @@ describe('GET /api/health', () => {
     delete process.env.VALHALLA_URL
     vi.unstubAllGlobals()
   })
+
+  it('stays healthy when no organisation uses the optional Nessy integration', async () => {
+    // A pilot company without Nessy made every probe answer 503 « degraded » forever.
+    delete process.env.VALHALLA_URL
+    mockPrisma.integration.count.mockResolvedValueOnce(0)
+    vi.mocked(verifySession).mockResolvedValue({ tenantId: 'tenant-test', role: 'admin', email: 'a@b.c' } as never)
+    vi.mocked(getAllCircuitStates).mockReturnValue({})
+
+    const req = makeRequest('http://localhost:3000/api/health', { cookies: { session: 'valid-token' } })
+    const res  = await healthGet(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.status).toBe('ok')
+    expect(json.checks.nessySecret).toBe('unconfigured')
+  })
 })
 
 describe('GET /api/vehicles', () => {

@@ -99,7 +99,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const degraded =
     dbStatus === 'error' ||
-    (!useMock && !nessyOk) ||
     (hasRedis && redisStatus === 'unavailable') ||
     (valhallaUrl && valhallaStatus === 'degraded') ||
     (aiEngineUrl && aiEngineStatus === 'degraded') ||
@@ -114,7 +113,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     timestamp: new Date().toISOString(),
     checks: {
       db:             dbStatus,
-      nessySecret:    nessyOk ? 'ok' : 'misconfigured',
+      // Optional integration: an organisation that does not use Nessy is not a degraded service.
+      nessySecret:    nessyOk ? 'ok' : 'unconfigured',
       redis:          redisStatus,
       valhalla:       valhallaStatus,
       aiEngine:       aiEngineStatus,
