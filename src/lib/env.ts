@@ -16,7 +16,8 @@ const ServerEnvSchema = z.object({
   FORCE_HTTPS:        z.enum(['true', 'false']).optional(),
   METRICS_TOKEN:      z.string().optional(),
   AI_CALLBACK_SECRET: z.string().optional(),
-  OLLAMA_URL:         z.string().optional(),
+  INTEGRATION_ENCRYPTION_KEY: z.string().optional(),
+  OLLAMA_URL:        z.string().optional(),
   AI_ENGINE_URL:      z.string().optional(),
   SENTRY_DSN:         z.string().optional(),
   USE_MOCK_DATA:               z.string().optional(),
@@ -25,6 +26,9 @@ const ServerEnvSchema = z.object({
 })
 
 export type ServerEnv = z.infer<typeof ServerEnvSchema>
+
+/** Values copied from .env.example (« change-me… », « changeme… ») are not secrets. */
+const PLACEHOLDER_RE = /change[-_]?me/i
 
 export function validateEnv(): ServerEnv {
   const result = ServerEnvSchema.safeParse(process.env)
@@ -50,15 +54,33 @@ export function validateEnv(): ServerEnv {
       process.exit(1)
     }
 
-    const warnings: string[] = []
-
-    if (!env.METRICS_TOKEN) {
-      warnings.push('METRICS_TOKEN non défini — endpoint /api/metrics accessible sans authentification')
+    // The value shipped in .env.example is long enough to pass the length check: a deployment
+    // that copied the example unchanged would sign sessions with a secret anyone can read in the
+    // repository, i.e. forgeable admin sessions for every organisation.
+    if (PLACEHOLDER_RE.test(env.SESSION_SECRET)) {
+      log.error('SESSION_SECRET est la valeur d\'exemple — arrêt du démarrage. Générer un secret : openssl rand -base64 48')
+      process.exit(1)
     }
 
-    const AI_CALLBACK_SECRET_PLACEHOLDER = 'changeme_ai_callback_secret_32chars'
-    if (env.AI_CALLBACK_SECRET === AI_CALLBACK_SECRET_PLACEHOLDER) {
-      warnings.push('AI_CALLBACK_SECRET est la valeur par défaut — remplacez-la par un secret aléatoire (min 32 chars)')
+    // Present but malformed: every integration secret would fail to encrypt/decrypt at the first
+    // use, long after the deployment looked healthy.
+    if (env.INTEGRATION_ENCRYPTION_KEY && !/^[0-9a-f]{64}$/i.test(env.INTEGRATION_ENCRYPTION_KEY)) {
+      log.error('INTEGRATION_ENCRYPTION_KEY invalide (64 caractères hexadécimaux attendus) — arrêt du démarrage. Générer : openssl rand -hex 32')
+      process.exit(1)
+    }
+
+    const warnings: string[] = []
+
+    if (!env.INTEGRATION_ENCRYPTION_KEY) {
+      warnings.push('INTEGRATION_ENCRYPTION_KEY non défini — les intégrations (webhooks, télématique, ERP) ne pourront pas être enregistrées')
+    }
+
+    if (!env.METRICS_TOKEN) {
+      warnings.push('METRICS_TOKEN non défini — /api/metrics n\'est accessible qu\'avec une session ; le scraping Prometheus est impossible')
+    }
+
+    if (env.AI_CALLBACK_SECRET && PLACEHOLDER_RE.test(env.AI_CALLBACK_SECRET)) {
+      warnings.push('AI_CALLBACK_SECRET est la valeur d\'exemple — remplacez-la par un secret aléatoire (min 32 chars)')
     }
     if (env.AI_ENGINE_URL && !env.AI_CALLBACK_SECRET) {
       warnings.push('AI_ENGINE_URL défini mais AI_CALLBACK_SECRET absent — les callbacks AI ne seront pas authentifiés')

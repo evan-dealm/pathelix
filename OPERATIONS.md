@@ -25,7 +25,8 @@ Prometheus + Grafana.
 
 Les cinq workers partagent une image (`Dockerfile.worker`) et le même environnement (ancre
 `x-worker-env`). Chaque process appelle `validateEnv()` au démarrage et **refuse de démarrer en
-production** sans `SESSION_SECRET` (≥ 32 caractères) ni `USE_MOCK_DATA=false`.
+production** sans `SESSION_SECRET` (≥ 32 caractères, et pas la valeur d'exemple de `.env.example`), sans
+`USE_MOCK_DATA=false`, ou avec une `INTEGRATION_ENCRYPTION_KEY` mal formée.
 
 ## 2. Déployer
 
@@ -62,7 +63,7 @@ Référence complète et commentée : `.env.example`. Essentiel :
 
 | Variable | Rôle |
 |---|---|
-| `DATABASE_URL`, `SESSION_SECRET` | Requis. Secret ≥ 32 caractères, unique par environnement |
+| `DATABASE_URL`, `SESSION_SECRET` | Requis. Secret ≥ 32 caractères, unique par environnement (`openssl rand -base64 48`) ; la valeur « change-me… » de l'exemple est refusée en production |
 | `USE_MOCK_DATA` | `false` en production (mock actif sinon — le code teste `!== 'false'`) |
 | `REDIS_URL` | Optionnel ; absent = repli en mémoire (mono-instance uniquement) |
 | `VALHALLA_URL`, `VALHALLA_MATRIX_BUDGET_MS` | Routage ; au-delà du budget (20 s), repli haversine |
