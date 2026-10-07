@@ -270,13 +270,61 @@ describe('middleware', () => {
     expect((await middleware(makeReq('/api/demo-requests', { method: 'POST' }))).status).toBe(200)
   })
 
-  it('keeps everything next to the website private: a look-alike path still needs a session', async () => {
+  it('an anonymous visitor on an address that does not exist gets the website 404, never the page itself', async () => {
     mockVerifySession.mockResolvedValue(null)
-    for (const path of ['/produits', '/contacts', '/site-media-private/x.mp4', '/securite-interne']) {
+    for (const path of [
+      '/produits',
+      '/contacts',
+      '/site-media-private/x.mp4',
+      '/securite-interne',
+      '/adminx',
+      '/une/page/qui/n-existe-pas?x=1',
+    ]) {
+      const res = await middleware(makeReq(path))
+      // Rewritten to a path that matches no route: the only thing it can render is « not found ».
+      expect(res.headers.get('x-middleware-rewrite'), path).toBe(
+        'http://localhost/page-introuvable',
+      )
+      expect(res.headers.get('location'), path).toBeNull()
+      expect(res.headers.get('x-middleware-next'), path).toBeNull()
+    }
+  })
+
+  it('application pages still send an anonymous visitor to the login page', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    for (const path of [
+      '/admin',
+      '/admin/x',
+      '/driver',
+      '/driver/42',
+      '/superadmin',
+      '/onboarding',
+    ]) {
       const res = await middleware(makeReq(path))
       expect(res.status, path).toBe(307)
       expect(res.headers.get('location'), path).toContain('/login')
     }
+  })
+
+  it('serves the new content collections and llms.txt without a session', async () => {
+    mockVerifySession.mockResolvedValue(null)
+    for (const path of [
+      '/metiers/location-de-bennes',
+      '/fonctionnalites/optimisation-de-tournees',
+      '/comparatifs/pathelix-ou-excel',
+      '/guides',
+      '/guides/cout-d-une-tournee',
+      '/glossaire',
+      '/tarifs',
+      '/llms.txt',
+    ]) {
+      expect((await middleware(makeReq(path))).status, path).toBe(200)
+      expect((await middleware(makeReq(path))).headers.get('x-middleware-rewrite'), path).toBeNull()
+    }
+  })
+
+  it('anonymous API calls next to the public ones are still refused', async () => {
+    mockVerifySession.mockResolvedValue(null)
     expect((await middleware(makeReq('/api/demo-requests-export'))).status).toBe(401)
     expect((await middleware(makeReq('/api/superadmin/demo-requests'))).status).toBe(401)
   })

@@ -40,9 +40,15 @@ const PUBLIC_PATHS: Array<string | RegExp> = [
   '/contact',
   '/mentions-legales',
   '/confidentialite',
+  '/fonctionnalites',
+  '/comparatifs',
+  '/guides',
+  '/glossaire',
+  '/tarifs',
   '/site-media',
   '/sitemap.xml',
   '/robots.txt',
+  '/llms.txt',
   /^\/opengraph-image/,
   // Demo request form of the website: POST only, validated and rate limited in the route.
   '/api/demo-requests',
@@ -76,6 +82,11 @@ const PUBLIC_PATHS: Array<string | RegExp> = [
   '/api/webhooks/trackdechets',
   '/api/ai/callback',
 ]
+
+/** Application pages: without a session, these redirect to the login page. */
+const APP_PAGE_PREFIXES = ['/admin', '/driver', '/superadmin', '/onboarding']
+/** Matches no route on purpose: rendered by the website's catch-all as its 404 page. */
+const NOT_FOUND_PATH = '/page-introuvable'
 
 const SUPERADMIN_ONLY_PATTERNS: RegExp[] = [/^\/superadmin/, /^\/api\/superadmin/]
 
@@ -273,6 +284,17 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
   if (!session) {
     if (pathname.startsWith('/api/')) {
       return withContext(NextResponse.json({ error: 'Non authentifié' }, { status: 401 }))
+    }
+    // An anonymous visitor asking for an application page is sent to sign in. Anything else is an
+    // address that does not exist (a mistyped website URL, an old link): it gets the website's
+    // 404 page instead of a login form. The rewrite targets a path that matches no route, so it
+    // can only ever render « not found » — an application page added later outside these
+    // prefixes stays unreachable without a session, as before.
+    if (!APP_PAGE_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))) {
+      const missing = request.nextUrl.clone()
+      missing.pathname = NOT_FOUND_PATH
+      missing.search = ''
+      return withContext(NextResponse.rewrite(missing))
     }
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'

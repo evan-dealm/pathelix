@@ -100,6 +100,10 @@ désactive les actions correspondantes.
   exceptions explicites. Endpoints de notification push limités aux services push connus.
 - **Actions chauffeur hors ligne** : rejouables sans doublon (`Idempotency-Key`, réservation
   atomique en base) ; mises à jour de statut sérialisées par verrou de ligne.
+- **Adresse inconnue, visiteur anonyme** : seules les pages de l'application (`/admin`, `/driver`,
+  `/superadmin`, `/onboarding`) renvoient vers la connexion. Toute autre adresse non publique est
+  réécrite vers un chemin qui ne correspond à aucune route et affiche la page 404 du site : une
+  page ajoutée plus tard hors de ces préfixes reste inaccessible sans session.
 - **Formulaire de démonstration du site** (`POST /api/demo-requests`) : seul point d'écriture
   anonyme. Corps validé (Zod), 5 demandes / 10 min par adresse, champ leurre contre les envois
   automatiques, table hors organisation (`DemoRequest`) lisible par le superadmin uniquement,
