@@ -48,6 +48,7 @@ vi.mock('@/lib/metrics', () => ({
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
     tenantSettings: { findUnique: vi.fn(() => Promise.resolve(null)) },
+    plan: { findMany: vi.fn(() => Promise.resolve([])) },
   }),
 }))
 

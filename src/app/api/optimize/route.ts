@@ -14,6 +14,7 @@ import { loadShedder, shedResponse }   from '@/lib/loadShedder'
 import { metrics, METRIC }             from '@/lib/metrics'
 import { enqueueVrpJob, hasActiveVrpWorker } from '@/lib/queue/vrpQueue'
 import { runVRP }                       from '@/lib/vrp/index'
+import { isLocked }                     from '@/lib/vrp/livePlan'
 import type { Mission }                 from '@/lib/types'
 import { broadcastToTenant, type PushSubRecord } from '@/lib/webPush'
 import { getRedisClient }               from '@/lib/redisClient'
@@ -112,6 +113,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       getAllExutoires(tenantId),
       db.tenantSettings.findUnique({ where: { tenantId } }),
     ])
+
+    // A full optimisation re-plans every mission of the day from scratch. Once work has been done
+    // in the field, it handed finished stops back as work to do — possibly to another truck. A day
+    // in progress is re-optimised by /api/optimize/live, which keeps what is started or done.
+    const dayPlans = await db.plan.findMany({ where: { date }, select: { statuses: true } })
+    const dayStarted =
+      allMissions.some(m => !m.archived && m.completedAt) ||
+      dayPlans.some(p => p.statuses !== null && typeof p.statuses === 'object'
+        && Object.values(p.statuses as Record<string, unknown>).some(isLocked))
+    if (dayStarted) {
+      return NextResponse.json({
+        error: 'La journée a commencé : des missions sont en cours ou terminées. Utilisez « Live » pour ré-optimiser le reste de la journée sans toucher à ce qui est fait.',
+        code: 'DAY_STARTED',
+      }, { status: 409 })
+    }
 
     const drivers = (driverIds
       ? planning.drivers.filter(d => driverIds.includes(d.id))

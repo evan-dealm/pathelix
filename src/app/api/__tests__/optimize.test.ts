@@ -74,11 +74,14 @@ vi.mock('@/lib/metrics', () => ({
   },
 }))
 
+const mockPlanFindMany = vi.hoisted(() => vi.fn(() => Promise.resolve([] as Array<{ statuses: unknown }>)))
+
 vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
     tenantSettings: {
       findUnique: vi.fn(() => Promise.resolve(null)),
     },
+    plan: { findMany: mockPlanFindMany },
   }),
 }))
 
@@ -140,6 +143,32 @@ describe('POST /api/optimize', () => {
     expect(res.status).toBe(200)
     expect(runVRP).toHaveBeenCalled()
     expect(json.result).toBeDefined()
+  })
+
+  // A full optimisation re-plans every mission from scratch: on a day already started it handed
+  // finished stops back as work to do, possibly to another truck.
+  it('refuses a full re-plan once a mission of the day is completed, and points to Live (409)', async () => {
+    vi.mocked(getMissionsByDate).mockResolvedValue([sampleMission, { ...sampleMission, id: 'm-done', completedAt: new Date('2026-03-18T09:12:00Z') } as never])
+    const res  = await POST(makeRequest({ date: '2026-03-18' }))
+    const json = await res.json()
+    expect(res.status).toBe(409)
+    expect(json.code).toBe('DAY_STARTED')
+    expect(json.error).toMatch(/Live/)
+    expect(runVRP).not.toHaveBeenCalled()
+  })
+
+  it('refuses a full re-plan once a driver has started a stop (409)', async () => {
+    mockPlanFindMany.mockResolvedValueOnce([{ statuses: { 'm-1': { status: 'en_route' } } }])
+    const res = await POST(makeRequest({ date: '2026-03-18' }))
+    expect(res.status).toBe(409)
+    expect(runVRP).not.toHaveBeenCalled()
+  })
+
+  it('still optimises a planned day nobody has started', async () => {
+    mockPlanFindMany.mockResolvedValueOnce([{ statuses: { 'm-1': { status: 'todo' } } }, { statuses: null }, { statuses: {} }])
+    const res = await POST(makeRequest({ date: '2026-03-18' }))
+    expect(res.status).toBe(200)
+    expect(runVRP).toHaveBeenCalled()
   })
 
   it('rejects invalid date format (422)', async () => {

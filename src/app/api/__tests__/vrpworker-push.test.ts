@@ -78,6 +78,7 @@ vi.mock('@/lib/tenantDb', () => ({
   getTenantDb: () => ({
     tenantSettings: { findUnique: mockFindUnique },
     pushSubscription: { findMany: mockFindMany },
+    plan: { findMany: vi.fn(() => Promise.resolve([])) },
   }),
 }))
 
