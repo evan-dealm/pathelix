@@ -171,6 +171,7 @@ export const FONCTIONNALITES: ContentPage[] = [
     metaTitle: 'Suivi de parc de bennes par QR code',
     description:
       'Pathélix suit chaque benne : numéro, type, QR code, état, emplacement et historique des mouvements. Le chauffeur confirme la benne par un scan.',
+    visual: 'bennes',
     answer:
       'Pathélix tient l’inventaire de vos bennes et sait où se trouve chacune. Chaque benne porte un numéro et un QR code ; son état change au fil des missions et des scans des chauffeurs, et chaque mouvement est conservé.',
     sections: [
@@ -243,6 +244,7 @@ export const FONCTIONNALITES: ContentPage[] = [
     metaTitle: 'Devis, factures et pesées pour bennes et collecte',
     description:
       'Dans Pathélix, le devis accepté devient commande, la commande crée ses missions, et ce qui a été réalisé sur le terrain devient ligne de facture. Avoirs, paiements, export comptable.',
+    visual: 'facturation',
     answer:
       'Pathélix relie la vente, l’exploitation et la facturation. Le devis accepté devient une commande, la commande crée ses missions, et les prestations réalisées — avec leurs pesées — deviennent des lignes de facture. Personne ne ressaisit.',
     sections: [
@@ -309,6 +311,7 @@ export const FONCTIONNALITES: ContentPage[] = [
     metaTitle: 'Portail client pour loueurs de bennes et collecteurs',
     description:
       'Avec le portail client de Pathélix, vos clients demandent une rotation ou un enlèvement, suivent leurs interventions et retrouvent devis, factures et documents.',
+    visual: 'portail',
     answer:
       'Le portail client de Pathélix donne à vos clients un espace à eux. Ils y demandent une rotation, un enlèvement ou une benne supplémentaire, suivent leurs interventions et retrouvent leurs devis, factures et documents. Vous validez chaque demande.',
     sections: [

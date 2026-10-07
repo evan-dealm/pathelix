@@ -1,7 +1,10 @@
 import Link from 'next/link'
 import type { StaticImageData } from 'next/image'
+import bennes from '@/assets/site/bennes.png'
 import dashboard from '@/assets/site/dashboard.png'
+import facturation from '@/assets/site/facturation.png'
 import missions from '@/assets/site/missions.png'
+import portail from '@/assets/site/portail.png'
 import statistiques from '@/assets/site/statistiques.png'
 import tournees from '@/assets/site/tournees.png'
 import optimisationPoster from '@/assets/site/clip-optimisation-poster.png'
@@ -53,6 +56,24 @@ const CAPTURES: Partial<
     position: 'object-left-top',
     alt: 'Écran Statistiques de Pathélix : rapport mensuel, bilan CO₂, aperçu sur sept jours.',
     caption: 'Statistiques. Interface réelle, données de démonstration.',
+  },
+  bennes: {
+    src: bennes,
+    position: 'object-left-top',
+    alt: 'Parc de bennes dans Pathélix : disponibilité par type de benne, nombre de bennes chez les clients et depuis combien de jours, puis la liste avec le statut et l’emplacement de chaque benne.',
+    caption: 'Parc de bennes. Interface réelle, données de démonstration.',
+  },
+  facturation: {
+    src: facturation,
+    position: 'object-left-top',
+    alt: 'Facturation dans Pathélix : montant à encaisser, puis la liste des factures et avoirs avec leur statut — brouillon, émise, payée en partie, payée —, l’échéance et le reste dû.',
+    caption: 'Factures. Interface réelle, données de démonstration.',
+  },
+  portail: {
+    src: portail,
+    position: 'object-top',
+    alt: 'Espace client Pathélix : les bennes du client sur ses sites, avec pour chacune les boutons « Demander une rotation » et « Faire retirer », puis ses prochaines interventions.',
+    caption: 'Espace client, vu par votre client. Interface réelle, données de démonstration.',
   },
 }
 
@@ -178,7 +199,7 @@ export function ContentArticle({ page }: { page: ContentPage }) {
               <h2 className="text-[1.5rem] font-semibold leading-[1.18] tracking-[-0.028em]">
                 {section.heading}
               </h2>
-              <div className="max-w-[46rem]">
+              <div className="min-w-0 max-w-[46rem]">
                 {section.paragraphs?.map(paragraph => (
                   <p key={paragraph} className="t-body text-carbon [&+p]:mt-4">
                     {paragraph}

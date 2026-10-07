@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import bennes from '@/assets/site/bennes.png'
+import portail from '@/assets/site/portail.png'
 import statistiques from '@/assets/site/statistiques.png'
 import { Capture } from './Capture'
 import { FILM } from '@/lib/site/config'
@@ -32,6 +34,15 @@ export function Beyond() {
             client, pleine, à retirer, en maintenance : son état suit les missions et les scans des
             chauffeurs, et chaque mouvement garde sa trace.
           </p>
+        </div>
+        <div className="mt-10 lg:mt-14">
+          <Capture
+            src={bennes}
+            window="lg:aspect-[1600/800]"
+            sizes="(max-width: 640px) 270vw, (max-width: 1024px) 165vw, (max-width: 1500px) 100vw, 1380px"
+            alt="Parc de bennes dans Pathélix : disponibilité par type de benne, nombre de bennes chez les clients et depuis combien de jours, puis la liste avec le statut et l’emplacement de chaque benne."
+            caption="Parc de bennes. Interface réelle, données de démonstration."
+          />
         </div>
 
         <div className="mt-16 border-t border-ink pt-8 lg:mt-24">
@@ -77,6 +88,16 @@ export function Beyond() {
             supplémentaire, suivent leurs interventions et retrouvent devis, factures et documents.
             Chaque demande passe par votre validation.
           </p>
+        </div>
+        <div className="mt-10 lg:mt-14">
+          <Capture
+            src={portail}
+            window="lg:aspect-[1600/800]"
+            imageClassName="object-top"
+            sizes="(max-width: 640px) 270vw, (max-width: 1024px) 165vw, (max-width: 1500px) 100vw, 1380px"
+            alt="Espace client Pathélix : les bennes du client sur ses sites, avec pour chacune les boutons « Demander une rotation » et « Faire retirer »."
+            caption="Espace client, vu par votre client. Interface réelle, données de démonstration."
+          />
         </div>
       </div>
     </section>

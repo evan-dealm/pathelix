@@ -1,6 +1,9 @@
 import Link from 'next/link'
 import type { StaticImageData } from 'next/image'
+import bennes from '@/assets/site/bennes.png'
 import dashboard from '@/assets/site/dashboard.png'
+import demandes from '@/assets/site/demandes.png'
+import facturation from '@/assets/site/facturation.png'
 import missions from '@/assets/site/missions.png'
 import statistiques from '@/assets/site/statistiques.png'
 import tournees from '@/assets/site/tournees.png'
@@ -134,6 +137,13 @@ const CHAPTERS: Chapter[] = [
       'Carte du parc',
       'Benne rattachée à la mission, confirmée par le scan du chauffeur',
     ],
+    visual: {
+      kind: 'capture',
+      src: bennes,
+      position: 'object-left-top',
+      alt: 'Parc de bennes dans Pathélix : disponibilité par type, bennes chez les clients et jours passés sur site, liste avec statut et emplacement.',
+      caption: 'Parc de bennes. Interface réelle, données de démonstration.',
+    },
   },
   {
     id: 'commercial',
@@ -149,6 +159,13 @@ const CHAPTERS: Chapter[] = [
       'Pesées rattachées à la facturation',
       'Export comptable',
     ],
+    visual: {
+      kind: 'capture',
+      src: facturation,
+      position: 'object-left-top',
+      alt: 'Facturation dans Pathélix : montant à encaisser et liste des factures avec statut, échéance et reste dû.',
+      caption: 'Factures. Interface réelle, données de démonstration.',
+    },
   },
   {
     id: 'portail',
@@ -162,6 +179,13 @@ const CHAPTERS: Chapter[] = [
       'Devis, factures et documents en consultation',
       'Lien de suivi d’une intervention, sans compte',
     ],
+    visual: {
+      kind: 'capture',
+      src: demandes,
+      position: 'object-left-top',
+      alt: 'Demandes des clients dans Pathélix : une demande de benne supplémentaire et une demande de rotation, avec le message du client, la date souhaitée et les boutons « Planifier la mission », « Marquer traitée » et « Refuser ».',
+      caption: 'Demandes reçues du portail, côté exploitation. Interface réelle, données de démonstration.',
+    },
   },
   {
     id: 'pilotage',
