@@ -173,6 +173,10 @@ describe('POST /api/auth/change-password', () => {
 
 // ─── POST /api/superadmin/tenants/[id]/resources ─────────────────────────────
 
+// A create now names the required columns it is missing (422) instead of reaching the database:
+// the tests that exercise the write send a complete driver.
+const FULL_DRIVER = { firstName: 'Test', lastName: 'Driver', sector: 'Annecy', depotName: 'Dépôt', depotLat: 45.9, depotLng: 6.12 }
+
 describe('POST /api/superadmin/tenants/[id]/resources', () => {
   it('returns 403 for non-superadmin', async () => {
     mockGetCtx.mockReturnValueOnce({ tenantId: 't1', userId: 'u1', role: 'admin', requestId: 'req-123', trade: null })
@@ -198,7 +202,7 @@ describe('POST /api/superadmin/tenants/[id]/resources', () => {
 
   it('returns 200 on create driver', async () => {
     mockDriverCreate.mockResolvedValueOnce({ id: 'drv-1', name: 'Test Driver' })
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { firstName: 'Test', lastName: 'Driver' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: FULL_DRIVER }), makeParams('t1'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ok).toBe(true)
@@ -249,7 +253,7 @@ describe('POST /api/superadmin/tenants/[id]/resources', () => {
 
   it('returns 500 on DB error', async () => {
     mockDriverCreate.mockRejectedValueOnce(new Error('DB crash'))
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { firstName: 'X' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: FULL_DRIVER }), makeParams('t1'))
     expect(res.status).toBe(500)
   })
 })
