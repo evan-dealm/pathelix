@@ -11,6 +11,13 @@ const CreateTenantSchema = z.object({
   name: z.string().min(1).max(100),
   slug: z.string().min(2).max(50).regex(/^[a-z0-9-]+$/),
   plan: z.enum(['FREE', 'PRO', 'ENTERPRISE']).optional(),
+  // First administrator account, created with the organisation so that someone can log in.
+  admin: z.object({
+    email:     z.string().email(),
+    password:  z.string().min(8).max(1000),
+    firstName: z.string().max(100).optional(),
+    lastName:  z.string().max(100).optional(),
+  }).optional(),
 })
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -74,12 +81,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
+  const { admin } = parsed.data
+  const adminEmail = admin?.email.trim().toLowerCase()
+
   try {
+    // Emails are unique across the platform: refused before anything is created.
+    if (adminEmail && (await prisma.user.findUnique({ where: { email: adminEmail }, select: { id: true } }))) {
+      return NextResponse.json({ error: 'Cet email est déjà utilisé par un autre compte' }, { status: 409 })
+    }
+
+    let adminUser: { email: string; passwordHash: string; role: 'ADMIN'; firstName: string; lastName: string } | undefined
+    if (admin && adminEmail) {
+      const { hash } = await import('bcryptjs')
+      adminUser = {
+        email:        adminEmail,
+        passwordHash: await hash(admin.password, 12),
+        role:         'ADMIN',
+        firstName:    admin.firstName ?? '',
+        lastName:     admin.lastName ?? '',
+      }
+    }
+
+    // One nested write: the organisation never exists without the account that was asked for.
     const tenant = await prisma.tenant.create({
       data: {
         name: parsed.data.name,
         slug: parsed.data.slug,
         plan: parsed.data.plan ?? 'FREE',
+        ...(adminUser ? { users: { create: adminUser } } : {}),
       },
     })
 
@@ -90,7 +119,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       method: 'POST',
       path: '/api/superadmin/tenants',
       action: 'tenant_created',
-      details: { tenantName: tenant.name, tenantSlug: tenant.slug, plan: tenant.plan },
+      details: {
+        tenantName: tenant.name, tenantSlug: tenant.slug, plan: tenant.plan,
+        ...(adminEmail ? { adminEmail } : {}),
+      },
     })
 
     log.info('Tenant created', { tenantId: tenant.id, slug: tenant.slug })
@@ -98,7 +130,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
 
     if (err instanceof Error && err.message.includes('Unique')) {
-      return NextResponse.json({ error: 'Ce slug est déjà utilisé' }, { status: 409 })
+      // The email was free a moment ago: a concurrent creation took it.
+      const onEmail = err.message.includes('email')
+      return NextResponse.json(
+        { error: onEmail ? 'Cet email est déjà utilisé par un autre compte' : 'Ce slug est déjà utilisé' },
+        { status: 409 },
+      )
     }
     log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

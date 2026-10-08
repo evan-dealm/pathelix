@@ -13,6 +13,7 @@ vi.mock('bcryptjs', () => ({ hash: vi.fn(async () => 'hashed-pw') }))
 const mockUserFindUnique = vi.hoisted(() => vi.fn())
 const mockUserUpdate     = vi.hoisted(() => vi.fn())
 const mockUserDelete     = vi.hoisted(() => vi.fn())
+const mockDriverFindFirst = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/db', () => ({
   default: {
     user: {
@@ -20,6 +21,7 @@ vi.mock('@/lib/db', () => ({
       update:     mockUserUpdate,
       delete:     mockUserDelete,
     },
+    driver: { findFirst: mockDriverFindFirst },
   },
 }))
 
@@ -194,6 +196,26 @@ describe('PUT /api/superadmin/users/[id]', () => {
 })
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
+
+describe('PUT /api/superadmin/users/[id] — linked driver', () => {
+  it('refuses a driver of another organisation (422) without writing', async () => {
+    mockUserFindUnique.mockResolvedValue({ id: 'user-1', role: 'DRIVER', tenantId: 't2', tenant: { slug: 'acme' } })
+    mockDriverFindFirst.mockResolvedValue(null)
+    const res = await PUT(makePUT('user-1', { driverRef: 'drv-other-tenant' }), makeParams('user-1'))
+    expect(res.status).toBe(422)
+    expect(mockDriverFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'drv-other-tenant', tenantId: 't2' } }))
+    expect(mockUserUpdate).not.toHaveBeenCalled()
+  })
+
+  it('links a driver of the same organisation', async () => {
+    mockUserFindUnique.mockResolvedValue({ id: 'user-1', role: 'DRIVER', tenantId: 't2', tenant: { slug: 'acme' } })
+    mockDriverFindFirst.mockResolvedValue({ id: 'drv-1' })
+    mockUserUpdate.mockResolvedValue({ id: 'user-1', tenantId: 't2', role: 'DRIVER', email: 'a@b.com' })
+    const res = await PUT(makePUT('user-1', { driverRef: 'drv-1' }), makeParams('user-1'))
+    expect(res.status).toBe(200)
+    expect(mockUserUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ driverRef: 'drv-1' }) }))
+  })
+})
 
 describe('DELETE /api/superadmin/users/[id]', () => {
   it('returns 403 for non-superadmin', async () => {

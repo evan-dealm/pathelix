@@ -57,9 +57,16 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   try {
     const target = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, role: true, tenant: { select: { slug: true } } },
+      select: { id: true, role: true, tenantId: true, tenant: { select: { slug: true } } },
     })
     if (!target) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
+
+    // A driver account is bound to a driver of its own organisation, never to another one's.
+    if (parsed.data.driverRef && !(await prisma.driver.findFirst({
+      where: { id: parsed.data.driverRef, tenantId: target.tenantId }, select: { id: true },
+    }))) {
+      return NextResponse.json({ error: 'Chauffeur introuvable dans cette organisation' }, { status: 422 })
+    }
 
     const newRole = parsed.data.role
     if (newRole && newRole !== target.role) {

@@ -35,7 +35,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     if (section === 'all' || section === 'drivers') {
       result.drivers = await prisma.driver.findMany({
         where: { tenantId },
-        select: { id: true, firstName: true, lastName: true, phone: true, sector: true, depotLat: true, depotLng: true, maxBinSizeM3: true, archived: true, createdAt: true },
+        select: { id: true, firstName: true, lastName: true, phone: true, sector: true, depotName: true, depotLat: true, depotLng: true, maxBinSizeM3: true, archived: true, createdAt: true },
         orderBy: { firstName: 'asc' },
       })
     }

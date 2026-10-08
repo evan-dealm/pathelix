@@ -43,6 +43,10 @@ const optInt = z.preprocess(
   v => (v === '' ? null : typeof v === 'string' ? Number(v) : v),
   z.number().int().nullable(),
 )
+const int = z.preprocess(
+  v => (typeof v === 'string' && v.trim() !== '' ? Number(v) : v),
+  z.number().int(),
+)
 const bool = z.preprocess(v => (v === 'true' ? true : v === 'false' ? false : v), z.boolean())
 const optText = z.preprocess(v => (v === '' ? null : v), z.string().max(500).nullable())
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format AAAA-MM-JJ')
@@ -67,6 +71,8 @@ const FIELD_SCHEMAS: Record<EntityType, z.ZodType<Record<string, unknown>>> = {
   }).partial().strict(),
   exutoire: z.object({
     name: text(200), address: text(), lat: num, lng: num, acceptedWasteTypes: json,
+    // Minutes since midnight, as stored.
+    openingHoursOpen: int, openingHoursClose: int, serviceTimeMin: int,
   }).partial().strict(),
   site: z.object({
     name: text(200), address: text(), latitude: num, longitude: num, sector: text(100), archived: bool,
@@ -80,6 +86,16 @@ const FIELD_SCHEMAS: Record<EntityType, z.ZodType<Record<string, unknown>>> = {
     clientName: text(200), wasteTypeLabel: text(200), priority: optInt, recurrence: json,
     startDate: day, endDate: optDay,
   }).partial().strict(),
+}
+
+// Columns without a default: a create that leaves one out is refused by name instead of
+// failing in the database. Missions and templates are created from inside the organisation.
+const CREATE_REQUIRED: Partial<Record<EntityType, string[]>> = {
+  driver:   ['firstName', 'lastName', 'sector', 'depotName', 'depotLat', 'depotLng'],
+  client:   ['name'],
+  vehicle:  ['licensePlate', 'type'],
+  exutoire: ['name', 'address', 'lat', 'lng', 'openingHoursOpen', 'openingHoursClose', 'serviceTimeMin'],
+  site:     ['name'],
 }
 
 function getModel(entity: EntityType): PrismaDelegate {
@@ -134,6 +150,13 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
       const fields = parseFields(entity, data)
       if (!fields.success) return NextResponse.json({ error: fields.error.flatten() }, { status: 422 })
+      const missing = (CREATE_REQUIRED[entity] ?? []).filter(k => {
+        const v = fields.data[k]
+        return v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
+      })
+      if (missing.length > 0) {
+        return NextResponse.json({ error: `Champs obligatoires manquants : ${missing.join(', ')}` }, { status: 422 })
+      }
       result = await model.create({ data: { ...fields.data, tenantId } })
       const resourceId = (result as { id: string }).id
       log.info('SuperAdmin resource created', { tenantId, entity, resourceId })

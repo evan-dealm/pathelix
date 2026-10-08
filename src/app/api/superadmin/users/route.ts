@@ -82,6 +82,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const tenant = await prisma.tenant.findUnique({ where: { id: parsed.data.tenantId } })
     if (!tenant) return NextResponse.json({ error: 'Tenant introuvable' }, { status: 404 })
 
+    // A driver account is bound to a driver of the same organisation, never to another one's.
+    const driverRef = parsed.data.role === 'DRIVER' ? parsed.data.driverRef || undefined : undefined
+    if (driverRef && !(await prisma.driver.findFirst({ where: { id: driverRef, tenantId: tenant.id }, select: { id: true } }))) {
+      return NextResponse.json({ error: 'Chauffeur introuvable dans cette organisation' }, { status: 422 })
+    }
+
     const { hash } = await import('bcryptjs')
     const passwordHash = await hash(parsed.data.password, 12)
 
@@ -93,7 +99,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         role:         parsed.data.role,
         firstName:    parsed.data.firstName ?? '',
         lastName:     parsed.data.lastName ?? '',
-        driverRef:    parsed.data.driverRef,
+        driverRef,
       },
       select: {
         id: true, tenantId: true, email: true, role: true,
@@ -115,7 +121,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(user, { status: 201 })
   } catch (err) {
     if (err instanceof Error && err.message.includes('Unique')) {
-      return NextResponse.json({ error: 'Email déjà utilisé pour ce tenant' }, { status: 409 })
+      return NextResponse.json({ error: 'Cet email est déjà utilisé par un autre compte' }, { status: 409 })
     }
     log.error('POST failed', { err: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

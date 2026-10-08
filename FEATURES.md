@@ -60,7 +60,10 @@ Application mobile, utilisable sans réseau :
 
 ## 3. Superadmin — `/superadmin`
 
-Organisations (création, suspension, purge de cache, impersonation journalisée), utilisateurs
+Organisations (création avec son premier compte administrateur, suspension, purge de cache,
+impersonation journalisée) ; la fiche d'une organisation (« Comptes & données ») permet d'y ajouter
+comptes — un compte chauffeur se lie à un chauffeur de l'organisation —, chauffeurs, véhicules,
+clients, sites, exutoires et de régler ses paramètres. Utilisateurs
 toutes organisations, secteurs personnalisés, santé du système, maturité ML, audit transverse,
 offres, sécurité du compte (double authentification par code à 6 chiffres).
 

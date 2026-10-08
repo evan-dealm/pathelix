@@ -21,6 +21,9 @@ const mockPrisma = vi.hoisted(() => ({
   tenant: {
     findUnique: vi.fn(),
   },
+  driver: {
+    findFirst: vi.fn(),
+  },
   tenantSettings: {
     upsert: vi.fn(),
   },
@@ -152,6 +155,34 @@ describe('POST /api/superadmin/users', () => {
     expect(res.status).toBe(201)
     const body = await res.json()
     expect(body.id).toBe('u-new')
+  })
+
+  // A driver account is linked to a driver: the id comes from the client and must belong to
+  // the organisation the account is created in.
+  it('422 when the linked driver is not in the organisation', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ id: 't-1' })
+    mockPrisma.driver.findFirst.mockResolvedValueOnce(null)
+    const res = await usersPost(makePost('http://x/api/superadmin/users', {
+      tenantId: 't-1', email: 'driver@example.com', password: 'password123', role: 'DRIVER', driverRef: 'drv-other-tenant',
+    }))
+    expect(res.status).toBe(422)
+    expect(mockPrisma.driver.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'drv-other-tenant', tenantId: 't-1' } }),
+    )
+    expect(mockPrisma.user.create).not.toHaveBeenCalled()
+  })
+
+  it('links a driver account to a driver of the organisation', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ id: 't-1' })
+    mockPrisma.driver.findFirst.mockResolvedValueOnce({ id: 'drv-1' })
+    mockPrisma.user.create.mockResolvedValueOnce({ id: 'u-drv', tenantId: 't-1', email: 'driver@example.com', role: 'DRIVER' })
+    const res = await usersPost(makePost('http://x/api/superadmin/users', {
+      tenantId: 't-1', email: 'driver@example.com', password: 'password123', role: 'DRIVER', driverRef: 'drv-1',
+    }))
+    expect(res.status).toBe(201)
+    expect(mockPrisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ role: 'DRIVER', driverRef: 'drv-1' }) }),
+    )
   })
 
   it('409 for duplicate email', async () => {

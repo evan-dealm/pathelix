@@ -129,6 +129,37 @@ describe('POST /api/superadmin/tenants', () => {
     expect(json.slug).toBe('new-corp')
   })
 
+  // An organisation created without any account was unusable: nobody could log in to it.
+  it('creates the first administrator account with the organisation, password hashed', async () => {
+    mockPrisma.user.findUnique.mockResolvedValueOnce(null as never)
+    mockPrisma.tenant.create.mockResolvedValue({ id: 't-new', name: 'New Corp', slug: 'new-corp', plan: 'FREE', createdAt: new Date() })
+    const res = await tenantsPost(makePost('http://localhost/api/superadmin/tenants', {
+      name: 'New Corp', slug: 'new-corp',
+      admin: { email: 'Boss@New-Corp.fr', password: 'motdepasse-solide', firstName: 'Léa' },
+    }))
+    expect(res.status).toBe(201)
+    const arg = mockPrisma.tenant.create.mock.calls[0][0] as { data: { users: { create: Record<string, string> } } }
+    expect(arg.data.users.create).toMatchObject({ email: 'boss@new-corp.fr', role: 'ADMIN', firstName: 'Léa', lastName: '' })
+    expect(arg.data.users.create.passwordHash).not.toContain('motdepasse-solide')
+  })
+
+  it('refuses an administrator email already used by another account (409), creating nothing', async () => {
+    mockPrisma.user.findUnique.mockResolvedValueOnce({ id: 'u-existing' } as never)
+    const res = await tenantsPost(makePost('http://localhost/api/superadmin/tenants', {
+      name: 'New Corp', slug: 'new-corp', admin: { email: 'taken@example.com', password: 'motdepasse-solide' },
+    }))
+    expect(res.status).toBe(409)
+    expect(mockPrisma.tenant.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses an administrator password under 8 characters (422)', async () => {
+    const res = await tenantsPost(makePost('http://localhost/api/superadmin/tenants', {
+      name: 'New Corp', slug: 'new-corp', admin: { email: 'boss@example.com', password: 'court' },
+    }))
+    expect(res.status).toBe(422)
+    expect(mockPrisma.tenant.create).not.toHaveBeenCalled()
+  })
+
   it('returns 409 for duplicate slug', async () => {
     mockPrisma.tenant.create.mockRejectedValue(new Error('Unique constraint failed'))
     const res = await tenantsPost(makePost('http://localhost/api/superadmin/tenants', { name: 'Dup', slug: 'existing-slug' }))

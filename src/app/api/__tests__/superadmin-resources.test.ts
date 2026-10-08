@@ -64,6 +64,10 @@ function makeReq(tenantId: string, body: unknown) {
 
 const makeParams = (id: string) => ({ params: Promise.resolve({ id }) })
 
+// Every column a driver needs: the route refuses a create that leaves one out (the database
+// would refuse it anyway — the shorter payloads used here before only passed against the mock).
+const DRIVER = { firstName: 'Bob', lastName: 'Martin', sector: 'Annecy', depotName: '12 rue de la Paix, Annecy', depotLat: '45.9', depotLng: '6.12' }
+
 beforeEach(() => {
   vi.clearAllMocks()
   setRole('superadmin')
@@ -100,7 +104,7 @@ describe('POST /api/superadmin/tenants/[id]/resources — RBAC', () => {
 
   it('returns 200 for superadmin on create', async () => {
     const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
-    const res = await POST(makeReq(TENANT, { entity: 'driver', action: 'create', data: { firstName: 'Bob', lastName: 'Martin' } }), makeParams(TENANT))
+    const res = await POST(makeReq(TENANT, { entity: 'driver', action: 'create', data: DRIVER }), makeParams(TENANT))
     expect(res.status).toBe(200)
   })
 })
@@ -144,7 +148,7 @@ describe('POST /api/superadmin/tenants/[id]/resources — validation', () => {
 describe('POST /api/superadmin/tenants/[id]/resources — create', () => {
   it('calls model.create with tenantId injected', async () => {
     const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
-    await POST(makeReq(TENANT, { entity: 'driver', action: 'create', data: { firstName: 'Alice', lastName: 'Test' } }), makeParams(TENANT))
+    await POST(makeReq(TENANT, { entity: 'driver', action: 'create', data: { ...DRIVER, firstName: 'Alice' } }), makeParams(TENANT))
     expect(mockDriver.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ tenantId: TENANT, firstName: 'Alice' }) })
     )
@@ -154,7 +158,7 @@ describe('POST /api/superadmin/tenants/[id]/resources — create', () => {
     const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
     await POST(makeReq(TENANT, {
       entity: 'driver', action: 'create',
-      data: { id: 'old-id', firstName: 'Alice', createdAt: '2020-01-01', updatedAt: '2020-01-01' },
+      data: { ...DRIVER, id: 'old-id', createdAt: '2020-01-01', updatedAt: '2020-01-01' },
     }), makeParams(TENANT))
     const callArg = mockDriver.create.mock.calls[0][0] as { data: Record<string, unknown> }
     expect(callArg.data.id).toBeUndefined()
@@ -164,10 +168,40 @@ describe('POST /api/superadmin/tenants/[id]/resources — create', () => {
 
   it('logs superadmin action on create', async () => {
     const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
-    await POST(makeReq(TENANT, { entity: 'driver', action: 'create', data: { firstName: 'Bob' } }), makeParams(TENANT))
+    await POST(makeReq(TENANT, { entity: 'driver', action: 'create', data: DRIVER }), makeParams(TENANT))
     expect(mockLogSuperadminAction).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'resource_created', details: expect.objectContaining({ entity: 'driver' }) })
     )
+  })
+
+  // The console adds a driver, a vehicle, an outlet… to an organisation: an incomplete form is
+  // refused by naming the missing columns, not by a database error.
+  it('refuses a create that leaves a required column out (422), naming it', async () => {
+    const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
+    const res = await POST(makeReq(TENANT, { entity: 'driver', action: 'create', data: { firstName: 'Bob', lastName: '' } }), makeParams(TENANT))
+    expect(res.status).toBe(422)
+    const body = await res.json() as { error: string }
+    expect(body.error).toContain('lastName')
+    expect(body.error).toContain('depotLat')
+    expect(mockDriver.create).not.toHaveBeenCalled()
+  })
+
+  it('creates an outlet with its opening hours and service time as numbers', async () => {
+    const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
+    const res = await POST(makeReq(TENANT, {
+      entity: 'exutoire', action: 'create',
+      data: { name: 'Déchetterie', address: 'ZI Nord', lat: '45.9', lng: '6.1', openingHoursOpen: '420', openingHoursClose: '1020', serviceTimeMin: '15' },
+    }), makeParams(TENANT))
+    expect(res.status).toBe(200)
+    expect(mockDriver.create).toHaveBeenCalledWith({
+      data: { name: 'Déchetterie', address: 'ZI Nord', lat: 45.9, lng: 6.1, openingHoursOpen: 420, openingHoursClose: 1020, serviceTimeMin: 15, tenantId: TENANT },
+    })
+  })
+
+  it('creates a client from its name alone', async () => {
+    const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
+    const res = await POST(makeReq(TENANT, { entity: 'client', action: 'create', data: { name: 'BTP Alpes' } }), makeParams(TENANT))
+    expect(res.status).toBe(200)
   })
 })
 

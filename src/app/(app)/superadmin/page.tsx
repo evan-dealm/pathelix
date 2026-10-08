@@ -11,10 +11,110 @@ import { SuperadminSecurityPanel } from '@/components/admin/SuperadminSecurityPa
 /** Slug of the organisation the superadmin accounts live in (mirrors superadminPolicy.ts). */
 const PLATFORM_TENANT_SLUG = 'admin-corp'
 
+/** Readable text for an API `error` value: its message, or the first field a validation refused. */
+function errorText(error: unknown, fallback: string): string {
+  if (typeof error === 'string') return error
+  const fields = (error as { fieldErrors?: Record<string, string[]> } | null | undefined)?.fieldErrors
+  const first = fields ? Object.entries(fields)[0] : undefined
+  return first ? `Champ « ${first[0]} » : ${first[1][0] ?? 'valeur invalide'}` : fallback
+}
+
 /** The server's own error message for a failed response, or a fallback when it gave none. */
 async function errorOf(r: Response, fallback: string): Promise<string> {
   const d = await r.json().catch(() => null) as { error?: unknown } | null
-  return typeof d?.error === 'string' ? d.error : fallback
+  return errorText(d?.error, fallback)
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** Resources of an organisation the console can create, with the form each one needs. */
+type ResourceEntity = 'driver' | 'vehicle' | 'client' | 'site' | 'exutoire'
+
+interface CreateField {
+  key: string; label: string; required?: boolean; placeholder?: string; initial?: string
+  /** `time` is typed as HH:MM and sent as minutes since midnight. */
+  type?: 'text' | 'number' | 'time' | 'select'
+  options?: { value: string; label: string }[]
+}
+
+interface CreateFormSpec {
+  noun: string
+  fields: CreateField[]
+  /** Address field whose GPS position fills the two coordinate fields. */
+  geocode?: { address: string; lat: string; lng: string }
+}
+
+const RESOURCE_FORMS: Record<ResourceEntity, CreateFormSpec> = {
+  driver: {
+    noun: 'un chauffeur',
+    fields: [
+      { key: 'firstName', label: 'Prénom', required: true },
+      { key: 'lastName', label: 'Nom', required: true },
+      { key: 'phone', label: 'Téléphone' },
+      { key: 'email', label: 'Email' },
+      { key: 'sector', label: 'Secteur', required: true, placeholder: 'Annecy' },
+      { key: 'depotName', label: 'Adresse du dépôt', required: true, placeholder: '12 rue de la Paix, Annecy' },
+      { key: 'depotLat', label: 'Latitude', required: true, type: 'number' },
+      { key: 'depotLng', label: 'Longitude', required: true, type: 'number' },
+    ],
+    geocode: { address: 'depotName', lat: 'depotLat', lng: 'depotLng' },
+  },
+  vehicle: {
+    noun: 'un véhicule',
+    fields: [
+      { key: 'licensePlate', label: 'Immatriculation', required: true, placeholder: 'AB-123-CD' },
+      {
+        key: 'type', label: 'Type', required: true, type: 'select', initial: 'benne',
+        options: [
+          { value: 'benne', label: 'Benne' }, { value: 'ampliroll', label: 'Ampliroll' },
+          { value: 'grue', label: 'Grue auxiliaire' }, { value: 'compacteur', label: 'Compacteur' },
+          { value: 'plateau', label: 'Plateau' }, { value: 'autre', label: 'Autre' },
+        ],
+      },
+      { key: 'brand', label: 'Marque' },
+      { key: 'capacityM3', label: 'Capacité (m³)', type: 'number' },
+    ],
+  },
+  client: {
+    noun: 'un client',
+    fields: [
+      { key: 'name', label: 'Nom', required: true },
+      { key: 'contact', label: 'Contact' },
+      { key: 'phone', label: 'Téléphone' },
+      { key: 'email', label: 'Email' },
+      { key: 'sector', label: 'Secteur' },
+    ],
+  },
+  site: {
+    noun: 'un site',
+    fields: [
+      { key: 'name', label: 'Nom', required: true },
+      { key: 'sector', label: 'Secteur' },
+      { key: 'address', label: 'Adresse', placeholder: '12 rue de la Paix, Annecy' },
+      { key: 'latitude', label: 'Latitude', type: 'number' },
+      { key: 'longitude', label: 'Longitude', type: 'number' },
+    ],
+    geocode: { address: 'address', lat: 'latitude', lng: 'longitude' },
+  },
+  exutoire: {
+    noun: 'un exutoire',
+    fields: [
+      { key: 'name', label: 'Nom', required: true },
+      { key: 'address', label: 'Adresse', required: true },
+      { key: 'lat', label: 'Latitude', required: true, type: 'number' },
+      { key: 'lng', label: 'Longitude', required: true, type: 'number' },
+      { key: 'openingHoursOpen', label: 'Ouverture', required: true, type: 'time', initial: '07:00' },
+      { key: 'openingHoursClose', label: 'Fermeture', required: true, type: 'time', initial: '17:00' },
+      { key: 'serviceTimeMin', label: 'Temps de vidage (min)', required: true, type: 'number', initial: '15' },
+    ],
+    geocode: { address: 'address', lat: 'lat', lng: 'lng' },
+  },
+}
+
+const EMPTY_NEW_TENANT = { name: '', slug: '', plan: 'FREE', adminEmail: '', adminPassword: '', adminFirstName: '', adminLastName: '' }
+
+const TAB_ENTITY: Record<string, ResourceEntity | undefined> = {
+  drivers: 'driver', vehicles: 'vehicle', clients: 'client', sites: 'site', exutoires: 'exutoire',
 }
 
 interface TenantStats {
@@ -200,11 +300,16 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
   const [settingsSaving, setSettingsSaving] = useState(false)
 
   const [userFormOpen, setUserFormOpen] = useState(false)
-  const [newUserForm, setNewUserForm] = useState({ email: '', password: '', firstName: '', lastName: '', role: 'DRIVER' })
+  const [newUserForm, setNewUserForm] = useState({ email: '', password: '', firstName: '', lastName: '', role: 'ADMIN', driverRef: '' })
   const [newUserError, setNewUserError] = useState('')
   const [newUserLoading, setNewUserLoading] = useState(false)
+  const [createRes, setCreateRes] = useState<ResourceEntity | null>(null)
+  const [createResForm, setCreateResForm] = useState<Record<string, string>>({})
+  const [createResError, setCreateResError] = useState('')
+  const [createResSaving, setCreateResSaving] = useState(false)
+  const [geocoding, setGeocoding] = useState(false)
   const [editUserModal, setEditUserModal] = useState<Record<string, unknown> | null>(null)
-  const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', email: '', role: '' })
+  const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', email: '', role: '', driverRef: '' })
   const [editUserLoading, setEditUserLoading] = useState(false)
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<{ id: string; email: string } | null>(null)
   const [resetPwdUser, setResetPwdUser] = useState<{ id: string; email: string } | null>(null)
@@ -219,8 +324,72 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
   const clients   = (data.clients   as Array<Record<string, unknown>>) ?? []
   const sites     = (data.sites     as Array<Record<string, unknown>>) ?? []
   const templates = (data.templates as Array<Record<string, unknown>>) ?? []
-  const settings  = (data.settings  as Record<string, unknown>) ?? null
+  // An organisation that was just created has no settings row yet: the form then shows the
+  // defaults, and saving creates the row.
+  const settings  = (data.settings  as Record<string, unknown> | null) ?? {}
   const missionsTotal = (data.missionsTotal as number) ?? missions.length
+  // A driver account opens the round of the driver it is linked to.
+  const driverOptions = [
+    { value: '', label: '— Aucun chauffeur lié —' },
+    ...drivers.map(d => ({ value: String(d.id), label: `${String(d.firstName ?? '')} ${String(d.lastName ?? '')}`.trim() })),
+  ]
+  const createSpec = createRes ? RESOURCE_FORMS[createRes] : null
+
+  function openCreate(entity: ResourceEntity) {
+    const form: Record<string, string> = {}
+    for (const f of RESOURCE_FORMS[entity].fields) form[f.key] = f.initial ?? ''
+    setCreateResForm(form)
+    setCreateResError('')
+    setCreateRes(entity)
+  }
+
+  async function geocodeCreateAddress() {
+    const geo = createSpec?.geocode
+    if (!geo) return
+    const q = (createResForm[geo.address] ?? '').trim()
+    if (!q) { setCreateResError("Saisissez d'abord l'adresse."); return }
+    setGeocoding(true); setCreateResError('')
+    try {
+      const r = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&limit=1`)
+      const d = r.ok ? await r.json() as { features?: Array<{ geometry: { coordinates: [number, number] } }> } : null
+      const found = d?.features?.[0]?.geometry.coordinates
+      if (found) setCreateResForm(p => ({ ...p, [geo.lat]: String(found[1]), [geo.lng]: String(found[0]) }))
+      else setCreateResError('Adresse introuvable — saisissez la latitude et la longitude.')
+    } catch {
+      setCreateResError('Recherche GPS indisponible — saisissez la latitude et la longitude.')
+    } finally { setGeocoding(false) }
+  }
+
+  async function createResource() {
+    if (!createRes || !createSpec || createResSaving) return
+    const payload: Record<string, string> = {}
+    for (const f of createSpec.fields) {
+      const v = (createResForm[f.key] ?? '').trim()
+      if (!v) {
+        if (f.required) { setCreateResError(`Le champ « ${f.label} » est obligatoire.`); return }
+        continue
+      }
+      if (f.type === 'number' && !Number.isFinite(Number(v.replace(',', '.')))) {
+        setCreateResError(`Le champ « ${f.label} » attend un nombre.`); return
+      }
+      if (f.type === 'time') {
+        const [h, m] = v.split(':').map(Number)
+        payload[f.key] = String(h * 60 + m)
+      } else payload[f.key] = f.type === 'number' ? v.replace(',', '.') : v
+    }
+    setCreateResError('')
+    setCreateResSaving(true)
+    const r = await fetch(`/api/superadmin/tenants/${tenantId}/resources`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entity: createRes, action: 'create', data: payload }),
+    })
+    setCreateResSaving(false)
+    // On a refusal the form stays open: the values typed are not lost.
+    if (!r.ok) { setCreateResError(await errorOf(r, 'Création refusée : une valeur est invalide')); return }
+    toast('Ajout enregistré', 'success')
+    setCreateRes(null)
+    onRefresh()
+  }
 
   async function deleteResource() {
     if (!deleteRes) return
@@ -242,18 +411,7 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
     })
     setEditResSaving(false)
     // On a refusal the form stays open: the values typed are not lost.
-    if (!r.ok) {
-      const d = await r.json().catch(() => null) as { error?: unknown } | null
-      const fields = (d?.error as { fieldErrors?: Record<string, string[]> } | undefined)?.fieldErrors
-      const firstField = fields ? Object.entries(fields)[0] : undefined
-      toast(
-        typeof d?.error === 'string' ? d.error
-          : firstField ? `Champ « ${firstField[0]} » : ${firstField[1][0] ?? 'valeur invalide'}`
-          : 'Modification refusée : une valeur est invalide',
-        'error',
-      )
-      return
-    }
+    if (!r.ok) { toast(await errorOf(r, 'Modification refusée : une valeur est invalide'), 'error'); return }
     toast(`${editRes.label} modifié`, 'success'); onRefresh()
     setEditRes(null)
   }
@@ -289,21 +447,26 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
   }
 
   async function createUser() {
+    if (!EMAIL_RE.test(newUserForm.email.trim())) { setNewUserError('Adresse email invalide.'); return }
+    if (newUserForm.password.length < 8) { setNewUserError('Le mot de passe doit contenir au moins 8 caractères.'); return }
     setNewUserError('')
     setNewUserLoading(true)
+    const { driverRef, ...account } = newUserForm
     const r = await fetch('/api/superadmin/users', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newUserForm, tenantId }),
+      body: JSON.stringify({
+        ...account, email: account.email.trim(), tenantId,
+        ...(account.role === 'DRIVER' && driverRef ? { driverRef } : {}),
+      }),
     })
     setNewUserLoading(false)
     if (r.ok) {
       setUserFormOpen(false)
-      setNewUserForm({ email: '', password: '', firstName: '', lastName: '', role: 'DRIVER' })
+      setNewUserForm({ email: '', password: '', firstName: '', lastName: '', role: 'ADMIN', driverRef: '' })
       toast('Utilisateur créé', 'success')
       onRefresh()
     } else {
-      const d = await r.json() as Record<string, unknown>
-      setNewUserError(typeof d.error === 'string' ? d.error : JSON.stringify(d.error))
+      setNewUserError(await errorOf(r, 'Création refusée : une valeur est invalide'))
     }
   }
 
@@ -312,7 +475,8 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
     setEditUserLoading(true)
     const r = await fetch(`/api/superadmin/users/${String(editUserModal.id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editUserForm),
+      // Only a driver account keeps a link to a driver.
+      body: JSON.stringify({ ...editUserForm, driverRef: editUserForm.role === 'DRIVER' && editUserForm.driverRef ? editUserForm.driverRef : null }),
     })
     setEditUserLoading(false)
     if (!r.ok) { toast(await errorOf(r, 'Modification refusée'), 'error'); return }
@@ -397,6 +561,19 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
                     <option value="DRIVER" className="bg-zinc-900">DRIVER</option>
                   </select>
                 </div>
+                {newUserForm.role === 'DRIVER' && (
+                  <div className="flex items-center gap-2">
+                    <select value={newUserForm.driverRef} onChange={e => setNewUserForm(p => ({ ...p, driverRef: e.target.value }))} title="Chauffeur lié"
+                      className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-[11px] text-zinc-100 focus:border-red-500 focus:outline-none">
+                      {driverOptions.map(o => <option key={o.value} value={o.value} className="bg-zinc-900">{o.label}</option>)}
+                    </select>
+                    <span className="text-[10px] text-zinc-500">
+                      {drivers.length === 0
+                        ? "Aucun chauffeur dans cette organisation : créez-le d'abord dans l'onglet Chauffeurs."
+                        : 'Le compte ouvre la tournée du chauffeur lié.'}
+                    </span>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button type="button" onClick={createUser} disabled={newUserLoading}
                     className="bg-green-600 text-white px-3 py-1 rounded text-[10px] font-bold hover:bg-green-700 transition disabled:opacity-50">
@@ -422,7 +599,7 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
                   <td className="px-3 py-1.5"><RoleBadge role={String(u.role ?? '')} /></td>
                   <td className="px-3 py-1.5 text-zinc-500 font-mono">{u.createdAt ? new Date(String(u.createdAt)).toLocaleDateString('fr-FR') : '-'}</td>
                   <td className="px-3 py-1.5 flex gap-1">
-                    <button type="button" onClick={() => { setEditUserModal(u); setEditUserForm({ firstName: String(u.firstName ?? ''), lastName: String(u.lastName ?? ''), email: String(u.email ?? ''), role: String(u.role ?? '') }) }}
+                    <button type="button" onClick={() => { setEditUserModal(u); setEditUserForm({ firstName: String(u.firstName ?? ''), lastName: String(u.lastName ?? ''), email: String(u.email ?? ''), role: String(u.role ?? ''), driverRef: String(u.driverRef ?? '') }) }}
                       className="text-blue-400/70 hover:text-blue-400 text-[9px] font-bold">Modifier</button>
                     <button type="button" onClick={() => { setResetPwdUser({ id: String(u.id), email: String(u.email ?? '') }); setResetPwdValue('') }}
                       className="text-zinc-400/70 hover:text-zinc-300 text-[9px] font-bold">MDP</button>
@@ -432,6 +609,13 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
                 </tr>
               ))}</tbody>
             </table>
+          </div>
+        )}
+
+        {TAB_ENTITY[activeTab] && (
+          <div className="px-3 py-2 border-b border-zinc-700/50">
+            <button type="button" onClick={() => { const entity = TAB_ENTITY[activeTab]; if (entity) openCreate(entity) }}
+              className="text-[10px] text-blue-400 hover:text-blue-300 font-bold">+ Ajouter {RESOURCE_FORMS[TAB_ENTITY[activeTab] as ResourceEntity].noun}</button>
           </div>
         )}
 
@@ -578,39 +762,33 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
         {}
         {activeTab === 'settings' && (
           <div className="space-y-3 py-2">
-            {settings ? (
-              <>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {([
-                    ['defaultSpeedKmh', 'Vitesse par défaut (km/h)', String(settings.defaultSpeedKmh ?? 50)],
-                    ['defaultStartTime', 'Heure de départ', String(settings.defaultStartTime ?? '07:00')],
-                    ['maxWorkDayMin', 'Durée max journée (min)', String(settings.maxWorkDayMin ?? 600)],
-                    ['pauseAfterMin', 'Pause après (min)', String(settings.pauseAfterMin ?? 270)],
-                    ['pauseDurationMin', 'Durée pause (min)', String(settings.pauseDurationMin ?? 45)],
-                    ['costPerKm', 'Coût / km', String(settings.costPerKm ?? 0.35)],
-                    ['fuelCostPerLiter', 'Coût carburant / L', String(settings.fuelCostPerLiter ?? 1.80)],
-                    ['consumptionLPer100', 'Consommation L/100km', String(settings.consumptionLPer100 ?? 30)],
-                    ['maxOptimizationsPerDay', 'Max optimisations / jour', String(settings.maxOptimizationsPerDay ?? 10)],
-                    ['companyDisplayName', 'Nom affiché', String(settings.companyDisplayName ?? '')],
-                    ['primaryColor', 'Couleur primaire', String(settings.primaryColor ?? '#0055A4')],
-                  ] as [string, string, string][]).map(([key, label, defaultVal]) => (
-                    <div key={key}>
-                      <label htmlFor={`setting-${key}`} className="block text-[10px] text-zinc-500 mb-0.5">{label}</label>
-                      <input id={`setting-${key}`} value={settingsForm[key] ?? defaultVal}
-                        onChange={e => setSettingsForm(p => ({ ...p, [key]: e.target.value }))}
-                        aria-label={label}
-                        className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs focus:border-red-500 focus:outline-none" />
-                    </div>
-                  ))}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {([
+                ['defaultSpeedKmh', 'Vitesse par défaut (km/h)', String(settings.defaultSpeedKmh ?? 50)],
+                ['defaultStartTime', 'Heure de départ', String(settings.defaultStartTime ?? '07:00')],
+                ['maxWorkDayMin', 'Durée max journée (min)', String(settings.maxWorkDayMin ?? 600)],
+                ['pauseAfterMin', 'Pause après (min)', String(settings.pauseAfterMin ?? 270)],
+                ['pauseDurationMin', 'Durée pause (min)', String(settings.pauseDurationMin ?? 45)],
+                ['costPerKm', 'Coût / km', String(settings.costPerKm ?? 0.35)],
+                ['fuelCostPerLiter', 'Coût carburant / L', String(settings.fuelCostPerLiter ?? 1.80)],
+                ['consumptionLPer100', 'Consommation L/100km', String(settings.consumptionLPer100 ?? 30)],
+                ['maxOptimizationsPerDay', 'Max optimisations / jour', String(settings.maxOptimizationsPerDay ?? 10)],
+                ['companyDisplayName', 'Nom affiché', String(settings.companyDisplayName ?? '')],
+                ['primaryColor', 'Couleur primaire', String(settings.primaryColor ?? '#0055A4')],
+              ] as [string, string, string][]).map(([key, label, defaultVal]) => (
+                <div key={key}>
+                  <label htmlFor={`setting-${key}`} className="block text-[10px] text-zinc-500 mb-0.5">{label}</label>
+                  <input id={`setting-${key}`} value={settingsForm[key] ?? defaultVal}
+                    onChange={e => setSettingsForm(p => ({ ...p, [key]: e.target.value }))}
+                    aria-label={label}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs focus:border-red-500 focus:outline-none" />
                 </div>
-                <button type="button" onClick={saveSettings} disabled={settingsSaving}
-                  className="bg-green-600 text-white px-4 py-1.5 rounded text-[10px] font-bold hover:bg-green-700 transition disabled:opacity-50">
-                  {settingsSaving ? 'Enregistrement...' : 'Enregistrer les paramètres'}
-                </button>
-              </>
-            ) : (
-              <div className="text-zinc-600 text-xs py-4 text-center">Aucun paramètre configuré pour ce tenant</div>
-            )}
+              ))}
+            </div>
+            <button type="button" onClick={saveSettings} disabled={settingsSaving}
+              className="bg-green-600 text-white px-4 py-1.5 rounded text-[10px] font-bold hover:bg-green-700 transition disabled:opacity-50">
+              {settingsSaving ? 'Enregistrement...' : 'Enregistrer les paramètres'}
+            </button>
           </div>
         )}
 
@@ -674,6 +852,37 @@ function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast
             ...(isPlatformTenant || editUserForm.role === 'SUPERADMIN' ? [{ value: 'SUPERADMIN', label: 'Superadmin' }] : []),
             { value: 'ADMIN', label: 'Admin' }, { value: 'DISPATCHER', label: 'Dispatcher' }, { value: 'DRIVER', label: 'Chauffeur' },
           ]} />
+        {editUserForm.role === 'DRIVER' && (
+          <ModalSelect label="Chauffeur lié" value={editUserForm.driverRef} onChange={v => setEditUserForm(p => ({ ...p, driverRef: v }))}
+            options={driverOptions} />
+        )}
+      </FormModal>
+
+      {}
+      <FormModal open={!!createSpec} title={`Ajouter ${createSpec?.noun ?? ''} — ${tenantName}`} error={createResError}
+        onClose={() => setCreateRes(null)} onSubmit={createResource} submitLabel={createResSaving ? 'Création...' : 'Créer'}>
+        <div className="grid grid-cols-2 gap-3">
+          {createSpec?.fields.map(f => {
+            const label = f.required ? `${f.label} *` : f.label
+            const set = (v: string) => setCreateResForm(p => ({ ...p, [f.key]: v }))
+            if (f.type === 'select') {
+              return <ModalSelect key={f.key} label={label} value={createResForm[f.key] ?? ''} onChange={set} options={f.options ?? []} />
+            }
+            if (createSpec.geocode?.address === f.key) {
+              return (
+                <div key={f.key} className="col-span-2 flex items-end gap-2">
+                  <div className="flex-1"><ModalInput label={label} value={createResForm[f.key] ?? ''} onChange={set} placeholder={f.placeholder} /></div>
+                  <button type="button" onClick={geocodeCreateAddress} disabled={geocoding} title="Trouver la position GPS de l'adresse"
+                    className="px-3 py-2 rounded-lg text-sm font-bold text-zinc-200 bg-zinc-700 hover:bg-zinc-600 transition disabled:opacity-50 whitespace-nowrap">
+                    {geocoding ? '…' : 'Trouver le GPS'}
+                  </button>
+                </div>
+              )
+            }
+            return <ModalInput key={f.key} label={label} value={createResForm[f.key] ?? ''} onChange={set}
+              type={f.type === 'time' ? 'time' : 'text'} placeholder={f.placeholder} />
+          })}
+        </div>
       </FormModal>
 
       {}
@@ -1354,7 +1563,7 @@ export default function SuperAdminPage() {
   const [tenantDataLoading, setTenantDataLoading] = useState(false)
 
   const [showNewTenant, setShowNewTenant] = useState(false)
-  const [newTenant, setNewTenant] = useState({ name: '', slug: '', plan: 'FREE' })
+  const [newTenant, setNewTenant] = useState(EMPTY_NEW_TENANT)
   const [formError, setFormError] = useState('')
 
   const { toasts, show: showToast } = useToastLocal()
@@ -1418,6 +1627,10 @@ export default function SuperAdminPage() {
 
   async function toggleTenantDetail(tenantId: string) {
     if (expandedTenant === tenantId) { setExpandedTenant(null); setTenantData(null); return }
+    await openTenantDetail(tenantId)
+  }
+
+  async function openTenantDetail(tenantId: string) {
     setExpandedTenant(tenantId)
     setTenantData(null)
     setTenantDataLoading(true)
@@ -1442,10 +1655,29 @@ export default function SuperAdminPage() {
   }
 
   async function createTenant() {
+    const { adminEmail, adminPassword, adminFirstName, adminLastName, ...tenant } = newTenant
+    const withAdmin = Boolean(adminEmail.trim() || adminPassword)
+    if (!tenant.name.trim()) { setFormError("Le nom de l'entreprise est obligatoire."); return }
+    if (tenant.slug.length < 2) { setFormError('Le slug doit contenir au moins 2 caractères.'); return }
+    if (withAdmin && !EMAIL_RE.test(adminEmail.trim())) { setFormError('Adresse email du compte administrateur invalide.'); return }
+    if (withAdmin && adminPassword.length < 8) { setFormError('Le mot de passe du compte administrateur doit contenir au moins 8 caractères.'); return }
     setFormError('')
-    const r = await fetch('/api/superadmin/tenants', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newTenant) })
-    if (r.ok) { setShowNewTenant(false); setNewTenant({ name: '', slug: '', plan: 'FREE' }); await fetchTenants(); await fetchStats(); showToast('Tenant créé', 'success') }
-    else { const d = await r.json(); setFormError(typeof d.error === 'string' ? d.error : JSON.stringify(d.error)) }
+    const r = await fetch('/api/superadmin/tenants', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...tenant,
+        ...(withAdmin ? { admin: { email: adminEmail.trim(), password: adminPassword, firstName: adminFirstName, lastName: adminLastName } } : {}),
+      }),
+    })
+    if (!r.ok) { setFormError(await errorOf(r, 'Création refusée : une valeur est invalide')); return }
+    const created = await r.json() as { id: string }
+    setShowNewTenant(false); setNewTenant(EMPTY_NEW_TENANT)
+    // The search box must not hide the organisation that was just created.
+    setGlobalSearch('')
+    await fetchTenants(); await fetchStats()
+    showToast(withAdmin ? 'Entreprise créée avec son compte administrateur' : 'Entreprise créée — ajoutez ses comptes ci-dessous', 'success')
+    // Opened straight away: accounts, drivers, vehicles… are added from its panel.
+    await openTenantDetail(created.id)
   }
 
   function requestTenantAction(id: string, action: 'suspend' | 'activate' | 'purge-cache' | 'delete', name: string) {
@@ -1751,6 +1983,23 @@ export default function SuperAdminPage() {
                     {PLAN_OPTIONS.map(p => <option key={p.value} value={p.value} className="bg-zinc-800 text-zinc-100">{p.label}</option>)}
                   </select>
                 </div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 pt-1">
+                  Premier compte administrateur <span className="font-normal normal-case tracking-normal">— facultatif, d&apos;autres comptes s&apos;ajoutent ensuite dans la fiche de l&apos;entreprise</span>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <input placeholder="Email" type="email" autoComplete="off" value={newTenant.adminEmail}
+                    onChange={e => setNewTenant(p => ({ ...p, adminEmail: e.target.value }))}
+                    className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:outline-none" />
+                  <input placeholder="Mot de passe (8 caractères min.)" type="password" autoComplete="new-password" value={newTenant.adminPassword}
+                    onChange={e => setNewTenant(p => ({ ...p, adminPassword: e.target.value }))}
+                    className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:outline-none" />
+                  <input placeholder="Prénom" value={newTenant.adminFirstName}
+                    onChange={e => setNewTenant(p => ({ ...p, adminFirstName: e.target.value }))}
+                    className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:outline-none" />
+                  <input placeholder="Nom" value={newTenant.adminLastName}
+                    onChange={e => setNewTenant(p => ({ ...p, adminLastName: e.target.value }))}
+                    className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:outline-none" />
+                </div>
                 <div className="flex gap-2">
                   <button onClick={createTenant} className="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-700">Créer</button>
                   <button onClick={() => setShowNewTenant(false)} className="text-zinc-500 px-4 py-2 text-xs hover:text-zinc-300">Annuler</button>
@@ -1834,6 +2083,10 @@ export default function SuperAdminPage() {
                       <td className="px-4 py-3 text-zinc-500">{new Date(t.createdAt).toLocaleDateString('fr-FR')}</td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-end gap-1.5">
+                          <button type="button" onClick={() => toggleTenantDetail(t.id)}
+                            className="px-2 py-1 rounded bg-green-900/50 text-green-300 hover:bg-green-800/50 text-[10px] font-bold transition" title="Comptes, chauffeurs, véhicules, clients, sites, exutoires, paramètres">
+                            {expandedTenant === t.id ? 'Fermer' : 'Comptes & données'}
+                          </button>
                           <button type="button" onClick={() => { setEditTenantModal(t); setEditTenantForm({ name: t.name, slug: t.slug, plan: t.plan, maxDrivers: t.maxDrivers ? String(t.maxDrivers) : '', maxMissions: t.maxMissions ? String(t.maxMissions) : '', timezone: '', locale: '', contactEmail: '' }) }}
                             className="px-2 py-1 rounded bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-[10px] font-bold transition" title="Modifier le tenant">Modifier</button>
                           <button type="button" onClick={() => impersonate(t.id)} disabled={actionLoading === `${t.id}:impersonate`}
