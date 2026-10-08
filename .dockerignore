@@ -46,3 +46,10 @@ docker-compose*.yml
 Dockerfile*
 *.log
 *.txt
+
+# Fichiers locaux et configurations non nécessaires aux images
+.mcp.json
+.claude/
+compte.md
+moi.md
+/data/
