@@ -187,6 +187,32 @@ describe('POST /api/superadmin/tenants/[id]/resources — update', () => {
     expect(res.status).toBe(404)
   })
 
+  // The console's edit form sends every value as text: saving a driver used to fail on the
+  // first number or boolean column.
+  it('converts the form text values to the column types', async () => {
+    const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
+    const res = await POST(makeReq(TENANT, {
+      entity: 'driver', action: 'update', id: 'res-1',
+      data: { firstName: 'Léa', depotLat: '45.19', depotLng: '5.72', maxBinSizeM3: '', archived: 'true' },
+    }), makeParams(TENANT))
+    expect(res.status).toBe(200)
+    expect(mockDriver.update).toHaveBeenCalledWith({
+      where: { id: 'res-1' },
+      data: { firstName: 'Léa', depotLat: 45.19, depotLng: 5.72, maxBinSizeM3: null, archived: true },
+    })
+  })
+
+  it.each([
+    ['a relation to another row', { vehicleId: 'veh-of-another-tenant' }],
+    ['an unknown column', { isAdmin: 'true' }],
+    ['a coordinate that is not a number', { depotLat: 'abc' }],
+  ])('refuses %s (422) without writing', async (_label, data) => {
+    const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
+    const res = await POST(makeReq(TENANT, { entity: 'driver', action: 'update', id: 'res-1', data }), makeParams(TENANT))
+    expect(res.status).toBe(422)
+    expect(mockDriver.update).not.toHaveBeenCalled()
+  })
+
   it('calls model.update on valid request', async () => {
     const { POST } = await import('@/app/api/superadmin/tenants/[id]/resources/route')
     const res = await POST(makeReq(TENANT, { entity: 'driver', action: 'update', id: 'res-1', data: { firstName: 'Updated' } }), makeParams(TENANT))

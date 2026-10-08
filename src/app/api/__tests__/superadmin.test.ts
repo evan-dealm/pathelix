@@ -237,10 +237,25 @@ describe('PUT /api/superadmin/tenants/[id]', () => {
 describe('DELETE /api/superadmin/tenants/[id]', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
+  // Deleting cascades to every row of the organisation: the slug must be repeated.
+  it.each(['', '?confirm=true', '?confirm=other-slug'])('refuses (400) without the matching slug: "%s"', async query => {
+    mockPrisma.tenant.findUnique.mockResolvedValue({ ...mockTenant, _count: { users: 0, drivers: 0, missions: 0 } })
+    const res = await tenantDel(makeDelete(`http://localhost/api/superadmin/tenants/t-1${query}`), makeParams('t-1'))
+    expect(res.status).toBe(400)
+    expect(mockPrisma.tenant.delete).not.toHaveBeenCalled()
+  })
+
+  it('never deletes the platform organisation (409), even confirmed', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValue({ ...mockTenant, slug: 'admin-corp', _count: { users: 1, drivers: 0, missions: 0 } })
+    const res = await tenantDel(makeDelete('http://localhost/api/superadmin/tenants/t-1?confirm=admin-corp'), makeParams('t-1'))
+    expect(res.status).toBe(409)
+    expect(mockPrisma.tenant.delete).not.toHaveBeenCalled()
+  })
+
   it('deletes tenant and returns ok (200)', async () => {
     mockPrisma.tenant.findUnique.mockResolvedValue({ ...mockTenant, _count: { users: 0, drivers: 0, missions: 0 } })
     mockPrisma.tenant.delete.mockResolvedValue({ id: 't-1' })
-    const res  = await tenantDel(makeDelete('http://localhost/api/superadmin/tenants/t-1'), makeParams('t-1'))
+    const res  = await tenantDel(makeDelete('http://localhost/api/superadmin/tenants/t-1?confirm=acme'), makeParams('t-1'))
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.ok).toBe(true)
@@ -249,7 +264,7 @@ describe('DELETE /api/superadmin/tenants/[id]', () => {
   it('still deletes tenant that has active resources (with warning logged)', async () => {
     mockPrisma.tenant.findUnique.mockResolvedValue({ ...mockTenant, _count: { users: 2, drivers: 5, missions: 100 } })
     mockPrisma.tenant.delete.mockResolvedValue({ id: 't-1' })
-    const res = await tenantDel(makeDelete('http://localhost/api/superadmin/tenants/t-1'), makeParams('t-1'))
+    const res = await tenantDel(makeDelete('http://localhost/api/superadmin/tenants/t-1?confirm=acme'), makeParams('t-1'))
     expect(res.status).toBe(200)
   })
 
@@ -261,7 +276,7 @@ describe('DELETE /api/superadmin/tenants/[id]', () => {
 
   it('returns 500 on DB error', async () => {
     mockPrisma.tenant.findUnique.mockRejectedValue(new Error('DB fail'))
-    const res = await tenantDel(makeDelete('http://localhost/api/superadmin/tenants/t-1'), makeParams('t-1'))
+    const res = await tenantDel(makeDelete('http://localhost/api/superadmin/tenants/t-1?confirm=acme'), makeParams('t-1'))
     expect(res.status).toBe(500)
   })
 })

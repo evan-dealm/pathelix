@@ -18,7 +18,7 @@ import { getAllExutoires } from '@/lib/data/exutoires'
 import { loadShedder, shedResponse } from '@/lib/loadShedder'
 import { metrics, METRIC } from '@/lib/metrics'
 import { enqueueVrpJob, hasActiveVrpWorker } from '@/lib/queue/vrpQueue'
-import { runVRP } from '@/lib/vrp/index'
+import { runVRPOffThread, SolverBusyError } from '@/lib/vrp/solverPool'
 import { isLocked } from '@/lib/vrp/livePlan'
 import type { Mission } from '@/lib/types'
 import { broadcastToTenant, type PushSubRecord } from '@/lib/webPush'
@@ -247,7 +247,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         },
         { status: 202 },
       )
-    } catch {
+    } catch (queueErr) {
+      // A saturated queue is not a reason to compute here: that would move the overload into
+      // the web server. The dispatcher is told to retry.
+      if (queueErr instanceof Error && queueErr.name === 'VrpQueueFullError') {
+        return NextResponse.json({ error: queueErr.message, code: 'QUEUE_FULL' }, { status: 503, headers: { 'Retry-After': '60' } })
+      }
       log.info('Exécution VRP directe (Redis indisponible ou aucun worker)', {
         tenantId,
         date,
@@ -255,14 +260,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         missions: missions.length,
       })
 
-      // Mode synchrone = calcul dans le process web : budget plafonné à 15 s pour
-      // que le fallback ne puisse jamais monopoliser le serveur (cause d'un
-      // blocage CPU observé pendant l'audit)
+      // Repli sans Redis ni worker : le calcul tourne dans un thread de calcul de ce process
+      // (solverPool), pas dans la boucle d'événements — les autres requêtes continuent d'être
+      // servies. Budget plafonné à 15 s ; file bornée (503 SOLVER_BUSY au-delà).
       const syncOptions = {
         ...vrpOptions,
         timeBudgetMs: Math.min(vrpOptions.timeBudgetMs ?? 15_000, 15_000),
       }
-      const result = await runVRP(missions, drivers, allExutoires, date, syncOptions)
+      const result = await runVRPOffThread(missions, drivers, allExutoires, date, syncOptions)
 
       auditAsync(req, 'optimization.run', 'Plan', date, {
         planned: result.stats.assignedMissions,
@@ -299,6 +304,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       )
     }
   } catch (err) {
+    if (err instanceof SolverBusyError) {
+      return NextResponse.json({ error: err.message, code: 'SOLVER_BUSY' }, { status: 503, headers: { 'Retry-After': '10' } })
+    }
     log.error('enqueue failed', { err: err instanceof Error ? err.message : String(err) })
     metrics.increment(METRIC.API_ERRORS, { route: '/api/optimize', type: 'server_error' })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

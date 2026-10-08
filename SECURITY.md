@@ -41,6 +41,15 @@ Modèle de sécurité, contrôles en place et risques résiduels. Vérifié cont
   la droite — un client ne peut pas usurper son IP pour contourner les limites.
 - **Impersonation** : un superadmin peut agir comme admin d'une organisation (`sub=sa:<id>`),
   durée limitée, journalisée.
+- **Compte superadmin** : mot de passe de 12 caractères au moins (minuscules, majuscules,
+  chiffres) ; double authentification TOTP activable dans la console (`/superadmin` → Sécurité),
+  secret chiffré en base (`SuperadminTotp`, quand `INTEGRATION_ENCRYPTION_KEY` est défini), code non rejouable, un mauvais code compte comme un
+  échec de connexion. Un superadmin ne peut ni changer son propre rôle ni supprimer son compte
+  (il en reste toujours un) ; seul un compte de l'organisation plateforme (`admin-corp`) peut le
+  devenir ; cette organisation ne peut être ni suspendue, ni supprimée, ni renommée. Supprimer une
+  organisation exige de répéter son slug. Toute action de la console — y compris la lecture des
+  données d'une organisation — est inscrite au journal d'audit avant la réponse, et la purge du
+  journal épargne ces entrées. Téléphone perdu : `npm run db:seed-superadmin` depuis le serveur.
 - **Clés API** (`X-API-Key: ef_live_…`) : stockées hachées (SHA-256), expirables, révocables.
   Une clé agit comme un exploitant de son organisation, limitée à ses scopes ; toute route non
   couverte par un scope répond 403 (refus par défaut : utilisateurs, paramètres, clés, audit ne

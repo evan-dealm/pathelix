@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db'
 import { getRequestContext } from '@/lib/data/context'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const HandleSchema = z.object({ id: z.string().min(1).max(64), handled: z.boolean() })
 
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 /** Marks a request as answered (or not): nothing else about it can be changed. */
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role, tenantId: ownTenantId } = getRequestContext(req)
   if (role !== 'superadmin')
     {return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })}
   const parsed = HandleSchema.safeParse(await req.json().catch(() => null))
@@ -30,5 +31,14 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   })
   if (updated.count === 0)
     {return NextResponse.json({ error: 'Demande introuvable' }, { status: 404 })}
+  await logSuperadminAction({
+    superadminId,
+    targetTenantId: ownTenantId,
+    isImpersonation: false,
+    method: 'PATCH',
+    path: '/api/superadmin/demo-requests',
+    action: parsed.data.handled ? 'demo_request_handled' : 'demo_request_reopened',
+    details: { demoRequestId: parsed.data.id },
+  })
   return NextResponse.json({ ok: true })
 }

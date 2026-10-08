@@ -6,9 +6,8 @@ import { getTenantDb } from '@/lib/tenantDb'
 import { refreshPlanEstimates } from '@/lib/data/planEstimates'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { getDriver } from '@/lib/data/drivers'
-import { runMvAlns } from '@/lib/vrp/mvAlns'
-import { buildInitialSolution, formatSolutionForAPI } from '@/lib/vrp/formatSolution'
-import { computeSolutionCost } from '@/lib/vrp/routeCost'
+import { solveOffThread, SolverBusyError } from '@/lib/vrp/solverPool'
+import { formatSolutionForAPI } from '@/lib/vrp/formatSolution'
 import type { CostContext, ALNSParams } from '@/lib/vrp/types'
 import type { Mission } from '@/lib/types'
 import { prismaRowToMission } from '@/lib/prismaMappers'
@@ -113,12 +112,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       rhoForget:    0.8,
     }
 
-    const initial = buildInitialSolution(missions, [driver], ctx)
-    initial.cost = computeSolutionCost(initial.routes, ctx, [driver])
-
-    const optimized = missions.length > 1
-      ? runMvAlns(initial, ctx, [driver], params)
-      : initial
+    // Up to 2 s of search: in a solver thread, not in the event loop of the web server.
+    const optimized = await solveOffThread({ op: 'route', missions, driver, ctx, params })
 
     const result = formatSolutionForAPI(optimized, [driver], ctx)
     // Locked steps first — done/in-progress missions used to be dropped from the plan here.
@@ -146,6 +141,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       timeTakenMs: Date.now() - startTs,
     })
   } catch (err) {
+    if (err instanceof SolverBusyError) {
+      return NextResponse.json({ error: err.message, code: 'SOLVER_BUSY' }, { status: 503, headers: { 'Retry-After': '10' } })
+    }
     log.error('Resequence failed', { err: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }

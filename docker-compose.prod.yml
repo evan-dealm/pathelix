@@ -1,0 +1,220 @@
+# Production overlay (OVHcloud or any Docker host). Used ON TOP of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d
+#
+# What it changes compared with the development file:
+#   - nothing but 80/443 is published; PostgreSQL, Redis, Valhalla and the app are only reachable
+#     on Docker networks (a port published by Docker bypasses ufw — do not rely on the firewall);
+#   - PostgreSQL and Redis sit on a network without Internet access; Redis requires a password;
+#   - Caddy terminates TLS (Let's Encrypt certificates, renewed automatically) and passes
+#     server-sent events through unbuffered;
+#   - memory limits, log rotation, an init process and a stop grace period on every service;
+#   - sizes come from .env.production (see DEPLOYMENT_OVH.md for the values per fleet size).
+#
+# Required in .env.production: PATHELIX_DOMAIN, ACME_EMAIL, DB_PASSWORD, REDIS_PASSWORD,
+# SESSION_SECRET, INTEGRATION_ENCRYPTION_KEY, NEXT_PUBLIC_SITE_URL.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-redis-env: &redis-env
+  REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required in production}@redis:6379
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+x-worker-prod: &worker-prod
+  init: true
+  # lifecycle.ts gives a running job 25 s to finish after SIGTERM.
+  stop_grace_period: 35s
+  logging: *logging
+  networks: [default, data]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PATHELIX_DOMAIN: ${PATHELIX_DOMAIN:?PATHELIX_DOMAIN is required (e.g. app.example.fr)}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required (Let's Encrypt account)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:2019/config/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  postgres:
+    ports: !reset []
+    networks: [data]
+    shm_size: 256m
+    stop_grace_period: 60s
+    command: >
+      postgres
+      -c shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}
+      -c work_mem=${PG_WORK_MEM:-16MB}
+      -c maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}
+      -c max_connections=${PG_MAX_CONNECTIONS:-100}
+      -c random_page_cost=1.1
+      -c wal_compression=on
+      -c checkpoint_timeout=15min
+      -c max_wal_size=2GB
+      -c log_min_duration_statement=${PG_LOG_SLOW_MS:-500}
+      -c log_lock_waits=on
+      -c idle_in_transaction_session_timeout=60000
+      -c shared_preload_libraries=pg_stat_statements
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: ${PG_MEMORY:-2G}
+
+  redis:
+    ports: !reset []
+    networks: [data]
+    # noeviction is mandatory (BullMQ). appendfsync everysec: at most one second of jobs lost on
+    # a power cut. The password is a second lock behind the network isolation.
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy noeviction
+      --requirepass ${REDIS_PASSWORD}
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY:-768M}
+
+  valhalla:
+    # Pinned: `latest` changes under you between two `docker compose pull`.
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:${VALHALLA_VERSION:-3.5.1}
+    ports: !reset []
+    environment:
+      tile_urls: ${VALHALLA_TILE_URLS:-https://download.geofabrik.de/europe/france/rhone-alpes-latest.osm.pbf}
+      server_threads: ${VALHALLA_THREADS:-4}
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: ${VALHALLA_MEMORY:-4G}
+
+  app:
+    ports: !reset []
+    init: true
+    stop_grace_period: 30s
+    networks: [default, data]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      <<: *redis-env
+      FORCE_HTTPS: "true"
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:?INTEGRATION_ENCRYPTION_KEY is required in production}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      VALHALLA_MAX_CONCURRENT: ${VALHALLA_THREADS:-4}
+      VRP_SOLVER_THREADS: ${VRP_SOLVER_THREADS:-1}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEMORY:-3G}
+
+  worker:
+    <<: *worker-prod
+    environment:
+      <<: *redis-env
+      VRP_CONCURRENCY: ${VRP_CONCURRENCY:-1}
+      VALHALLA_MAX_CONCURRENT: ${VALHALLA_THREADS:-4}
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_VRP_MEMORY:-2G}
+
+  worker-pdf:
+    <<: *worker-prod
+    environment:
+      <<: *redis-env
+      PDF_CONCURRENCY: ${PDF_CONCURRENCY:-2}
+
+  worker-ml:
+    <<: *worker-prod
+    environment:
+      <<: *redis-env
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  worker-recurring:
+    <<: *worker-prod
+    environment:
+      <<: *redis-env
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  worker-business:
+    <<: *worker-prod
+    environment:
+      <<: *redis-env
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  worker-retention:
+    <<: *worker-prod
+    environment:
+      <<: *redis-env
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  ai-engine:
+    networks: [default, data]
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    logging: *logging
+
+networks:
+  # PostgreSQL and Redis: reachable by the app and the workers, no route to the Internet.
+  data:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:

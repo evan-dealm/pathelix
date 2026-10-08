@@ -8,7 +8,7 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { VRP_QUEUE_NAME, type VrpJobData, type VrpJobResult } from '@/lib/queue/vrpQueue'
 import { workerConnectionOptions } from '@/lib/queue/connection'
 import { installWorkerLifecycle } from './lifecycle'
-import { runVRP } from '@/lib/vrp/index'
+import { runVRPOffThread, configureSolverPool, closeSolverPool, solveOffThread, solverPoolStatus } from '@/lib/vrp/solverPool'
 import { buildWarmStartFromReference } from '@/lib/vrp/warmStart'
 import { createLogger } from '@/lib/logger'
 import type { PlannedMission } from '@/lib/types'
@@ -188,7 +188,9 @@ export async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<Vr
     })
   }
 
-  const result = await runVRP(
+  // In a solver thread: this process's event loop stays free to renew the job lock, report
+  // progress and answer SIGTERM, and VRP_CONCURRENCY jobs really run side by side.
+  const result = await runVRPOffThread(
     missions,
     drivers.filter(d => !d.archived),
     exutoires,
@@ -243,9 +245,30 @@ export async function processJob(job: Job<VrpJobData, VrpJobResult>): Promise<Vr
   return result
 }
 
-function startWorker(): void {
+/**
+ * Checks once, at start-up, that searches really run in solver threads here. They do unless the
+ * runtime cannot start one — in which case the search runs in this thread, as it always did.
+ */
+async function solverThreadsWork(): Promise<boolean> {
+  try {
+    await solveOffThread({
+      op: 'route', missions: [],
+      driver: { id: 'self-test', firstName: '', lastName: '', sector: '', depotName: '', depotLat: 0, depotLng: 0, vehicleCapacity: 1 } as never,
+      ctx: { depotLat: 0, depotLng: 0, startTimeMin: 420, speedKmh: 50, exutoires: [], date: '2026-01-05' },
+      params: { timeBudgetMs: 100, seed: 1, iterations: 1, destroyRatio: 0.3, saT0Ratio: 0.06, saTMinRatio: 0.0003, rhoForget: 0.8 },
+    }, { timeoutMs: 60_000, maxWaitMs: 60_000 })
+    return !solverPoolStatus().inline
+  } catch (err) {
+    log.warn('Solver thread self-test failed', { err: err instanceof Error ? err.message : String(err) })
+    return false
+  }
+}
+
+async function startWorker(): Promise<void> {
   validateEnv()
   const concurrency = parseInt(process.env.VRP_CONCURRENCY ?? '1', 10) || 1
+  if (process.env.VRP_SOLVER_THREADS === undefined) configureSolverPool({ size: concurrency })
+  const threaded = await solverThreadsWork()
 
   const worker = new Worker<VrpJobData, VrpJobResult>(
     VRP_QUEUE_NAME,
@@ -254,7 +277,11 @@ function startWorker(): void {
       connection:  workerConnectionOptions() as never,
       concurrency,
 
-      lockDuration: 300_000,
+      // The lock is renewed from this thread. With the search in a solver thread it is renewed
+      // on time: a job whose worker died is picked up again after about a minute. With the
+      // search inline, nothing renews the lock while it runs (up to two minutes): keep it long,
+      // or the job would be handed to a second worker while the first still computes.
+      lockDuration: threaded ? 60_000 : 300_000,
     },
   )
 
@@ -278,15 +305,16 @@ function startWorker(): void {
 
   installWorkerLifecycle(log, [
     () => worker.close(),
+    () => closeSolverPool(),
     async () => stopTrafficAggregation(),
     async () => { await _prisma?.$disconnect() },
   ])
 
-  log.info('VRP Worker started', { queue: VRP_QUEUE_NAME, concurrency })
+  log.info('VRP Worker started', { queue: VRP_QUEUE_NAME, concurrency, solverThreads: threaded })
 
   if (process.env.VALHALLA_URL) {
     startTrafficAggregation()
   }
 }
 
-if (isMainEntry) startWorker()
+if (isMainEntry) void startWorker()

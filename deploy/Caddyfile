@@ -1,0 +1,32 @@
+# Reverse proxy of the production stack (docker-compose.prod.yml).
+# Certificates: Let's Encrypt, obtained and renewed automatically — ports 80 and 443 must be
+# reachable from the Internet and the domain must already point to this server.
+{
+	email {$ACME_EMAIL}
+	admin 127.0.0.1:2019
+}
+
+{$PATHELIX_DOMAIN} {
+	# Uploads are capped at 5 MB per file by the application; this is the outer bound.
+	request_body {
+		max_size 12MB
+	}
+
+	reverse_proxy app:3000 {
+		# Server-sent events (live dispatch view) must not be buffered.
+		flush_interval -1
+		transport http {
+			# The weekly planning request can compute for up to five minutes.
+			response_header_timeout 330s
+			dial_timeout 5s
+		}
+	}
+
+	# The application sets its own security headers (next.config.mjs); only the banner is removed.
+	header -Server
+
+	log {
+		output stdout
+		format json
+	}
+}

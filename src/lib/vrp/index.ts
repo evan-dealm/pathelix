@@ -15,7 +15,12 @@ import { buildValhallaMatrix, type GeoPoint } from './valhallaMatrix'
 import { buildExternalRoutingMatrix } from './externalRoutingApi'
 import { generateScenarios, evaluateCVaR } from './stochastic'
 import { createLogger } from '@/lib/logger'
-import { validateAndRepair, explainUnassigned, reasonMessage, type UnassignedReasonCode } from './explain'
+import {
+  validateAndRepair,
+  explainUnassigned,
+  reasonMessage,
+  type UnassignedReasonCode,
+} from './explain'
 import { loadIssueAlone } from './vehicleLoad'
 import type { RegulationRules } from './driverClock'
 import type { DriverStartOverride } from './types'
@@ -25,15 +30,15 @@ import { computeObjectives, filterParetoFront, labelParetoSolutions } from './pa
 import type { ParetoSolution } from './paretoFront'
 
 const DEFAULT_TIME_BUDGET_MS = 15_000
-const DEFAULT_SEED            = 42
+const DEFAULT_SEED = 42
 /** Per-tenant lookups made before solving (calibration, routing licence) give up after this. */
 const TENANT_LOOKUP_TIMEOUT_MS = 2_000
-const DEFAULT_DESTROY_RATIO   = 0.25
+const DEFAULT_DESTROY_RATIO = 0.25
 
 const SECTOR_THRESHOLD = 20
 
 function targetSectorSize(nDrivers: number): number {
-  if (nDrivers <= 50)  return 15
+  if (nDrivers <= 50) return 15
   if (nDrivers <= 150) return 12
   if (nDrivers <= 300) return 8
   if (nDrivers <= 600) return 6
@@ -41,37 +46,38 @@ function targetSectorSize(nDrivers: number): number {
 }
 
 function scaleAlnsParams(nDrivers: number, nMissions: number, timeBudgetMs: number) {
-
   const iterScale = Math.max(0.5, Math.min(2.0, 15_000 / Math.max(1, timeBudgetMs)))
-  const baseIter  = nMissions > 10_000 ? 200
-                  : nMissions > 5_000  ? 300
-                  : nMissions > 1_000  ? 400
-                  : 500
+  const baseIter =
+    nMissions > 10_000 ? 200 : nMissions > 5_000 ? 300 : nMissions > 1_000 ? 400 : 500
   const iterations = Math.max(50, Math.round(baseIter / iterScale))
 
-  const destroyRatio = nMissions > 10_000 ? 0.15
-                     : nMissions > 5_000  ? 0.20
-                     : nMissions > 1_000  ? 0.22
-                     : DEFAULT_DESTROY_RATIO
+  const destroyRatio =
+    nMissions > 10_000
+      ? 0.15
+      : nMissions > 5_000
+        ? 0.2
+        : nMissions > 1_000
+          ? 0.22
+          : DEFAULT_DESTROY_RATIO
 
-  const saT0Ratio  = nDrivers > 500 ? 0.07 : nDrivers > 100 ? 0.06 : 0.05
+  const saT0Ratio = nDrivers > 500 ? 0.07 : nDrivers > 100 ? 0.06 : 0.05
   const saTMinRatio = nDrivers > 500 ? 0.0004 : nDrivers > 100 ? 0.0003 : 0.0002
 
   return { iterations, destroyRatio, saT0Ratio, saTMinRatio }
 }
 
 export async function runVRP(
-  missions:  Mission[],
-  drivers:   Driver[],
+  missions: Mission[],
+  drivers: Driver[],
   exutoires: Exutoire[],
-  date:      string,
+  date: string,
   options?: {
-    timeBudgetMs?:  number
-    seed?:          number
+    timeBudgetMs?: number
+    seed?: number
     lnsIterations?: number
     lnsDestroyRatio?: number
     existingPlans?: Record<string, string[]>
-    defaultSpeedKmh?:  number
+    defaultSpeedKmh?: number
     defaultStartTime?: string
 
     weights?: { distance: number; punctuality: number; balance: number; stability?: number }
@@ -101,7 +107,10 @@ export async function runVRP(
   {
     const seen = new Set<string>()
     missions = missions.filter(m => {
-      if (seen.has(m.id)) { duplicateIds.push(m.id); return false }
+      if (seen.has(m.id)) {
+        duplicateIds.push(m.id)
+        return false
+      }
       seen.add(m.id)
       return true
     })
@@ -116,17 +125,18 @@ export async function runVRP(
 
   const globalCongestion = resetExutoireCongestion()
 
-  const timeBudgetMs   = options?.timeBudgetMs    ?? DEFAULT_TIME_BUDGET_MS
-  const seed           = options?.seed            ?? DEFAULT_SEED
+  const timeBudgetMs = options?.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS
+  const seed = options?.seed ?? DEFAULT_SEED
   // An empty warm-start map is "no warm start" — callers pass {} by default, which used to
   // disable the GRASP multi-start entirely.
-  const existingPlans  = options?.existingPlans && Object.keys(options.existingPlans).length > 0
-    ? options.existingPlans
-    : undefined
+  const existingPlans =
+    options?.existingPlans && Object.keys(options.existingPlans).length > 0
+      ? options.existingPlans
+      : undefined
 
   let calibratedMissions = missions
 
-  let effectiveValhallaFactor = options?.valhallaFactor ?? 1.60
+  let effectiveValhallaFactor = options?.valhallaFactor ?? 1.6
   // Local copy — mutating options.defaultSpeedKmh directly would mutate the CALLER's object
   // (options is a reference the caller still holds), fragile if it's ever reused across calls.
   let effectiveDefaultSpeedKmh = options?.defaultSpeedKmh
@@ -134,9 +144,17 @@ export async function runVRP(
     try {
       // Calibration is a refinement: a slow or unreachable database must not hold the solver.
       const { withTimeout } = await import('@/lib/queue/connection')
-      calibratedMissions = await withTimeout(applyMLCoefficients(options.tenantId, missions), TENANT_LOOKUP_TIMEOUT_MS, 'ML calibration')
+      calibratedMissions = await withTimeout(
+        applyMLCoefficients(options.tenantId, missions),
+        TENANT_LOOKUP_TIMEOUT_MS,
+        'ML calibration',
+      )
 
-      const travelCoeff = await withTimeout(getTravelCoeff(options.tenantId), TENANT_LOOKUP_TIMEOUT_MS, 'travel coefficient')
+      const travelCoeff = await withTimeout(
+        getTravelCoeff(options.tenantId),
+        TENANT_LOOKUP_TIMEOUT_MS,
+        'travel coefficient',
+      )
       if (travelCoeff !== 1.0) {
         if (effectiveDefaultSpeedKmh) {
           effectiveDefaultSpeedKmh = Math.round(effectiveDefaultSpeedKmh / travelCoeff)
@@ -146,7 +164,8 @@ export async function runVRP(
       }
     } catch (err) {
       log.warn('ML coefficient calibration failed — falling back to uncalibrated missions', {
-        tenantId: options.tenantId, err: err instanceof Error ? err.message : String(err),
+        tenantId: options.tenantId,
+        err: err instanceof Error ? err.message : String(err),
       })
     }
   }
@@ -158,13 +177,19 @@ export async function runVRP(
   const knownReasons = new Map<string, UnassignedReasonCode>()
 
   for (const mission of calibratedMissions) {
-    if (drivers.length === 0) { assignableMissions.push(mission); continue }
-    if (mission.binSizeM3 && !drivers.some(d => !d.maxBinSizeM3 || mission.binSizeM3! <= d.maxBinSizeM3)) {
+    if (drivers.length === 0) {
+      assignableMissions.push(mission)
+      continue
+    }
+    if (
+      mission.binSizeM3 &&
+      !drivers.some(d => !d.maxBinSizeM3 || mission.binSizeM3! <= d.maxBinSizeM3)
+    ) {
       unassignableByCapacity.push(mission)
       knownReasons.set(mission.id, 'BIN_SIZE')
       hfvrpWarnings.push({
         driverId: '',
-        message:  `${mission.clientName || 'Mission'} (${mission.address}) : benne ${mission.binSizeM3} m³ incompatible avec tous les véhicules disponibles`,
+        message: `${mission.clientName || 'Mission'} (${mission.address}) : benne ${mission.binSizeM3} m³ incompatible avec tous les véhicules disponibles`,
         severity: 'error',
       })
       continue
@@ -174,7 +199,11 @@ export async function runVRP(
       const code = loadIssues.includes('PAYLOAD') ? 'PAYLOAD' : 'VOLUME'
       unassignableByCapacity.push(mission)
       knownReasons.set(mission.id, code)
-      hfvrpWarnings.push({ driverId: '', message: `${mission.clientName || 'Mission'} (${mission.address}) : ${reasonMessage(code, mission)}`, severity: 'error' })
+      hfvrpWarnings.push({
+        driverId: '',
+        message: `${mission.clientName || 'Mission'} (${mission.address}) : ${reasonMessage(code, mission)}`,
+        severity: 'error',
+      })
       continue
     }
     assignableMissions.push(mission)
@@ -182,19 +211,24 @@ export async function runVRP(
 
   if (drivers.length === 0) {
     return {
-      assignments:        {},
+      assignments: {},
       unassignedMissions: calibratedMissions,
-      unassignedReasons:  Object.fromEntries(calibratedMissions.map(m => [m.id, { code: 'NO_DRIVER', message: reasonMessage('NO_DRIVER', m) }])),
+      unassignedReasons: Object.fromEntries(
+        calibratedMissions.map(m => [
+          m.id,
+          { code: 'NO_DRIVER', message: reasonMessage('NO_DRIVER', m) },
+        ]),
+      ),
       stats: {
         assignedMissions: 0,
-        totalMissions:    missions.length,
-        score:            0,
-        timeTakenMs:      Date.now() - startTs,
+        totalMissions: missions.length,
+        score: 0,
+        timeTakenMs: Date.now() - startTs,
       },
       warnings: [
         {
           driverId: '',
-          message:  'Aucun chauffeur disponible pour optimiser les tournées',
+          message: 'Aucun chauffeur disponible pour optimiser les tournées',
           severity: 'error',
         },
         ...(options?.extraWarnings ?? []),
@@ -209,15 +243,16 @@ export async function runVRP(
       familiarity = await loadFamiliarity(options.tenantId)
     } catch (err) {
       log.warn('Familiarity load failed — continuing without stability bonus', {
-        tenantId: options.tenantId, err: err instanceof Error ? err.message : String(err),
+        tenantId: options.tenantId,
+        err: err instanceof Error ? err.message : String(err),
       })
     }
   }
 
   const refDriver = drivers[0]
   const ctx: CostContext = {
-    depotLat:     refDriver.depotLat ?? 0,
-    depotLng:     refDriver.depotLng ?? 0,
+    depotLat: refDriver.depotLat ?? 0,
+    depotLng: refDriver.depotLng ?? 0,
     startTimeMin: (() => {
       const t = options?.defaultStartTime ?? '07:00'
       const parts = t.split(':').map(Number)
@@ -225,22 +260,23 @@ export async function runVRP(
       const m = Math.max(0, Math.min(59, parts[1] || 0))
       return h * 60 + m
     })(),
-    speedKmh:     Math.max(1, Math.min(130, effectiveDefaultSpeedKmh ?? 50)),
+    speedKmh: Math.max(1, Math.min(130, effectiveDefaultSpeedKmh ?? 50)),
     exutoires,
     date,
     weights: options?.weights,
     familiarity,
 
     driverStartOverrides: options?.driverStartOverrides,
-    regulation:           options?.regulation,
-    maxWorkMin:           options?.maxWorkMin,
-    costConfig:           options?.costConfig,
+    regulation: options?.regulation,
+    maxWorkMin: options?.maxWorkMin,
+    costConfig: options?.costConfig,
 
     congestionMap: globalCongestion,
 
     valhallaFactor: effectiveValhallaFactor,
   }
 
+  let routingCoverage: number | undefined
   try {
     const allGeoPoints: GeoPoint[] = []
     const seenIds = new Set<string>()
@@ -267,62 +303,93 @@ export async function runVRP(
     }
 
     if (allGeoPoints.length >= 2) {
-
       const worstCaseDims = {
         weightTon: drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.weightTon ?? 26), 0),
-        heightM:   drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.heightM ?? 4.0), 0),
-        widthM:    drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.widthM ?? 2.55), 0),
-        lengthM:   drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.lengthM ?? 12.0), 0),
+        heightM: drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.heightM ?? 4.0), 0),
+        widthM: drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.widthM ?? 2.55), 0),
+        lengthM: drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.lengthM ?? 12.0), 0),
         axleCount: drivers.reduce((m, d) => Math.max(m, d.vehicleDimensions?.axleCount ?? 3), 0),
-        hazmat:    drivers.some(d => d.vehicleDimensions?.hazmat === true),
+        hazmat: drivers.some(d => d.vehicleDimensions?.hazmat === true),
       }
 
       const provider = options?.tenantId
-        ? await (await import('@/lib/queue/connection')).withTimeout((await import('./routingProvider')).tenantRoutingProvider(options.tenantId), TENANT_LOOKUP_TIMEOUT_MS, 'routing provider').catch(() => null)
+        ? await (
+            await import('@/lib/queue/connection')
+          )
+            .withTimeout(
+              (await import('./routingProvider')).tenantRoutingProvider(options.tenantId),
+              TENANT_LOOKUP_TIMEOUT_MS,
+              'routing provider',
+            )
+            .catch(() => null)
         : null
       const apiMatrix = await buildExternalRoutingMatrix(allGeoPoints, undefined, provider)
       if (apiMatrix) {
         ctx.osrmMatrix = apiMatrix
         log.info('Routing matrix ready', { source: apiMatrix.source, points: allGeoPoints.length })
       } else {
-
         log.info('Building Valhalla matrix', { points: allGeoPoints.length })
-        const valhallaMatrix = await buildValhallaMatrix(allGeoPoints, worstCaseDims)
-        log.info('Valhalla matrix result', { source: valhallaMatrix.source, size: valhallaMatrix.size })
+        // Depots and outlets are on every route: their distances are fetched first. The cache is
+        // partitioned by organisation.
+        const hubIds = allGeoPoints
+          .filter(p => p.id.startsWith('depot:') || p.id.startsWith('exu:'))
+          .map(p => p.id)
+        const valhallaMatrix = await buildValhallaMatrix(allGeoPoints, worstCaseDims, {
+          scope: options?.tenantId,
+          hubIds,
+        })
+        log.info('Valhalla matrix result', {
+          source: valhallaMatrix.source,
+          size: valhallaMatrix.size,
+          coverage: valhallaMatrix.coverage,
+        })
         if (valhallaMatrix.source !== 'haversine') {
           ctx.osrmMatrix = valhallaMatrix
+          routingCoverage = valhallaMatrix.coverage
         }
-
       }
     }
   } catch (matrixErr) {
-    log.warn('Matrix build failed, falling back to haversine', { err: matrixErr instanceof Error ? matrixErr.message : String(matrixErr) })
+    log.warn('Matrix build failed, falling back to haversine', {
+      err: matrixErr instanceof Error ? matrixErr.message : String(matrixErr),
+    })
   }
 
   // The search budget is what remains once the routing matrix is built (Valhalla can take
   // seconds); post-optimisation steps are scheduled from that point. Pareto alternatives, when
   // requested, come out of the same budget instead of adding 50 % on top of it.
-  const algoStartTs  = Date.now()
-  const remainingMs  = Math.max(Math.round(timeBudgetMs * 0.4), timeBudgetMs - (algoStartTs - startTs))
-  const paretoShare  = options?.usePareto && drivers.length <= 300 ? 0.2 : 0
+  const algoStartTs = Date.now()
+  const remainingMs = Math.max(
+    Math.round(timeBudgetMs * 0.4),
+    timeBudgetMs - (algoStartTs - startTs),
+  )
+  const paretoShare = options?.usePareto && drivers.length <= 300 ? 0.2 : 0
   // 2.1 s are reserved inside the budget for 3-opt, ejection chains, compaction and P1 repair.
   const POST_STEPS_MS = remainingMs > 6000 ? 2100 : Math.round(remainingMs * 0.2)
-  const searchBudget = Math.max(300, Math.round(remainingMs * (1 - 2 * paretoShare)) - POST_STEPS_MS)
+  const searchBudget = Math.max(
+    300,
+    Math.round(remainingMs * (1 - 2 * paretoShare)) - POST_STEPS_MS,
+  )
   const scaled = scaleAlnsParams(drivers.length, assignableMissions.length, searchBudget)
-  const effectiveIterations   = options?.lnsIterations   ?? scaled.iterations
+  const effectiveIterations = options?.lnsIterations ?? scaled.iterations
   const effectiveDestroyRatio = options?.lnsDestroyRatio ?? scaled.destroyRatio
 
   let best: VRPSolution
 
   if (drivers.length > SECTOR_THRESHOLD) {
     best = await runVRPWithSectors(
-      assignableMissions, drivers, ctx, seed,
-      effectiveIterations, effectiveDestroyRatio,
-      searchBudget, existingPlans,
-      scaled.saT0Ratio, scaled.saTMinRatio,
+      assignableMissions,
+      drivers,
+      ctx,
+      seed,
+      effectiveIterations,
+      effectiveDestroyRatio,
+      searchBudget,
+      existingPlans,
+      scaled.saT0Ratio,
+      scaled.saTMinRatio,
     )
   } else {
-
     const MULTI_START_COUNT = drivers.length <= 10 && assignableMissions.length <= 60 ? 3 : 1
     if (MULTI_START_COUNT > 1) {
       const perStartBudget = Math.floor(searchBudget / MULTI_START_COUNT)
@@ -332,20 +399,35 @@ export async function runVRP(
       for (let s = 0; s < MULTI_START_COUNT; s++) {
         const startSeed = seed + s * 9973
         const candidate = runVRPDirect(
-          assignableMissions, drivers, ctx, startSeed,
-          perStartIter, effectiveDestroyRatio,
-          perStartBudget, existingPlans,
-          scaled.saT0Ratio, scaled.saTMinRatio,
+          assignableMissions,
+          drivers,
+          ctx,
+          startSeed,
+          perStartIter,
+          effectiveDestroyRatio,
+          perStartBudget,
+          existingPlans,
+          scaled.saT0Ratio,
+          scaled.saTMinRatio,
         )
         const cost = computeSolutionCost(candidate.routes, ctx, drivers)
-        if (cost < bestCost) { best = candidate; bestCost = cost }
+        if (cost < bestCost) {
+          best = candidate
+          bestCost = cost
+        }
       }
     } else {
       best = runVRPDirect(
-        assignableMissions, drivers, ctx, seed,
-        effectiveIterations, effectiveDestroyRatio,
-        searchBudget, existingPlans,
-        scaled.saT0Ratio, scaled.saTMinRatio,
+        assignableMissions,
+        drivers,
+        ctx,
+        seed,
+        effectiveIterations,
+        effectiveDestroyRatio,
+        searchBudget,
+        existingPlans,
+        scaled.saT0Ratio,
+        scaled.saTMinRatio,
       )
     }
   }
@@ -375,7 +457,14 @@ export async function runVRP(
   const forceAssignDeadline = postDeadline + POST_STEPS_MS
   best = forceAssignP1(best, assignableMissions, ctx, drivers, hfvrpWarnings, forceAssignDeadline)
 
-  let paretoFrontResult: Array<{ label: string; totalDistanceKm: number; totalLatenessMin: number; workloadCV: number }> | undefined
+  let paretoFrontResult:
+    | Array<{
+        label: string
+        totalDistanceKm: number
+        totalLatenessMin: number
+        workloadCV: number
+      }>
+    | undefined
   if (options?.usePareto && drivers.length <= 300) {
     const paretoTimeBudget = Math.round(remainingMs * paretoShare)
     const paretoSolutions: ParetoSolution[] = [
@@ -387,36 +476,95 @@ export async function runVRP(
     ]
 
     const ctxDist: CostContext = { ...ctx, weights: { distance: 3, punctuality: 1, balance: 1 } }
-    const bestDist = drivers.length > SECTOR_THRESHOLD
-      ? await runVRPWithSectors(assignableMissions, drivers, ctxDist, seed + 1, effectiveIterations, effectiveDestroyRatio, paretoTimeBudget, existingPlans, scaled.saT0Ratio, scaled.saTMinRatio)
-      : runVRPDirect(assignableMissions, drivers, ctxDist, seed + 1, effectiveIterations, effectiveDestroyRatio, paretoTimeBudget, existingPlans, scaled.saT0Ratio, scaled.saTMinRatio)
-    paretoSolutions.push({ solution: bestDist, objectives: computeObjectives(bestDist, ctxDist, drivers), label: 'Distance' })
+    const bestDist =
+      drivers.length > SECTOR_THRESHOLD
+        ? await runVRPWithSectors(
+            assignableMissions,
+            drivers,
+            ctxDist,
+            seed + 1,
+            effectiveIterations,
+            effectiveDestroyRatio,
+            paretoTimeBudget,
+            existingPlans,
+            scaled.saT0Ratio,
+            scaled.saTMinRatio,
+          )
+        : runVRPDirect(
+            assignableMissions,
+            drivers,
+            ctxDist,
+            seed + 1,
+            effectiveIterations,
+            effectiveDestroyRatio,
+            paretoTimeBudget,
+            existingPlans,
+            scaled.saT0Ratio,
+            scaled.saTMinRatio,
+          )
+    paretoSolutions.push({
+      solution: bestDist,
+      objectives: computeObjectives(bestDist, ctxDist, drivers),
+      label: 'Distance',
+    })
 
     const ctxBal: CostContext = { ...ctx, weights: { distance: 1, punctuality: 1, balance: 3 } }
-    const bestBal = drivers.length > SECTOR_THRESHOLD
-      ? await runVRPWithSectors(assignableMissions, drivers, ctxBal, seed + 2, effectiveIterations, effectiveDestroyRatio, paretoTimeBudget, existingPlans, scaled.saT0Ratio, scaled.saTMinRatio)
-      : runVRPDirect(assignableMissions, drivers, ctxBal, seed + 2, effectiveIterations, effectiveDestroyRatio, paretoTimeBudget, existingPlans, scaled.saT0Ratio, scaled.saTMinRatio)
-    paretoSolutions.push({ solution: bestBal, objectives: computeObjectives(bestBal, ctxBal, drivers), label: 'Equilibre' })
+    const bestBal =
+      drivers.length > SECTOR_THRESHOLD
+        ? await runVRPWithSectors(
+            assignableMissions,
+            drivers,
+            ctxBal,
+            seed + 2,
+            effectiveIterations,
+            effectiveDestroyRatio,
+            paretoTimeBudget,
+            existingPlans,
+            scaled.saT0Ratio,
+            scaled.saTMinRatio,
+          )
+        : runVRPDirect(
+            assignableMissions,
+            drivers,
+            ctxBal,
+            seed + 2,
+            effectiveIterations,
+            effectiveDestroyRatio,
+            paretoTimeBudget,
+            existingPlans,
+            scaled.saT0Ratio,
+            scaled.saTMinRatio,
+          )
+    paretoSolutions.push({
+      solution: bestBal,
+      objectives: computeObjectives(bestBal, ctxBal, drivers),
+      label: 'Equilibre',
+    })
 
     const front = filterParetoFront(paretoSolutions)
     labelParetoSolutions(front)
 
     const w = ctx.weights ?? { distance: 1, punctuality: 1, balance: 1 }
-    const normalize = (arr: ParetoSolution[], key: keyof typeof arr[0]['objectives']) => {
+    const normalize = (arr: ParetoSolution[], key: keyof (typeof arr)[0]['objectives']) => {
       const vals = arr.map(s => s.objectives[key])
-      const min = Math.min(...vals); const max = Math.max(...vals)
-      return (v: number) => max === min ? 0 : (v - min) / (max - min)
+      const min = Math.min(...vals)
+      const max = Math.max(...vals)
+      return (v: number) => (max === min ? 0 : (v - min) / (max - min))
     }
     const normDist = normalize(front, 'totalDistanceKm')
     const normLate = normalize(front, 'totalLatenessMin')
-    const normBal  = normalize(front, 'workloadCV')
+    const normBal = normalize(front, 'workloadCV')
     let bestFront = front[0]
     let bestFrontScore = Infinity
     for (const s of front) {
-      const score = normDist(s.objectives.totalDistanceKm) * w.distance
-                  + normLate(s.objectives.totalLatenessMin) * w.punctuality
-                  + normBal(s.objectives.workloadCV) * w.balance
-      if (score < bestFrontScore) { bestFrontScore = score; bestFront = s }
+      const score =
+        normDist(s.objectives.totalDistanceKm) * w.distance +
+        normLate(s.objectives.totalLatenessMin) * w.punctuality +
+        normBal(s.objectives.workloadCV) * w.balance
+      if (score < bestFrontScore) {
+        bestFrontScore = score
+        bestFront = s
+      }
     }
     best = bestFront.solution
 
@@ -430,7 +578,13 @@ export async function runVRP(
 
   // Nothing non-executable leaves the optimiser: hard problems are taken out (and re-inserted
   // elsewhere when another truck can take them), the rest is explained below.
-  const repaired = validateAndRepair(best, drivers, ctx, Date.now() + Math.max(500, Math.round(timeBudgetMs * 0.1)), new Set(missions.map(m => m.id)))
+  const repaired = validateAndRepair(
+    best,
+    drivers,
+    ctx,
+    Date.now() + Math.max(500, Math.round(timeBudgetMs * 0.1)),
+    new Set(missions.map(m => m.id)),
+  )
   best = repaired.solution
   for (const [id, r] of repaired.removed) knownReasons.set(id, r.code)
 
@@ -447,9 +601,17 @@ export async function runVRP(
   result.unassignedMissions.push(...unassignableByCapacity)
   result.warnings.push(...(options?.extraWarnings ?? []), ...hfvrpWarnings)
   enforceMissionConservation(result, calibratedMissions, duplicateIds, drivers)
-  result.unassignedReasons = explainUnassigned(result.unassignedMissions, drivers, best.routes, ctx, knownReasons)
+  result.unassignedReasons = explainUnassigned(
+    result.unassignedMissions,
+    drivers,
+    best.routes,
+    ctx,
+    knownReasons,
+  )
   result.stats.timeTakenMs = Date.now() - startTs
   result.stats.routingSource = ctx.osrmMatrix?.source ?? 'haversine'
+  if (routingCoverage !== undefined)
+    result.stats.routingCoverage = Math.round(routingCoverage * 1000) / 1000
 
   return result
 }
@@ -460,7 +622,12 @@ export async function runVRP(
  * mission shared by two routes after a cross-sector move), nothing is silently lost or
  * planned twice; anything corrected is reported as a warning.
  */
-export function enforceMissionConservation(result: OptimizationResult, inputMissions: Mission[], duplicateIds: string[] = [], drivers: Driver[] = []): void {
+export function enforceMissionConservation(
+  result: OptimizationResult,
+  inputMissions: Mission[],
+  duplicateIds: string[] = [],
+  drivers: Driver[] = [],
+): void {
   const seen = new Set<string>()
   let removedDuplicates = 0
   // A bin the truck physically cannot carry is never shipped in a plan, whatever the search did.
@@ -470,14 +637,24 @@ export function enforceMissionConservation(result: OptimizationResult, inputMiss
     const driver = driverById.get(driverId)
     result.assignments[driverId] = result.assignments[driverId].filter(m => {
       if (m.isSynthetic) return true
-      if (seen.has(m.id)) { removedDuplicates++; return false }
-      if (driver && !isHfvrpCompatible(m, driver)) { tooBig.push(m); return false }
+      if (seen.has(m.id)) {
+        removedDuplicates++
+        return false
+      }
+      if (driver && !isHfvrpCompatible(m, driver)) {
+        tooBig.push(m)
+        return false
+      }
       seen.add(m.id)
       return true
     })
   }
   for (const m of tooBig) {
-    result.warnings.push({ driverId: '', message: `${m.clientName || 'Mission'} (${m.address}) : benne ${m.binSizeM3} m³ trop grande pour le véhicule — à replanifier`, severity: 'error' })
+    result.warnings.push({
+      driverId: '',
+      message: `${m.clientName || 'Mission'} (${m.address}) : benne ${m.binSizeM3} m³ trop grande pour le véhicule — à replanifier`,
+      severity: 'error',
+    })
   }
   const unassignedIds = new Set(result.unassignedMissions.map(m => m.id))
   result.unassignedMissions = result.unassignedMissions.filter(m => !seen.has(m.id))
@@ -486,27 +663,34 @@ export function enforceMissionConservation(result: OptimizationResult, inputMiss
     result.unassignedMissions.push(...lost)
     result.warnings.push({
       driverId: '',
-      message:  `${lost.length} mission(s) n'ont pas pu être placées par l'optimiseur et restent à planifier`,
+      message: `${lost.length} mission(s) n'ont pas pu être placées par l'optimiseur et restent à planifier`,
       severity: 'warning',
     })
-    log.error('VRP output was missing missions — returned as unassigned', { count: lost.length, ids: lost.slice(0, 10).map(m => m.id) })
+    log.error('VRP output was missing missions — returned as unassigned', {
+      count: lost.length,
+      ids: lost.slice(0, 10).map(m => m.id),
+    })
   }
   if (removedDuplicates > 0) {
-    result.warnings.push({ driverId: '', message: `${removedDuplicates} doublon(s) de mission retiré(s) des tournées`, severity: 'warning' })
+    result.warnings.push({
+      driverId: '',
+      message: `${removedDuplicates} doublon(s) de mission retiré(s) des tournées`,
+      severity: 'warning',
+    })
     log.error('VRP output contained duplicated missions — removed', { count: removedDuplicates })
   }
   if (duplicateIds.length > 0) {
-    result.warnings.push({ driverId: '', message: `${duplicateIds.length} mission(s) en double dans la demande ont été ignorées`, severity: 'warning' })
+    result.warnings.push({
+      driverId: '',
+      message: `${duplicateIds.length} mission(s) en double dans la demande ont été ignorées`,
+      severity: 'warning',
+    })
   }
-  result.stats.totalMissions    = inputMissions.length
+  result.stats.totalMissions = inputMissions.length
   result.stats.assignedMissions = seen.size
 }
 
-function batchByWasteType(
-  solution: VRPSolution,
-  ctx: CostContext,
-  drivers: Driver[],
-): VRPSolution {
+function batchByWasteType(solution: VRPSolution, ctx: CostContext, drivers: Driver[]): VRPSolution {
   const result: VRPSolution = {
     routes: solution.routes.map(r => ({ driverId: r.driverId, missions: [...r.missions] })),
     cost: solution.cost,
@@ -531,21 +715,27 @@ function batchByWasteType(
 
     const reordered = [...p1Missions]
     for (const [, groupMissions] of groups) {
-
       const sorted: typeof groupMissions = []
       const remaining = [...groupMissions]
 
-      let lastLat = reordered.length > 0 ? reordered[reordered.length - 1].latitude
-        : (drivers.find(d => d.id === route.driverId)?.depotLat ?? 0)
-      let lastLng = reordered.length > 0 ? reordered[reordered.length - 1].longitude
-        : (drivers.find(d => d.id === route.driverId)?.depotLng ?? 0)
+      let lastLat =
+        reordered.length > 0
+          ? reordered[reordered.length - 1].latitude
+          : (drivers.find(d => d.id === route.driverId)?.depotLat ?? 0)
+      let lastLng =
+        reordered.length > 0
+          ? reordered[reordered.length - 1].longitude
+          : (drivers.find(d => d.id === route.driverId)?.depotLng ?? 0)
 
       while (remaining.length > 0) {
         let bestIdx = 0
         let bestDist = Infinity
         for (let i = 0; i < remaining.length; i++) {
           const d = (remaining[i].latitude - lastLat) ** 2 + (remaining[i].longitude - lastLng) ** 2
-          if (d < bestDist) { bestDist = d; bestIdx = i }
+          if (d < bestDist) {
+            bestDist = d
+            bestIdx = i
+          }
         }
         const m = remaining.splice(bestIdx, 1)[0]
         sorted.push(m)
@@ -622,7 +812,7 @@ export function compactRoutes(
         ]
         const candidateRoute = { driverId: targetRoute.driverId, missions: candidateMissions }
         const newCost = computeRouteCost(candidateRoute, ctx, drivers)
-        const delta = (newCost - baseCost) - currentShortCost
+        const delta = newCost - baseCost - currentShortCost
 
         if (delta < bestDelta) {
           bestDelta = delta
@@ -655,7 +845,6 @@ export function forceAssignP1(
   warnings?: OptimizationResult['warnings'],
   deadline?: number,
 ): VRPSolution {
-
   if (!solution || !solution.routes || solution.routes.length === 0) return solution
 
   const assignedIds = new Set(solution.routes.flatMap(r => r.missions.map(m => m.id)))
@@ -687,12 +876,11 @@ export function forceAssignP1(
 
   for (const mission of unassignedP1) {
     let bestRouteIdx = -1
-    let bestPos      = 0
-    let bestCost     = Infinity
+    let bestPos = 0
+    let bestCost = Infinity
 
     let candidateIndices: number[]
     if (useNearestOnly && routeCentroids) {
-
       const dists = routeCentroids.map((c, ri) => ({
         ri,
         dist: (c.lat - mission.latitude) ** 2 + (c.lng - mission.longitude) ** 2,
@@ -720,23 +908,18 @@ export function forceAssignP1(
       for (let pos = 0; pos <= maxPos; pos++) {
         const candidate = {
           driverId: route.driverId,
-          missions: [
-            ...route.missions.slice(0, pos),
-            mission,
-            ...route.missions.slice(pos),
-          ],
+          missions: [...route.missions.slice(0, pos), mission, ...route.missions.slice(pos)],
         }
         const cost = computeRouteCost(candidate, ctx, drivers)
         if (cost < bestCost) {
-          bestCost     = cost
+          bestCost = cost
           bestRouteIdx = ri
-          bestPos      = pos
+          bestPos = pos
         }
       }
     }
 
     if (bestRouteIdx === -1) {
-
       // No route passed both compatibility checks above (capacity/skills + ALLER_RETOUR-alone).
       // Before falling back to a blind "least loaded route" pick — which could silently violate
       // ALLER_RETOUR (a route must carry no other mission alongside one) or vehicle
@@ -747,7 +930,10 @@ export function forceAssignP1(
         const route = result.routes[ri]
         if (!isAllerRetourCompatible(route.missions, mission.type)) continue
         const load = route.missions.length
-        if (load < minLoad) { minLoad = load; bestRouteIdx = ri }
+        if (load < minLoad) {
+          minLoad = load
+          bestRouteIdx = ri
+        }
       }
 
       if (bestRouteIdx === -1) {
@@ -756,12 +942,15 @@ export function forceAssignP1(
         minLoad = Infinity
         for (let ri = 0; ri < result.routes.length; ri++) {
           const load = result.routes[ri].missions.length
-          if (load < minLoad) { minLoad = load; bestRouteIdx = ri }
+          if (load < minLoad) {
+            minLoad = load
+            bestRouteIdx = ri
+          }
         }
         if (bestRouteIdx === -1) bestRouteIdx = 0
         warnings?.push({
           driverId: result.routes[bestRouteIdx]?.driverId ?? '',
-          message:  `Urgence ${mission.clientName || ''} (${mission.address}) forcée sur une tournée sans respecter toutes ses contraintes (véhicule/ALLER_RETOUR) — aucune tournée compatible disponible`,
+          message: `Urgence ${mission.clientName || ''} (${mission.address}) forcée sur une tournée sans respecter toutes ses contraintes (véhicule/ALLER_RETOUR) — aucune tournée compatible disponible`,
           severity: 'warning',
         })
       }
@@ -799,7 +988,7 @@ function runVRPDirect(
     destroyRatio,
     saT0Ratio,
     saTMinRatio,
-    rhoForget:    0.8,
+    rhoForget: 0.8,
   }
 
   if (missions.length === 0) {
@@ -808,7 +997,7 @@ function runVRPDirect(
     return empty
   }
 
-  const GRASP_STARTS = (timeBudgetMs > 3000 && !existingPlans) ? 3 : 1
+  const GRASP_STARTS = timeBudgetMs > 3000 && !existingPlans ? 3 : 1
   let bestInitial = buildInitialSolution(missions, drivers, ctx, existingPlans)
   bestInitial.cost = computeSolutionCost(bestInitial.routes, ctx, drivers)
 
@@ -816,20 +1005,19 @@ function runVRPDirect(
     const shuffled = [...missions]
 
     if (g === 1) {
-
       shuffled.sort((a, b) => {
-        const pa = a.priority ?? 4, pb = b.priority ?? 4
+        const pa = a.priority ?? 4,
+          pb = b.priority ?? 4
         if (pa !== pb) return pa - pb
         const twA = a.timeWindow?.openMin ?? 480
         const twB = b.timeWindow?.openMin ?? 480
         return twA - twB
       })
     } else {
-
       const centLat = shuffled.reduce((s, m) => s + m.latitude, 0) / Math.max(1, shuffled.length)
       const centLng = shuffled.reduce((s, m) => s + m.longitude, 0) / Math.max(1, shuffled.length)
 
-      let rngState = ((seed + g * 7919) >>> 0) || 1
+      let rngState = (seed + g * 7919) >>> 0 || 1
       const xorshift = (): number => {
         rngState ^= rngState << 13
         rngState ^= rngState >> 17
@@ -837,11 +1025,12 @@ function runVRPDirect(
         return (rngState >>> 0) / 0x100000000
       }
       shuffled.sort((a, b) => {
-        const pa = a.priority ?? 4, pb = b.priority ?? 4
+        const pa = a.priority ?? 4,
+          pb = b.priority ?? 4
         if (pa !== pb) return pa - pb
         const da = (a.latitude - centLat) ** 2 + (a.longitude - centLng) ** 2
         const db = (b.latitude - centLat) ** 2 + (b.longitude - centLng) ** 2
-        return da - db || (xorshift() - 0.5)
+        return da - db || xorshift() - 0.5
       })
     }
 
@@ -872,7 +1061,7 @@ async function runVRPWithSectors(
 
   const crossFraction = drivers.length > 200 ? 0.08 : 0.15
   const CROSS_SECTOR_BUDGET_MS = Math.min(3_000, timeBudgetMs * crossFraction)
-  const FORMAT_MARGIN_MS       = 500
+  const FORMAT_MARGIN_MS = 500
   const alnsTotal = Math.max(0, timeBudgetMs - CROSS_SECTOR_BUDGET_MS - FORMAT_MARGIN_MS)
 
   const sectorSize = targetSectorSize(drivers.length)
@@ -888,7 +1077,10 @@ async function runVRPWithSectors(
     const dRatio = s.drivers.length / totalD
     return mRatio * 0.7 + dRatio * 0.3
   })
-  const totalComplexity = Math.max(1e-9, sectorComplexity.reduce((a, b) => a + b, 0))
+  const totalComplexity = Math.max(
+    1e-9,
+    sectorComplexity.reduce((a, b) => a + b, 0),
+  )
   const perSectorBudgets = sectorComplexity.map(c =>
     Math.max(200, Math.round((c / totalComplexity) * alnsTotal)),
   )
@@ -902,23 +1094,23 @@ async function runVRPWithSectors(
     if (sector.drivers.length === 0) continue
 
     const sectorBudget = perSectorBudgets[si]
-    const sectorSeed   = seed + si * 1000
+    const sectorSeed = seed + si * 1000
 
     let sectorPlans: Record<string, string[]> | undefined
     if (existingPlans) {
       const driverSet = new Set(sector.drivers.map(d => d.id))
-      const filtered  = Object.entries(existingPlans).filter(([id]) => driverSet.has(id))
+      const filtered = Object.entries(existingPlans).filter(([id]) => driverSet.has(id))
       if (filtered.length > 0) sectorPlans = Object.fromEntries(filtered)
     }
 
     const params: ALNSParams = {
       timeBudgetMs: Math.max(100, sectorBudget - 200),
-      seed:         sectorSeed,
+      seed: sectorSeed,
       iterations,
       destroyRatio,
       saT0Ratio,
       saTMinRatio,
-      rhoForget:    0.85,
+      rhoForget: 0.85,
     }
 
     const sectorCtx: CostContext = {
@@ -928,12 +1120,12 @@ async function runVRPWithSectors(
     }
 
     sectorTasks.push({
-      missions:      sector.missions,
-      drivers:       sector.drivers,
-      ctx:           sectorCtx,
+      missions: sector.missions,
+      drivers: sector.drivers,
+      ctx: sectorCtx,
       params,
       existingPlans: sectorPlans,
-      sectorIndex:   sectorTasks.length,
+      sectorIndex: sectorTasks.length,
     })
     taskSector.push(si)
   }
@@ -944,7 +1136,7 @@ async function runVRPWithSectors(
 
   const merged: VRPSolution = {
     routes: sectorSolutions.flatMap(s => s.routes),
-    cost:   sectorSolutions.reduce((sum, s) => sum + (s.cost ?? 0), 0),
+    cost: sectorSolutions.reduce((sum, s) => sum + (s.cost ?? 0), 0),
   }
 
   const crossDeadline = startTs + timeBudgetMs - FORMAT_MARGIN_MS
@@ -952,17 +1144,20 @@ async function runVRPWithSectors(
     let crossTarget: VRPSolution
 
     if (nSectors > 10) {
-
       const centroids = sectors.map(s => {
-        const lat = s.drivers.reduce((sum, d) => sum + d.depotLat, 0) / Math.max(1, s.drivers.length)
-        const lng = s.drivers.reduce((sum, d) => sum + d.depotLng, 0) / Math.max(1, s.drivers.length)
+        const lat =
+          s.drivers.reduce((sum, d) => sum + d.depotLat, 0) / Math.max(1, s.drivers.length)
+        const lng =
+          s.drivers.reduce((sum, d) => sum + d.depotLng, 0) / Math.max(1, s.drivers.length)
         return { lat, lng }
       })
 
       const K_NEIGHBORS = 3
       const neighborRouteIndices = new Set<number>()
       let routeOffset = 0
-      const sectorRouteRanges: Array<{ start: number; end: number } | undefined> = sectors.map(() => undefined)
+      const sectorRouteRanges: Array<{ start: number; end: number } | undefined> = sectors.map(
+        () => undefined,
+      )
 
       for (let ti = 0; ti < sectorSolutions.length; ti++) {
         const n = sectorSolutions[ti].routes.length
@@ -974,7 +1169,10 @@ async function runVRPWithSectors(
         const dists = centroids
           .map((c, sj) => ({
             sj,
-            dist: si === sj ? Infinity : (c.lat - centroids[si].lat) ** 2 + (c.lng - centroids[si].lng) ** 2,
+            dist:
+              si === sj
+                ? Infinity
+                : (c.lat - centroids[si].lat) ** 2 + (c.lng - centroids[si].lng) ** 2,
           }))
           .sort((a, b) => a.dist - b.dist)
           .slice(0, K_NEIGHBORS)
@@ -988,11 +1186,14 @@ async function runVRPWithSectors(
       }
 
       crossTarget = {
-        routes: Array.from(neighborRouteIndices).sort((a, b) => a - b).map(i => merged.routes[i]),
+        routes: Array.from(neighborRouteIndices)
+          .sort((a, b) => a - b)
+          .map(i => merged.routes[i]),
         cost: 0,
       }
       crossTarget.cost = crossTarget.routes.reduce(
-        (sum, r) => sum + computeRouteCost(r, ctx, drivers), 0,
+        (sum, r) => sum + computeRouteCost(r, ctx, drivers),
+        0,
       )
     } else {
       crossTarget = merged
@@ -1000,20 +1201,16 @@ async function runVRPWithSectors(
 
     const improved = crossRouteOrOpt(crossTarget, ctx, drivers, crossDeadline)
     const improvedCost = improved.routes.reduce(
-      (sum, r) => sum + computeRouteCost(r, ctx, drivers), 0,
+      (sum, r) => sum + computeRouteCost(r, ctx, drivers),
+      0,
     )
 
     if (nSectors > 10) {
-
       if (improvedCost < crossTarget.cost) {
-        const neighborSet = new Set(
-          improved.routes.map(r => r.driverId),
-        )
+        const neighborSet = new Set(improved.routes.map(r => r.driverId))
         const untouchedRoutes = merged.routes.filter(r => !neighborSet.has(r.driverId))
         const finalRoutes = [...untouchedRoutes, ...improved.routes]
-        const finalCost = finalRoutes.reduce(
-          (sum, r) => sum + computeRouteCost(r, ctx, drivers), 0,
-        )
+        const finalCost = finalRoutes.reduce((sum, r) => sum + computeRouteCost(r, ctx, drivers), 0)
         return { routes: finalRoutes, cost: finalCost }
       }
     } else if (improvedCost < merged.cost) {

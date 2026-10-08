@@ -198,6 +198,8 @@ export type PlanInput = z.infer<typeof PlanSchema>
 export const LoginSchema = z.object({
   password: z.string().min(1).max(1000, 'Mot de passe trop long'),
   email:    z.string().min(1).max(254).email().optional(),
+  // Second factor of a superadmin account that has enabled it (6 digits, spaces tolerated).
+  totp:     z.string().max(12).optional(),
 })
 
 export type LoginInput = z.infer<typeof LoginSchema>

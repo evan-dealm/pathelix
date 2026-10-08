@@ -28,10 +28,47 @@ export interface SpeedPoint {
   speedKmh: number
 }
 
-const DAY_MS = 86_400_000
-/** No time zone is further than 14 h from UTC: a local day always sits inside this margin. */
-const TZ_MARGIN_MS = 14 * 3600_000
 const FALLBACK_TIME_ZONE = 'Europe/Paris'
+
+/**
+ * Both reads are polled by every open dispatch screen (map: 15 s, telematics tab: 30 s) and give
+ * the same answer to all the screens of an organisation. The answer is kept a few seconds and a
+ * read already in progress is shared: N screens cost one query per period, not N. Measured on a
+ * 500-driver organisation: the speed history of a day aggregates 540 000 readings (≈ 1.5 s).
+ */
+const LATEST_TTL_MS = 3_000
+const HISTORY_TTL_MS = 20_000
+const CACHE_MAX_ENTRIES = 300
+
+interface CacheEntry {
+  at: number
+  value: Promise<unknown>
+}
+const _cache: Map<string, CacheEntry> = ((
+  globalThis as unknown as { __pathelixPositionsCache?: Map<string, CacheEntry> }
+).__pathelixPositionsCache ??= new Map())
+
+function shared<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+  const now = Date.now()
+  const hit = _cache.get(key)
+  if (hit && now - hit.at < ttlMs) return hit.value as Promise<T>
+  const value = load()
+  _cache.set(key, { at: now, value })
+  // A failed read is not kept: the next caller tries again.
+  value.catch(() => {
+    if (_cache.get(key)?.value === value) _cache.delete(key)
+  })
+  if (_cache.size > CACHE_MAX_ENTRIES) {
+    for (const [k, e] of _cache) if (now - e.at > HISTORY_TTL_MS) _cache.delete(k)
+    while (_cache.size > CACHE_MAX_ENTRIES) _cache.delete(_cache.keys().next().value as string)
+  }
+  return value
+}
+
+/** Test hook. */
+export function _clearPositionsCache(): void {
+  _cache.clear()
+}
 
 /** A zone PostgreSQL will accept; an unknown one in the tenant settings must not fail the map. */
 function safeTimeZone(timeZone: string): string {
@@ -44,7 +81,19 @@ function safeTimeZone(timeZone: string): string {
 }
 
 /** Latest position of each driver of the tenant since `since` (one row per driver). */
-export async function latestPositions(
+export function latestPositions(
+  tenantId: string,
+  opts: { since: Date; driverIds?: string[] },
+): Promise<LivePosition[]> {
+  // "since" is "now minus 12 h" for every caller: rounded to the minute so that they share a key.
+  const sinceKey = Math.floor(opts.since.getTime() / 60_000)
+  const idsKey = opts.driverIds ? [...opts.driverIds].sort().join(',') : '*'
+  return shared(`latest|${tenantId}|${sinceKey}|${idsKey}`, LATEST_TTL_MS, () =>
+    queryLatestPositions(tenantId, opts),
+  )
+}
+
+async function queryLatestPositions(
   tenantId: string,
   opts: { since: Date; driverIds?: string[] },
 ): Promise<LivePosition[]> {
@@ -87,20 +136,33 @@ export async function latestPositions(
  * minute, per driver. Minutes are local to the tenant, which is what the dispatcher's 05h–22h
  * graph plots — not the server's clock.
  */
-export async function speedHistory(
+export function speedHistory(
   tenantId: string,
   date: string,
   timeZone: string,
   driverIds?: string[],
 ): Promise<Record<string, SpeedPoint[]>> {
-  const utcMidnight = /^\d{4}-\d{2}-\d{2}$/.test(date) ? Date.parse(`${date}T00:00:00Z`) : NaN
-  if (Number.isNaN(utcMidnight)) return {}
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+    return Promise.resolve({})
+  }
   const zone = safeTimeZone(timeZone)
+  const idsKey = driverIds ? [...driverIds].sort().join(',') : '*'
+  return shared(`history|${tenantId}|${date}|${zone}|${idsKey}`, HISTORY_TTL_MS, () =>
+    querySpeedHistory(tenantId, date, zone, driverIds),
+  )
+}
+
+async function querySpeedHistory(
+  tenantId: string,
+  date: string,
+  zone: string,
+  driverIds?: string[],
+): Promise<Record<string, SpeedPoint[]>> {
   const all = !driverIds
   const ids = driverIds ?? []
-  // The UTC window only narrows the index scan; the local-day filter below is the real one.
-  const from = new Date(utcMidnight - TZ_MARGIN_MS).toISOString()
-  const to = new Date(utcMidnight + DAY_MS + TZ_MARGIN_MS).toISOString()
+  // The index is scanned over exactly the local day (its two ends converted to UTC by
+  // PostgreSQL, daylight saving included) — it used to read a 52-hour window to be safe, twice
+  // the rows. The local-day filter below stays as the definition of "that day".
   const rows = await unscopedPrisma.$queryRaw<
     Array<{ driverId: string; minute: number; speedKmh: number }>
   >`
@@ -110,8 +172,8 @@ export async function speedHistory(
              ("recordedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${zone} AS local_ts
       FROM "DriverPosition"
       WHERE "tenantId" = ${tenantId}
-        AND "recordedAt" >= (${from}::timestamptz AT TIME ZONE 'UTC')
-        AND "recordedAt" <  (${to}::timestamptz AT TIME ZONE 'UTC')
+        AND "recordedAt" >= ((${date}::date)::timestamp AT TIME ZONE ${zone}) AT TIME ZONE 'UTC'
+        AND "recordedAt" <  ((${date}::date + 1)::timestamp AT TIME ZONE ${zone}) AT TIME ZONE 'UTC'
         AND "speedKmh" IS NOT NULL
         AND (${all}::boolean OR "driverId" = ANY(${ids}::text[]))
     ) p

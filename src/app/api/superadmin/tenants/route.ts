@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const log = createLogger('/api/superadmin/tenants')
 
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
   let raw: unknown
@@ -80,6 +81,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         slug: parsed.data.slug,
         plan: parsed.data.plan ?? 'FREE',
       },
+    })
+
+    await logSuperadminAction({
+      superadminId,
+      targetTenantId: tenant.id,
+      isImpersonation: false,
+      method: 'POST',
+      path: '/api/superadmin/tenants',
+      action: 'tenant_created',
+      details: { tenantName: tenant.name, tenantSlug: tenant.slug, plan: tenant.plan },
     })
 
     log.info('Tenant created', { tenantId: tenant.id, slug: tenant.slug })

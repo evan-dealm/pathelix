@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { apiRoute, unprocessable } from '@/lib/api/route'
+import { ApiError, apiRoute, unprocessable } from '@/lib/api/route'
 import type { Driver, Mission } from '@/lib/types'
 import { getPlanningDrivers, withEstimatedWeights } from '@/lib/data/planning'
 import { getMissionsByDate } from '@/lib/data/missions'
 import { getAllExutoires } from '@/lib/data/exutoires'
 import { planningOptionsFromSettings } from '@/lib/vrp/tenantOptions'
-import { runVRP } from '@/lib/vrp'
+import { runVRPOffThread, SolverBusyError } from '@/lib/vrp/solverPool'
 import { summarizePlan } from '@/lib/vrp/summary'
 
 const SimSchema = z.object({
@@ -58,8 +58,15 @@ export const POST = apiRoute({ name: '/api/optimize/simulate', permission: 'opti
   }
   const startTime = scenario.startTime ?? baseStart
 
-  const base = await runVRP(missions, planning.drivers, exutoires, date, { ...common, defaultStartTime: baseStart })
-  const sim = await runVRP(simMissions, drivers, exutoires, date, { ...common, defaultStartTime: startTime })
+  // Both searches run in solver threads (side by side when two are available), never in the
+  // event loop of the web server.
+  const [base, sim] = await Promise.all([
+    runVRPOffThread(missions, planning.drivers, exutoires, date, { ...common, defaultStartTime: baseStart }),
+    runVRPOffThread(simMissions, drivers, exutoires, date, { ...common, defaultStartTime: startTime }),
+  ]).catch(err => {
+    if (err instanceof SolverBusyError) throw new ApiError(503, err.message, 'SOLVER_BUSY')
+    throw err
+  })
   return {
     budgetMs: BUDGET_MS,
     baseline: summarizePlan(base.assignments, base.unassignedMissions, planning.drivers, exutoires, baseStart, speed),

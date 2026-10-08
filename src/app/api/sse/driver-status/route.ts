@@ -1,18 +1,15 @@
-import { NextRequest }          from 'next/server'
-import { createLogger }         from '@/lib/logger'
-import { getTenantId }          from '@/lib/data/context'
-import { metrics, METRIC }      from '@/lib/metrics'
-import { REDIS_AVAILABLE }      from '@/lib/redisClient'
-import { redisBaseOptions, withTimeout } from '@/lib/queue/connection'
-import { channelName }          from '@/lib/driverStatusPubSub'
-import { loadStatusSnapshot, type StatusSnapshot } from '@/lib/driverStatusSnapshot'
+import { NextRequest } from 'next/server'
+import { createLogger } from '@/lib/logger'
+import { getTenantId } from '@/lib/data/context'
+import { metrics, METRIC } from '@/lib/metrics'
+import { REDIS_AVAILABLE } from '@/lib/redisClient'
+import { getStatusHub } from '@/lib/driverStatusHub'
 
 const log = createLogger('/api/sse/driver-status')
 
-const MAX_CONNECTIONS_PER_TENANT = parseInt(process.env.SSE_MAX_CONNECTIONS_PER_TENANT ?? '200', 10) || 200
-const POLL_MS       = 5_000
-const KEEPALIVE_MS  = 25_000
-const SUBSCRIBE_TIMEOUT_MS = 3_000
+const MAX_CONNECTIONS_PER_TENANT =
+  parseInt(process.env.SSE_MAX_CONNECTIONS_PER_TENANT ?? '200', 10) || 200
+const KEEPALIVE_MS = 25_000
 
 const _connectionsByTenant = new Map<string, number>()
 
@@ -31,9 +28,10 @@ function release(tenantId: string): void {
 
 /**
  * Live field progress for the dispatch view. The payload is always the full snapshot read from
- * the database (Plan.statuses); Redis pub/sub is only used as a "something changed" signal so
- * every instance pushes updates immediately. Without Redis — or if it fails mid-stream — the
- * stream keeps working by polling the database every POLL_MS.
+ * the database (Plan.statuses); Redis pub/sub is only a "something changed" signal. Screens of
+ * the same organisation and day share one snapshot read per change and the process holds a
+ * single Redis subscriber (src/lib/driverStatusHub.ts). Without Redis — or while it is down —
+ * the hub polls the database for them.
  */
 export async function GET(req: NextRequest): Promise<Response> {
   const tenantId = getTenantId(req)
@@ -45,26 +43,23 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!acquire(tenantId)) {
     log.warn('SSE connection limit reached', { tenantId, limit: MAX_CONNECTIONS_PER_TENANT })
     return new Response(JSON.stringify({ error: 'Trop de connexions temps réel pour ce compte' }), {
-      status: 429, headers: { 'Content-Type': 'application/json' },
+      status: 429,
+      headers: { 'Content-Type': 'application/json' },
     })
   }
   metrics.increment(METRIC.SSE_CONNECTIONS, { type: REDIS_AVAILABLE ? 'redis' : 'polling' })
 
   const encoder = new TextEncoder()
   let closed = false
-  let lastJson = ''
-  const timers: Array<ReturnType<typeof setInterval>> = []
-  let subscriber: import('ioredis').Redis | null = null
+  let keepAlive: ReturnType<typeof setInterval> | null = null
+  let unsubscribe: (() => void) | null = null
 
   function cleanup(): void {
     if (closed) return
     closed = true
-    timers.forEach(clearInterval)
-    if (subscriber) {
-      subscriber.removeAllListeners()
-      subscriber.disconnect()
-      subscriber = null
-    }
+    if (keepAlive) clearInterval(keepAlive)
+    unsubscribe?.()
+    unsubscribe = null
     release(tenantId)
   }
 
@@ -76,59 +71,43 @@ export async function GET(req: NextRequest): Promise<Response> {
     async start(controller) {
       const send = (chunk: string) => {
         if (closed) return
-        try { controller.enqueue(encoder.encode(chunk)) } catch { cleanup() }
-      }
-
-      const pushSnapshot = async (force = false) => {
-        let snapshot: StatusSnapshot
         try {
-          snapshot = await loadStatusSnapshot(tenantId, date)
-        } catch (err) {
-          log.warn('Snapshot read failed', { err: err instanceof Error ? err.message : String(err) })
-          return
-        }
-        const json = JSON.stringify(snapshot)
-        if (force || json !== lastJson) {
-          lastJson = json
-          send(`data: ${json}\n\n`)
+          controller.enqueue(encoder.encode(chunk))
+        } catch {
+          cleanup()
         }
       }
 
-      let polling = false
-      const startPolling = () => {
-        if (polling || closed) return
-        polling = true
-        timers.push(setInterval(() => void pushSnapshot(), POLL_MS))
-      }
-
-      timers.push(setInterval(() => send(': keep-alive\n\n'), KEEPALIVE_MS))
-      await pushSnapshot(true)
-
-      if (!REDIS_AVAILABLE) { startPolling(); return }
-
+      keepAlive = setInterval(() => send(': keep-alive\n\n'), KEEPALIVE_MS)
       try {
-        const { default: Redis } = await import('ioredis')
-        subscriber = new Redis({ ...redisBaseOptions(), lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: SUBSCRIBE_TIMEOUT_MS })
-        // Handlers before connecting: an early error must fall back, not crash the process.
-        subscriber.on('error', () => startPolling())
-        subscriber.on('end', () => startPolling())
-        subscriber.on('message', () => void pushSnapshot())
-        await withTimeout(subscriber.subscribe(channelName(tenantId, date)), SUBSCRIBE_TIMEOUT_MS, 'SSE subscribe')
-        if (closed) cleanup()
-      } catch {
-        log.warn('Redis subscribe unavailable — polling the database instead')
-        if (subscriber) { subscriber.removeAllListeners(); subscriber.disconnect(); subscriber = null }
-        startPolling()
+        const off = await getStatusHub().subscribe(tenantId, date, json =>
+          send(`data: ${json}\n\n`),
+        )
+        // The client may have gone while the first snapshot was being read.
+        if (closed) off()
+        else unsubscribe = off
+      } catch (err) {
+        log.warn('Live view subscription failed', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+        cleanup()
+        try {
+          controller.close()
+        } catch {
+          /* already closed */
+        }
       }
     },
-    cancel() { cleanup() },
+    cancel() {
+      cleanup()
+    },
   })
 
   return new Response(stream, {
     headers: {
-      'Content-Type':      'text/event-stream',
-      'Cache-Control':     'no-cache, no-transform',
-      'Connection':        'keep-alive',
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     },
   })

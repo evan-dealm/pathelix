@@ -4,6 +4,7 @@ import { createLogger } from '@/lib/logger'
 import { getRequestContext, invalidateSuspensionCache } from '@/lib/data/context'
 import { revokeSessionsForTenant } from '@/lib/session'
 import { logSuperadminAction } from '@/lib/superadminAudit'
+import { PLATFORM_TENANT_SLUG } from '@/lib/superadminPolicy'
 
 const log = createLogger('/api/superadmin/tenants/[id]/suspend')
 
@@ -19,6 +20,9 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   try {
     const tenant = await prisma.tenant.findUnique({ where: { id } })
     if (!tenant) return NextResponse.json({ error: 'Tenant introuvable' }, { status: 404 })
+    if (tenant.slug === PLATFORM_TENANT_SLUG) {
+      return NextResponse.json({ error: "L'organisation plateforme ne peut pas être suspendue" }, { status: 409 })
+    }
     if (tenant.suspendedAt) return NextResponse.json({ error: 'Tenant déjà suspendu' }, { status: 409 })
 
     await prisma.tenant.update({
@@ -29,7 +33,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     invalidateSuspensionCache(id)
     revokeSessionsForTenant(id)
 
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId,
       targetTenantId: id,
       isImpersonation: false,

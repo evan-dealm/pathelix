@@ -3,8 +3,11 @@
 # Image légère : runtime Node.js + code source TS exécuté par tsx (pas de build Next.js).
 # Une seule image pour les cinq workers ; docker-compose.yml choisit le process par service.
 
+# Same runtime as the app image (Node 20 is end of life since April 2026).
+ARG NODE_VERSION=24
+
 # Stage 1: Dependencies
-FROM node:20-alpine AS deps
+FROM node:${NODE_VERSION}-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 # postinstall (scripts/sync-maplibre-worker.js) must exist before `npm ci`.
@@ -12,17 +15,18 @@ COPY scripts ./scripts
 RUN npm ci
 
 # Stage 2: Build Prisma client
-FROM node:20-alpine AS builder
+FROM node:${NODE_VERSION}-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY prisma ./prisma
-COPY src/generated ./src/generated
+# The client is generated here: src/generated is not in the repository, so a fresh clone has none.
+COPY prisma.config.ts ./
 ARG DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 ENV DATABASE_URL=${DATABASE_URL}
 RUN npx prisma generate
 
 # Stage 3: Production
-FROM node:20-alpine AS runner
+FROM node:${NODE_VERSION}-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
@@ -36,10 +40,13 @@ COPY scripts ./scripts
 COPY tsconfig.json ./
 COPY package.json ./
 
-RUN npm install -g tsx
+# tsx comes from the lockfile (node_modules/.bin), not from an unpinned global install.
+ENV PATH=/app/node_modules/.bin:$PATH
 
 # Le worker PDF tourne en bundle ESM (cf. pdfWorker.ts : @react-pdf chargé deux fois sinon).
 RUN npm run build:worker:pdf
+# Solver thread bundle used by the VRP worker (src/lib/vrp/solverPool.ts).
+RUN npm run build:solver
 
 RUN addgroup --system --gid 1001 worker && \
     adduser --system --uid 1001 --ingroup worker worker

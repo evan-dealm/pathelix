@@ -106,8 +106,23 @@ model User {
   updatedAt    DateTime @updatedAt
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   permissions  UserPermission[]
+  totp         SuperadminTotp?
 
   @@index([tenantId])
+}
+
+// Second factor of a superadmin account (TOTP). A separate table, not columns on User: the
+// login query of every other account never reads it. `secret` is encrypted (configCrypto);
+// `enabledAt` is null until a first code has been verified; `lastStep` is the last accepted
+// 30-second step, so a code cannot be replayed.
+model SuperadminTotp {
+  userId    String    @id
+  secret    Json
+  enabledAt DateTime?
+  lastStep  Int?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Driver {
@@ -146,7 +161,6 @@ model Driver {
   plans            Plan[]
   vehicles         Vehicle[]
 
-  @@index([tenantId])
   @@index([tenantId, archived])
   @@index([tenantId, sector])
 }
@@ -358,10 +372,10 @@ model Mission {
   proof                DeliveryProof?
   bsds                 Bsd[]
 
-  @@index([tenantId])
-  @@index([tenantId, date])
+  // Prefixes of [tenantId, date, archived, priority] are not indexed separately: that index serves them.
+
   @@index([tenantId, archived])
-  @@index([tenantId, date, archived])
+
   @@index([tenantId, priority])
   @@index([linkedExutoireId])
   @@index([clientId])
@@ -640,9 +654,9 @@ model DriverPosition {
   createdAt  DateTime @default(now())
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, driverId])
+  // No [tenantId, driverId] nor [driverId, recordedAt] index: both are covered by the index below (every query carries tenantId). They were a third of this table's index size and of its write cost.
   @@index([tenantId, recordedAt])
-  @@index([driverId, recordedAt(sort: Desc)])
+
   @@index([tenantId, driverId, recordedAt(sort: Desc)])
 }
 
@@ -657,7 +671,6 @@ model AuditLog {
   createdAt  DateTime @default(now())
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, entityType])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, createdAt(sort: Desc)])
   @@index([createdAt])

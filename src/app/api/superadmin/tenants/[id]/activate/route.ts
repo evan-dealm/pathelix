@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     invalidateSuspensionCache(id)
     unrevokeSessionsForTenant(id)
 
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId,
       targetTenantId: id,
       isImpersonation: false,

@@ -176,7 +176,7 @@ describe('POST /api/auth/change-password', () => {
 describe('POST /api/superadmin/tenants/[id]/resources', () => {
   it('returns 403 for non-superadmin', async () => {
     mockGetCtx.mockReturnValueOnce({ tenantId: 't1', userId: 'u1', role: 'admin', requestId: 'req-123', trade: null })
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { name: 'X' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { firstName: 'X' } }), makeParams('t1'))
     expect(res.status).toBe(403)
   })
 
@@ -198,7 +198,7 @@ describe('POST /api/superadmin/tenants/[id]/resources', () => {
 
   it('returns 200 on create driver', async () => {
     mockDriverCreate.mockResolvedValueOnce({ id: 'drv-1', name: 'Test Driver' })
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { name: 'Test Driver' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { firstName: 'Test', lastName: 'Driver' } }), makeParams('t1'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ok).toBe(true)
@@ -208,20 +208,20 @@ describe('POST /api/superadmin/tenants/[id]/resources', () => {
   })
 
   it('returns 422 when update without id', async () => {
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'update', data: { name: 'X' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'update', data: { firstName: 'X' } }), makeParams('t1'))
     expect(res.status).toBe(422)
   })
 
   it('returns 404 when update resource not in tenant', async () => {
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 'other-tenant' })
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'update', id: 'drv-1', data: { name: 'X' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'update', id: 'drv-1', data: { firstName: 'X' } }), makeParams('t1'))
     expect(res.status).toBe(404)
   })
 
   it('returns 200 on update driver', async () => {
     mockDriverFindUnique.mockResolvedValueOnce({ tenantId: 't1' })
     mockDriverUpdate.mockResolvedValueOnce({ id: 'drv-1', name: 'Updated' })
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'update', id: 'drv-1', data: { name: 'Updated' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'update', id: 'drv-1', data: { firstName: 'Updated' } }), makeParams('t1'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ok).toBe(true)
@@ -249,7 +249,7 @@ describe('POST /api/superadmin/tenants/[id]/resources', () => {
 
   it('returns 500 on DB error', async () => {
     mockDriverCreate.mockRejectedValueOnce(new Error('DB crash'))
-    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { name: 'X' } }), makeParams('t1'))
+    const res = await resources(makeRes('t1', { entity: 'driver', action: 'create', data: { firstName: 'X' } }), makeParams('t1'))
     expect(res.status).toBe(500)
   })
 })

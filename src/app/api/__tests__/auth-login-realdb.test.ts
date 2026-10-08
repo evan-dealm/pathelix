@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
 import { NextRequest } from 'next/server'
+import { totpCode, totpStep } from '@/lib/totp'
 
 // ── top-level mocks registered before ANY import ─────────────────────────────
 
@@ -35,10 +36,13 @@ vi.mock('bcryptjs', () => ({ compare: mockBcryptCompare }))
 
 const mockUserFindFirst  = vi.hoisted(() => vi.fn())
 const mockTenantFindUniq = vi.hoisted(() => vi.fn())
+// Second factor of superadmin accounts (SuperadminTotp): none configured unless a test says so.
+const mockTotpFindUniq   = vi.hoisted(() => vi.fn())
+const mockTotpUpdateMany = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/db', () => ({
   default: { tenant: { findUnique: mockTenantFindUniq } },
-  prisma:  { user: { findUnique: mockUserFindFirst } },
+  prisma:  { user: { findUnique: mockUserFindFirst }, superadminTotp: { findUnique: mockTotpFindUniq, updateMany: mockTotpUpdateMany } },
 }))
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -94,7 +98,7 @@ describe('POST /api/auth/login — real DB mode', () => {
     vi.mock('bcryptjs', () => ({ compare: mockBcryptCompare }))
     vi.mock('@/lib/db', () => ({
       default: { tenant: { findUnique: mockTenantFindUniq } },
-      prisma:  { user: { findUnique: mockUserFindFirst } },
+      prisma:  { user: { findUnique: mockUserFindFirst }, superadminTotp: { findUnique: mockTotpFindUniq, updateMany: mockTotpUpdateMany } },
     }))
 
     const mod = await import('@/app/api/auth/login/route')
@@ -113,6 +117,10 @@ describe('POST /api/auth/login — real DB mode', () => {
     mockBcryptCompare.mockReset()
     mockBcryptCompare.mockResolvedValue(true)
     mockUserFindFirst.mockResolvedValue({ ...BASE_USER })
+    mockTotpFindUniq.mockReset()
+    mockTotpFindUniq.mockResolvedValue(null)
+    mockTotpUpdateMany.mockReset()
+    mockTotpUpdateMany.mockResolvedValue({ count: 1 })
   })
 
   // ── rate limit ─────────────────────────────────────────────────────────────
@@ -258,6 +266,58 @@ describe('POST /api/auth/login — real DB mode', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.redirectTo).toBe('/superadmin')
+  })
+
+  // ── superadmin second factor ───────────────────────────────────────────────
+
+  describe('superadmin with a second factor', () => {
+    const SECRET = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+    const SUPERADMIN = { ...BASE_USER, id: 'sa-1', role: 'SUPERADMIN', tenant: null }
+    const login = (totp?: string) => POST(makeLogin({ email: 'sa@system.com', password: 'pass', totp }))
+
+    beforeEach(() => {
+      mockUserFindFirst.mockResolvedValue(SUPERADMIN)
+      mockTotpFindUniq.mockResolvedValue({ userId: 'sa-1', secret: { secret: SECRET }, enabledAt: new Date(), lastStep: null })
+    })
+
+    it('asks for the code and opens no session when it is missing', async () => {
+      const res = await login()
+      expect(res.status).toBe(401)
+      expect((await res.json()).totpRequired).toBe(true)
+      expect(res.headers.get('set-cookie')).toBeNull()
+    })
+
+    it('refuses a wrong code', async () => {
+      const res = await login('000000')
+      expect(res.status).toBe(401)
+      expect((await res.json()).totpRequired).toBe(true)
+      expect(res.headers.get('set-cookie')).toBeNull()
+    })
+
+    it('signs in with the right code and claims its step', async () => {
+      const res = await login(totpCode(SECRET, totpStep()))
+      expect(res.status).toBe(200)
+      expect((await res.json()).redirectTo).toBe('/superadmin')
+      expect(mockTotpUpdateMany.mock.calls[0][0].data.lastStep).toBe(totpStep())
+    })
+
+    it('refuses a code whose step another request already claimed (replay)', async () => {
+      mockTotpUpdateMany.mockResolvedValue({ count: 0 })
+      const res = await login(totpCode(SECRET, totpStep()))
+      expect(res.status).toBe(401)
+      expect(res.headers.get('set-cookie')).toBeNull()
+    })
+
+    it('does not ask for a code while the enrolment is unconfirmed', async () => {
+      mockTotpFindUniq.mockResolvedValue({ userId: 'sa-1', secret: { secret: SECRET }, enabledAt: null, lastStep: null })
+      expect((await login()).status).toBe(200)
+    })
+
+    it('never reads the second factor for another role', async () => {
+      mockUserFindFirst.mockResolvedValue({ ...BASE_USER })
+      expect((await POST(makeLogin({ email: 'admin@tenant.com', password: 'pass' }))).status).toBe(200)
+      expect(mockTotpFindUniq).not.toHaveBeenCalled()
+    })
   })
 
   it('200 driver → redirectTo /driver/{driverRef}', async () => {

@@ -9,7 +9,7 @@ import { planningOptionsFromSettings } from '@/lib/vrp/tenantOptions'
 import type { DriverStartOverride } from '@/lib/vrp/types'
 import { getMissionsByDate } from '@/lib/data/missions'
 import { getAllExutoires } from '@/lib/data/exutoires'
-import { runVRP } from '@/lib/vrp/index'
+import { runVRPOffThread, SolverBusyError } from '@/lib/vrp/solverPool'
 import { loadShedder, shedResponse } from '@/lib/loadShedder'
 import { metrics, METRIC } from '@/lib/metrics'
 import type { Mission } from '@/lib/types'
@@ -229,7 +229,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       timeBudget: effectiveTimeBudget,
     })
 
-    const result = await runVRP(activeMissions, drivers, allExutoires, date, {
+    // Off the event loop: the search holds a solver thread, not the web server.
+    const result = await runVRPOffThread(activeMissions, drivers, allExutoires, date, {
       timeBudgetMs: effectiveTimeBudget,
       seed: Date.now() % 10000,
       defaultSpeedKmh: tenantSettings?.defaultSpeedKmh ?? 50,
@@ -290,6 +291,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
 
   } catch (err) {
+    if (err instanceof SolverBusyError) {
+      return NextResponse.json({ error: err.message, code: 'SOLVER_BUSY' }, { status: 503, headers: { 'Retry-After': '10' } })
+    }
     log.error('Live optimization failed', { err: err instanceof Error ? err.message : String(err) })
     metrics.increment(METRIC.API_ERRORS, { route: '/api/optimize/live', type: 'server_error' })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

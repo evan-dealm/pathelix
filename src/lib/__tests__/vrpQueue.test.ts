@@ -12,6 +12,8 @@ const mockJob = vi.hoisted(() => ({
 
 const mockQueue = vi.hoisted(() => ({
   add: vi.fn(async () => mockJob),
+  // Queue depth is read before every enqueue (VRP_QUEUE_MAX_WAITING).
+  getWaitingCount: vi.fn(async () => 0),
   getJob: vi.fn(async () => null as typeof mockJob | null),
   on: vi.fn(),
 }))
@@ -67,8 +69,17 @@ describe('enqueueVrpJob', () => {
     expect(mockQueue.add).toHaveBeenCalledWith(
       `vrp:${baseJobData.tenantId}:${baseJobData.date}`,
       baseJobData,
-      expect.objectContaining({ jobId: expect.any(String) }),
+      expect.objectContaining({
+        jobId: expect.any(String),
+        deduplication: { id: expect.stringContaining('tenant-1:2026-06-15:') },
+      }),
     )
+  })
+
+  it('refuses a new job when the queue is full', async () => {
+    mockQueue.getWaitingCount.mockResolvedValueOnce(10_000)
+    await expect(enqueueVrpJob(baseJobData)).rejects.toThrow('saturé')
+    expect(mockQueue.add).not.toHaveBeenCalled()
   })
 
   it('throws when job has no ID', async () => {

@@ -26,8 +26,10 @@ export function getPdfQueue(): Queue<PdfJobData, PdfJobResult> {
       defaultJobOptions: {
         attempts:         2,
         backoff:          { type: 'fixed', delay: 1_000 },
-        removeOnComplete: { count: 100 },
-        removeOnFail:     { count: 50  },
+        // The request that queued the job is waiting for it: the PDF (base64, up to a few MB) is
+        // useless ten minutes later, and Redis runs with noeviction.
+        removeOnComplete: { age: 600, count: 50 },
+        removeOnFail:     { age: 3600, count: 50 },
       },
     })
     _pdfQueue.on('error', () => {})

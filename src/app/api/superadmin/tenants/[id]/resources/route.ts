@@ -26,6 +26,62 @@ const ResourceSchema = z.object({
   data: z.record(z.string(), z.unknown()).optional(),
 })
 
+// The console edits a row through a generic form whose values are all text: each field is
+// converted to its column type here, and a key that is not listed is refused. Relations
+// (driverId, clientId, siteId…) are deliberately absent — a superadmin edit cannot point a row
+// at another organisation's data.
+const text = (max = 500) => z.string().max(max)
+const num = z.preprocess(
+  v => (typeof v === 'string' && v.trim() !== '' ? Number(v) : v),
+  z.number().finite(),
+)
+const optNum = z.preprocess(
+  v => (v === '' ? null : typeof v === 'string' ? Number(v) : v),
+  z.number().finite().nullable(),
+)
+const optInt = z.preprocess(
+  v => (v === '' ? null : typeof v === 'string' ? Number(v) : v),
+  z.number().int().nullable(),
+)
+const bool = z.preprocess(v => (v === 'true' ? true : v === 'false' ? false : v), z.boolean())
+const optText = z.preprocess(v => (v === '' ? null : v), z.string().max(500).nullable())
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format AAAA-MM-JJ')
+const optDay = z.preprocess(v => (v === '' ? null : v), day.nullable())
+const json = z.preprocess(v => {
+  if (typeof v !== 'string') return v
+  try { return JSON.parse(v) as unknown } catch { return undefined }
+}, z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]))
+
+const FIELD_SCHEMAS: Record<EntityType, z.ZodType<Record<string, unknown>>> = {
+  driver: z.object({
+    firstName: text(100), lastName: text(100), phone: text(50), email: text(254), sector: text(100),
+    depotName: text(200), depotLat: num, depotLng: num, maxBinSizeM3: optNum, archived: bool,
+  }).partial().strict(),
+  client: z.object({
+    name: text(200), contact: text(200), phone: text(50), email: text(254), sector: text(100),
+    vip: bool, archived: bool,
+  }).partial().strict(),
+  vehicle: z.object({
+    licensePlate: text(20), type: text(50), brand: text(100), capacityM3: optNum, status: text(50),
+    archived: bool,
+  }).partial().strict(),
+  exutoire: z.object({
+    name: text(200), address: text(), lat: num, lng: num, acceptedWasteTypes: json,
+  }).partial().strict(),
+  site: z.object({
+    name: text(200), address: text(), latitude: num, longitude: num, sector: text(100), archived: bool,
+  }).partial().strict(),
+  mission: z.object({
+    type: text(50), date: day, address: text(), latitude: num, longitude: num, clientName: optText,
+    wasteTypeLabel: optText, priority: optInt, archived: bool,
+  }).partial().strict(),
+  missionTemplate: z.object({
+    label: text(200), type: text(50), enabled: bool, address: text(), latitude: num, longitude: num,
+    clientName: text(200), wasteTypeLabel: text(200), priority: optInt, recurrence: json,
+    startDate: day, endDate: optDay,
+  }).partial().strict(),
+}
+
 function getModel(entity: EntityType): PrismaDelegate {
   const map: Record<EntityType, PrismaDelegate> = {
     driver:          prisma.driver          as unknown as PrismaDelegate,
@@ -37,6 +93,16 @@ function getModel(entity: EntityType): PrismaDelegate {
     missionTemplate: prisma.missionTemplate as unknown as PrismaDelegate,
   }
   return map[entity]
+}
+
+/** Validates the fields of a create/update against the entity's columns. */
+function parseFields(entity: EntityType, data: Record<string, unknown>) {
+  const input: Record<string, unknown> = { ...data }
+  delete input.id
+  delete input.tenantId
+  delete input.createdAt
+  delete input.updatedAt
+  return FIELD_SCHEMAS[entity].safeParse(input)
 }
 
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
@@ -66,15 +132,12 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     if (action === 'create') {
       if (!data) return NextResponse.json({ error: 'data requis pour create' }, { status: 422 })
 
-      const cleanData: Record<string, unknown> = { ...data }
-      delete cleanData.id
-      delete cleanData.createdAt
-      delete cleanData.updatedAt
-      cleanData.tenantId = tenantId
-      result = await model.create({ data: cleanData })
+      const fields = parseFields(entity, data)
+      if (!fields.success) return NextResponse.json({ error: fields.error.flatten() }, { status: 422 })
+      result = await model.create({ data: { ...fields.data, tenantId } })
       const resourceId = (result as { id: string }).id
       log.info('SuperAdmin resource created', { tenantId, entity, resourceId })
-      logSuperadminAction({
+      await logSuperadminAction({
         superadminId,
         targetTenantId: tenantId,
         isImpersonation: false,
@@ -88,25 +151,23 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     else if (action === 'update') {
       if (!id || !data) return NextResponse.json({ error: 'id et data requis pour update' }, { status: 422 })
 
+      const fields = parseFields(entity, data)
+      if (!fields.success) return NextResponse.json({ error: fields.error.flatten() }, { status: 422 })
+
       const existing = await model.findUnique({ where: { id }, select: { tenantId: true } })
       if (!existing || existing.tenantId !== tenantId) {
         return NextResponse.json({ error: 'Ressource introuvable dans ce tenant' }, { status: 404 })
       }
-      const cleanData: Record<string, unknown> = { ...data }
-      delete cleanData.id
-      delete cleanData.tenantId
-      delete cleanData.createdAt
-      delete cleanData.updatedAt
-      result = await model.update({ where: { id }, data: cleanData })
+      result = await model.update({ where: { id }, data: fields.data })
       log.info('SuperAdmin resource updated', { tenantId, entity, resourceId: id })
-      logSuperadminAction({
+      await logSuperadminAction({
         superadminId,
         targetTenantId: tenantId,
         isImpersonation: false,
         method: 'POST',
         path: `/api/superadmin/tenants/${tenantId}/resources`,
         action: 'resource_updated',
-        details: { entity, resourceId: id, changedKeys: Object.keys(cleanData) },
+        details: { entity, resourceId: id, changedKeys: Object.keys(fields.data) },
       })
     }
 
@@ -119,7 +180,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       }
       result = await model.delete({ where: { id } })
       log.info('SuperAdmin resource deleted', { tenantId, entity, resourceId: id })
-      logSuperadminAction({
+      await logSuperadminAction({
         superadminId,
         targetTenantId: tenantId,
         isImpersonation: false,
@@ -132,6 +193,11 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
     return NextResponse.json({ ok: true, result })
   } catch (err) {
+    // A value Prisma refuses (unknown mission type, missing required column on create) is the
+    // caller's mistake, not a server failure.
+    if (err instanceof Error && err.name === 'PrismaClientValidationError') {
+      return NextResponse.json({ error: 'Données refusées : champ manquant ou valeur invalide' }, { status: 422 })
+    }
     log.error('Resource action failed', { tenantId, entity, action, err: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }

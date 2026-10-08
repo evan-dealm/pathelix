@@ -234,7 +234,7 @@ async function main() {
   console.log(`   Admin      : admin@pathelix.fr`)
   console.log(`   Dispatcher : dispatch@pathelix.fr`)
   console.log(`   Chauffeurs : gabin@pathelix.fr, lucas@pathelix.fr, romain@pathelix.fr`)
-  console.log(`   SuperAdmin : ${process.env.SUPERADMIN_EMAIL ?? 'littlevansd@gmail.com'} (tenant admin-corp)`)
+  console.log(`   SuperAdmin : ${process.env.SUPERADMIN_EMAIL} (tenant admin-corp)`)
   console.log(`   Données    : 3 chauffeurs, 3 véhicules, 4 exutoires, 6 clients, 7 sites, 10 produits, 18 missions, 4 fériés`)
 }
 
@@ -254,8 +254,14 @@ async function seedSuperAdmin() {
       '[seed] SUPERADMIN_PASSWORD est requis. Définissez-le dans .env avant de lancer le seed.',
     )
   }
+  // No default address: a seed must never create a platform account for an email nobody chose.
+  const superEmail = process.env.SUPERADMIN_EMAIL?.trim().toLowerCase()
+  if (!superEmail) {
+    throw new Error(
+      '[seed] SUPERADMIN_EMAIL est requis. Définissez-le dans .env avant de lancer le seed.',
+    )
+  }
   const superHash  = await hash(superPwd, 12)
-  const superEmail = process.env.SUPERADMIN_EMAIL ?? 'littlevansd@gmail.com'
 
   const existing = await prisma.user.findFirst({
     where: { email: superEmail, tenantId: platformTenant.id },

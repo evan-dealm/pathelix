@@ -12,10 +12,12 @@ vi.mock('@/lib/tenantDb', () => ({
   },
 }))
 
-import { latestPositions, speedHistory } from '../positions'
+import { latestPositions, speedHistory, _clearPositionsCache } from '../positions'
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  queryRaw.mockReset()
+  queryRaw.mockImplementation(async () => [])
+  _clearPositionsCache()
 })
 const lastCall = () => ({ sql: queryRaw.mock.calls[0][0], values: queryRaw.mock.calls[0][1] })
 
@@ -75,13 +77,21 @@ describe('speedHistory', () => {
     )
   })
 
-  it('narrows the scan to a window wide enough for any time zone', async () => {
+  // The index scan used to cover a fixed 52-hour window "wide enough for any time zone": twice
+  // the rows of the day (measured: 943 000 instead of 540 000 for 500 drivers). PostgreSQL now
+  // converts the two ends of the local day itself — exact in any zone, daylight saving included
+  // (checked on a real database: .manualtest/positions-flow.ts).
+  it('scans exactly the local day: its two ends are converted to UTC by the database', async () => {
     await speedHistory('tenant-a', '2026-07-01', 'Europe/Paris')
-    const dates = lastCall()
-      .values.filter((v): v is string => typeof v === 'string' && v.endsWith('Z'))
-      .map(v => Date.parse(v))
-    expect(Math.min(...dates)).toBeLessThanOrEqual(Date.parse('2026-06-30T12:00:00Z'))
-    expect(Math.max(...dates)).toBeGreaterThanOrEqual(Date.parse('2026-07-02T12:00:00Z'))
+    const { sql, values } = lastCall()
+    expect(sql).toMatch(
+      /"recordedAt" >= \(\(\?::date\)::timestamp AT TIME ZONE \?\) AT TIME ZONE 'UTC'/,
+    )
+    expect(sql).toMatch(
+      /"recordedAt" <\s+\(\(\?::date \+ 1\)::timestamp AT TIME ZONE \?\) AT TIME ZONE 'UTC'/,
+    )
+    // No precomputed UTC instant is sent any more.
+    expect(values.some(v => typeof v === 'string' && v.endsWith('Z'))).toBe(false)
   })
 
   it('returns the points per driver, in the order the database sorted them', async () => {
@@ -111,5 +121,55 @@ describe('speedHistory', () => {
       {},
     )
     expect(queryRaw).not.toHaveBeenCalled()
+  })
+})
+
+describe('shared reads (many dispatch screens, one query)', () => {
+  it('screens of one organisation polling together share one query; another organisation gets its own', async () => {
+    queryRaw.mockImplementation(async () => {
+      await new Promise(r => setTimeout(r, 5))
+      return []
+    })
+    const since = new Date('2026-10-07T00:00:00Z')
+    await Promise.all([
+      ...Array.from({ length: 30 }, () => latestPositions('tenant-a', { since })),
+      ...Array.from({ length: 30 }, () => speedHistory('tenant-a', '2026-07-01', 'Europe/Paris')),
+    ])
+    expect(queryRaw).toHaveBeenCalledTimes(2)
+    await latestPositions('tenant-b', { since })
+    expect(queryRaw).toHaveBeenCalledTimes(3)
+    expect(queryRaw.mock.calls[2][1]).toContain('tenant-b')
+  })
+
+  it('a filtered read never answers an unfiltered one (and the reverse)', async () => {
+    const since = new Date('2026-10-07T00:00:00Z')
+    await latestPositions('tenant-a', { since, driverIds: ['d1'] })
+    await latestPositions('tenant-a', { since })
+    await latestPositions('tenant-a', { since, driverIds: ['d2'] })
+    expect(queryRaw).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads again once the answer is a few seconds old', async () => {
+    vi.useFakeTimers()
+    try {
+      const since = new Date('2026-10-07T00:00:00Z')
+      await latestPositions('tenant-a', { since })
+      vi.advanceTimersByTime(1_000)
+      await latestPositions('tenant-a', { since })
+      expect(queryRaw).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(3_000)
+      await latestPositions('tenant-a', { since })
+      expect(queryRaw).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not keep a failed read', async () => {
+    queryRaw.mockRejectedValueOnce(new Error('connection lost'))
+    const since = new Date('2026-10-07T00:00:00Z')
+    await expect(latestPositions('tenant-a', { since })).rejects.toThrow('connection lost')
+    await expect(latestPositions('tenant-a', { since })).resolves.toEqual([])
+    expect(queryRaw).toHaveBeenCalledTimes(2)
   })
 })

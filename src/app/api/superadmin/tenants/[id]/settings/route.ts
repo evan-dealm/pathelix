@@ -48,7 +48,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       create: { tenantId, ...parsed.data },
     })
 
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId,
       targetTenantId: tenantId,
       isImpersonation: false,

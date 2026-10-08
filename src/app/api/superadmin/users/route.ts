@@ -101,7 +101,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     })
 
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId,
       targetTenantId: user.tenantId,
       isImpersonation: false,

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Queue, type ConnectionOptions } from 'bullmq'
 import type { Mission, Driver, Exutoire, OptimizationResult } from '@/lib/types'
 import type { OptimizeOptions } from '@/lib/vrp/types'
@@ -20,6 +21,8 @@ export type VrpJobResult = OptimizationResult
 
 export const VRP_QUEUE_NAME = 'vrp-optimization'
 
+const RESULT_TTL_S = parseInt(process.env.VRP_RESULT_TTL_S ?? '3600', 10) || 3600
+
 let _vrpQueue: Queue<VrpJobData, VrpJobResult> | null = null
 
 export function getVrpQueue(): Queue<VrpJobData, VrpJobResult> {
@@ -29,8 +32,11 @@ export function getVrpQueue(): Queue<VrpJobData, VrpJobResult> {
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 2_000 },
-        removeOnComplete: { count: 200 },
-        removeOnFail: { count: 50 },
+        // A result is read by the screen that asked for it within seconds. Kept an hour (a
+        // closed laptop, a slow network), never by count alone: one result of a large
+        // organisation is several MB, and Redis runs with noeviction — 200 of them filled it.
+        removeOnComplete: { age: RESULT_TTL_S, count: 100 },
+        removeOnFail: { age: 24 * 3600, count: 50 },
       },
     })
 
@@ -39,14 +45,41 @@ export function getVrpQueue(): Queue<VrpJobData, VrpJobResult> {
   return _vrpQueue
 }
 
+/** The queue is refused beyond this many waiting jobs (each waits one search budget per job ahead). */
+const MAX_WAITING = parseInt(process.env.VRP_QUEUE_MAX_WAITING ?? '200', 10) || 200
+
+export class VrpQueueFullError extends Error {
+  constructor() {
+    super('Le serveur de calcul est saturé. Réessayez dans quelques minutes.')
+    this.name = 'VrpQueueFullError'
+  }
+}
+
+/** Stable fingerprint of what a job computes (key order of the payload is fixed by the route). */
+function fingerprint(data: VrpJobData): string {
+  return createHash('sha256').update(JSON.stringify([data.missions, data.drivers, data.exutoires, data.existingPlans, data.options])).digest('hex').slice(0, 24)
+}
+
+/**
+ * Queues an optimisation and returns its job id.
+ *
+ * Two identical requests for the same organisation and day (double click, two dispatchers at the
+ * same moment, a client retry after a timeout) are ONE job: while the first is waiting or
+ * running, the second gets the same job id back and both screens follow the same computation.
+ * A request with different inputs (a mission was added) is a different job.
+ */
 export async function enqueueVrpJob(data: VrpJobData, priority?: number): Promise<string> {
   const queue = getVrpQueue()
   const jobName = `vrp:${data.tenantId}:${data.date}`
+
+  const waiting = await withTimeout(queue.getWaitingCount(), REDIS_OP_TIMEOUT_MS, 'read VRP queue depth')
+  if (waiting >= MAX_WAITING) throw new VrpQueueFullError()
 
   const job = await withTimeout(
     queue.add(jobName, data, {
       priority,
       jobId: `${data.tenantId}:${data.date}:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      deduplication: { id: `${data.tenantId}:${data.date}:${fingerprint(data)}` },
     }),
     REDIS_OP_TIMEOUT_MS,
     'enqueue VRP job',

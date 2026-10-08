@@ -5,6 +5,7 @@ import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { logSuperadminAction } from '@/lib/superadminAudit'
 import { forgetSessionVersion } from '@/lib/sessionRevocation'
+import { PLATFORM_TENANT_SLUG, superadminPasswordIssue } from '@/lib/superadminPolicy'
 
 const log = createLogger('/api/superadmin/users/[id]')
 
@@ -54,6 +55,32 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
 
   try {
+    const target = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true, tenant: { select: { slug: true } } },
+    })
+    if (!target) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
+
+    const newRole = parsed.data.role
+    if (newRole && newRole !== target.role) {
+      // The caller is a superadmin and cannot change their own role: at least one always remains.
+      if (id === superadminId) {
+        return NextResponse.json({ error: 'Impossible de modifier votre propre rôle' }, { status: 400 })
+      }
+      // A superadmin session is not bound to a client organisation: only an account of the
+      // platform organisation can be promoted.
+      if (newRole === 'SUPERADMIN' && target.tenant?.slug !== PLATFORM_TENANT_SLUG) {
+        return NextResponse.json(
+          { error: "Seul un compte de l'organisation plateforme peut devenir superadmin" },
+          { status: 422 },
+        )
+      }
+    }
+    if (parsed.data.password && (newRole ?? target.role) === 'SUPERADMIN') {
+      const issue = superadminPasswordIssue(parsed.data.password)
+      if (issue) return NextResponse.json({ error: issue }, { status: 422 })
+    }
+
     const data: Record<string, unknown> = {}
     if (parsed.data.role)      data.role = parsed.data.role
     if (parsed.data.firstName !== undefined) data.firstName = parsed.data.firstName
@@ -70,14 +97,19 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
     const user = await prisma.user.update({ where: { id }, data })
     forgetSessionVersion(id)
 
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId,
       targetTenantId: user.tenantId,
       isImpersonation: false,
       method: 'PUT',
       path: `/api/superadmin/users/${id}`,
       action: 'user_updated',
-      details: { changedFields: Object.keys(data).filter(k => k !== 'passwordHash'), userId: id },
+      details: {
+        userId: id,
+        changedFields: Object.keys(data).filter(k => k !== 'passwordHash' && k !== 'sessionVersion'),
+        passwordChanged: Boolean(parsed.data.password),
+        ...(newRole && newRole !== target.role ? { roleFrom: target.role, roleTo: newRole } : {}),
+      },
     })
 
     return NextResponse.json({ ok: true, id: user.id, role: user.role, email: user.email })
@@ -106,7 +138,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     await prisma.user.delete({ where: { id } })
     forgetSessionVersion(id)
 
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId,
       targetTenantId: user.tenantId,
       isImpersonation: false,

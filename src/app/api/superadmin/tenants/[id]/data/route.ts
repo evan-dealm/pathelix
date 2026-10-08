@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const log = createLogger('/api/superadmin/tenants/[id]/data')
 
@@ -9,7 +10,7 @@ type Params = { params: Promise<{ id: string }> }
 
 export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
 
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role } = getRequestContext(req)
   if (role !== 'superadmin') {
     return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
   }
@@ -92,6 +93,17 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     if (section === 'all' || section === 'settings') {
       result.settings = await prisma.tenantSettings.findUnique({ where: { tenantId } })
     }
+
+    // Reading an organisation's data leaves a trace, like acting on it does.
+    await logSuperadminAction({
+      superadminId,
+      targetTenantId: tenantId,
+      isImpersonation: false,
+      method: 'GET',
+      path: `/api/superadmin/tenants/${tenantId}/data`,
+      action: 'tenant_data_read',
+      details: { section },
+    })
 
     return NextResponse.json(result)
   } catch (err) {

@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       } while (cursor !== '0')
     }
 
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId,
       targetTenantId: tenantId,
       isImpersonation: false,

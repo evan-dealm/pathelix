@@ -11,6 +11,10 @@ x-worker-env: &worker-env
   ROUTING_API_TYPE: ${ROUTING_API_TYPE:-}
   ROUTING_API_KEY: ${ROUTING_API_KEY:-}
   ROUTING_API_URL: ${ROUTING_API_URL:-}
+  # The business worker signs outbound webhooks with secrets stored encrypted: without the key
+  # it cannot read them and every delivery fails.
+  INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
+  OUTBOUND_ALLOWED_HOSTS: ${OUTBOUND_ALLOWED_HOSTS:-}
 
 x-worker-base: &worker-base
   build:
@@ -30,8 +34,11 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # Published on the loopback interface only: handy for local tools, never an open database
+    # port on a server (Docker publishes past ufw). Production uses docker-compose.prod.yml,
+    # which publishes nothing but 80/443.
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -62,7 +69,7 @@ services:
     # under memory pressure. When full, writes fail instead; rate limiting falls back in-process.
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis_data:/data
     healthcheck:
@@ -75,7 +82,7 @@ services:
   valhalla:
     image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
     ports:
-      - '8002:8002'
+      - '127.0.0.1:8002:8002'
     volumes:
       - valhalla_tiles:/custom_files
     environment:
@@ -86,6 +93,11 @@ services:
       build_time_zones: "True"
       force_rebuild: "False"
       build_extra_args: "--mjolnir-concurrency 4"
+      # The image starts one worker thread per CPU by default, and every thread keeps the memory of
+      # its last matrix search (≈ 0.25–0.5 GB each, measured): on a 16-core host that is 4–8 GB,
+      # i.e. a container pinned at its limit, swapping tiles and eventually crashing mid-request.
+      # The app never sends more than VALHALLA_MAX_CONCURRENT matrix requests at once anyway.
+      server_threads: ${VALHALLA_THREADS:-4}
     healthcheck:
       # The Valhalla image ships curl, not wget: a wget probe never passes and blocks every
       # service that waits for `service_healthy`.
@@ -220,7 +232,7 @@ services:
       args:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://pathelix:${DB_PASSWORD}@postgres:5432/pathelix_fleet

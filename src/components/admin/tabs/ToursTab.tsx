@@ -1693,6 +1693,10 @@ export function ToursTab({
             const isValhalla = label.startsWith('valhalla')
             const isOsrm = label.startsWith('osrm')
             const isApi = label === 'api' || label === 'trimble' || label === 'here'
+            // Part of the matrix was estimated (budget reached, address off the road network).
+            const coverage = optimizeStats?.routingCoverage
+            const partialPct =
+              typeof coverage === 'number' && coverage < 0.995 ? Math.floor(coverage * 100) : null
             return (
               <div className="absolute top-2 right-2 z-[500] pointer-events-none">
                 <span
@@ -1718,7 +1722,9 @@ export function ToursTab({
                     }`}
                   />
                   {isValhalla
-                    ? 'Valhalla'
+                    ? partialPct !== null
+                      ? `Valhalla · ${partialPct} % routier`
+                      : 'Valhalla'
                     : isOsrm
                       ? 'OSRM'
                       : isApi

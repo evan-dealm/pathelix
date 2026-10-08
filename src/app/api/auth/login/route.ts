@@ -139,14 +139,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Données invalides' }, { status: 400 })
   }
 
-  const { password, email } = parsed.data
+  const { password, email, totp } = parsed.data
   await _ipFailures.reserve(ip)
 
-  const deny = async (msg: string, status = 401): Promise<NextResponse> => {
+  const deny = async (msg: string, status = 401, extra: Record<string, unknown> = {}): Promise<NextResponse> => {
     await new Promise(r => setTimeout(r, 200))
     metrics.increment(METRIC.AUTH_LOGIN_FAIL)
     log.warn('login failed', { ip, email: email ?? '—' })
-    return NextResponse.json({ error: msg }, { status })
+    return NextResponse.json({ error: msg, ...extra }, { status })
   }
 
   if (!USE_MOCK) {
@@ -174,6 +174,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const { compare } = await import('bcryptjs')
       const ok = await compare(password, user?.passwordHash ?? DUMMY_HASH)
       if (!user || !ok) return deny('Identifiants incorrects')
+
+      // Second factor — only superadmin accounts that enabled it; it lives in its own table,
+      // so no other sign-in reads it. Checked before the failure counters are cleared: a wrong
+      // code counts as a failed attempt, exactly like a wrong password.
+      if (user.role === 'SUPERADMIN') {
+        const factor = await prisma.superadminTotp.findUnique({ where: { userId: user.id } })
+        if (factor?.enabledAt) {
+          if (!totp) {
+            // Not a failure: the form asks for the code and submits again.
+            await _accountFailures.release(normalizedEmail)
+            await _ipFailures.release(ip)
+            return NextResponse.json(
+              { error: 'Code de vérification requis', totpRequired: true },
+              { status: 401 },
+            )
+          }
+          const { verifyTotp } = await import('@/lib/totp')
+          const { openTotpSecret } = await import('@/lib/superadminPolicy')
+          const secret = openTotpSecret(factor.secret)
+          const step = secret ? verifyTotp(secret, totp, { lastStep: factor.lastStep }) : null
+          // The step is claimed atomically: two requests carrying the same code cannot both pass.
+          const claimed = step === null ? 0 : (await prisma.superadminTotp.updateMany({
+            where: { userId: user.id, OR: [{ lastStep: null }, { lastStep: { lt: step } }] },
+            data: { lastStep: step },
+          })).count
+          if (claimed === 0) return deny('Code de vérification incorrect', 401, { totpRequired: true })
+        }
+      }
+
       await _accountFailures.release(normalizedEmail, true)
       await _ipFailures.release(ip)
 

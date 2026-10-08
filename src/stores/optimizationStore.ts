@@ -6,7 +6,13 @@ interface OptimizationState {
   progress: number
   elapsed: number
   error: string | null
-  stats: { assigned: number; total: number; score: number; routingSource?: string } | null
+  stats: {
+    assigned: number
+    total: number
+    score: number
+    routingSource?: string
+    routingCoverage?: number
+  } | null
 
   date: string | null
 
@@ -103,6 +109,7 @@ export const useOptimizationStore = create<OptimizationState>((set, _get) => ({
             total: result.stats.totalMissions,
             score: Math.round(result.stats.globalScore ?? result.stats.score ?? 0),
             routingSource: result.stats.routingSource,
+            routingCoverage: result.stats.routingCoverage,
           },
         })
         onComplete(result)
@@ -175,6 +182,7 @@ export const useOptimizationStore = create<OptimizationState>((set, _get) => ({
                 total: result.stats.totalMissions,
                 score: Math.round(result.stats.globalScore ?? result.stats.score ?? 0),
                 routingSource: result.stats.routingSource,
+                routingCoverage: result.stats.routingCoverage,
               },
             })
             onComplete(result)

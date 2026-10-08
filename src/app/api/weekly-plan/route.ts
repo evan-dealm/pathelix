@@ -9,7 +9,7 @@ import { getMissionsByDate } from '@/lib/data/missions'
 import { getPlanningDrivers, exclusionMessage, withEstimatedWeights } from '@/lib/data/planning'
 import { planningOptionsFromSettings } from '@/lib/vrp/tenantOptions'
 import { getAllExutoires } from '@/lib/data/exutoires'
-import { runVRP } from '@/lib/vrp/index'
+import { runVRPOffThread, SolverBusyError } from '@/lib/vrp/solverPool'
 import { lockedSteps, mergeLockedAndOptimized, parsePlanMissions } from '@/lib/vrp/livePlan'
 import { hasPermission } from '@/lib/permissions'
 
@@ -100,7 +100,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         continue
       }
 
-      const result = await runVRP(missions, dayDrivers.drivers, exutoires, date, {
+      // Off the event loop: a week is five searches of up to a minute each.
+      const result = await runVRPOffThread(missions, dayDrivers.drivers, exutoires, date, {
         timeBudgetMs: timeBudgetPerDay,
         weights: settings?.weights,
         defaultStartTime: startTime,
@@ -164,6 +165,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       where: { weekStart },
       data: { status: 'failed' },
     }).catch(() => {})
+    if (err instanceof SolverBusyError) {
+      return NextResponse.json({ error: err.message, code: 'SOLVER_BUSY' }, { status: 503, headers: { 'Retry-After': '30' } })
+    }
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

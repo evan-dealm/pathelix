@@ -62,7 +62,7 @@ Application mobile, utilisable sans réseau :
 
 Organisations (création, suspension, purge de cache, impersonation journalisée), utilisateurs
 toutes organisations, secteurs personnalisés, santé du système, maturité ML, audit transverse,
-offres.
+offres, sécurité du compte (double authentification par code à 6 chiffres).
 
 ## 4. Pages publiques
 

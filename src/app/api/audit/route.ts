@@ -124,10 +124,13 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     const result = await getTenantDb(tenantId).auditLog.deleteMany({
       where: {
         createdAt: { gte: afterDate, lte: beforeDate },
+        // The trace of superadmin actions is not the superadmin's to erase: it only leaves
+        // with the retention worker.
+        NOT: [{ entityType: 'superadmin_audit' }, { action: 'superadmin_impersonate' }],
       },
     })
     log.info('Audit logs purged', { tenantId, after, before, count: result.count })
-    logSuperadminAction({
+    await logSuperadminAction({
       superadminId: userId,
       targetTenantId: tenantId,
       isImpersonation: userId.startsWith('sa:'),

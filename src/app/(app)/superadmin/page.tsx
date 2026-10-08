@@ -6,6 +6,16 @@ import { BRAND_LOGO_SRC } from '@/lib/branding'
 import { TRADES, TRADE_IDS } from '@/lib/trades'
 import { usePlanningStore } from '@/stores/planningStore'
 import { DemoRequestsPanel } from '@/components/admin/DemoRequestsPanel'
+import { SuperadminSecurityPanel } from '@/components/admin/SuperadminSecurityPanel'
+
+/** Slug of the organisation the superadmin accounts live in (mirrors superadminPolicy.ts). */
+const PLATFORM_TENANT_SLUG = 'admin-corp'
+
+/** The server's own error message for a failed response, or a fallback when it gave none. */
+async function errorOf(r: Response, fallback: string): Promise<string> {
+  const d = await r.json().catch(() => null) as { error?: unknown } | null
+  return typeof d?.error === 'string' ? d.error : fallback
+}
 
 interface TenantStats {
   id: string; name: string; slug: string; plan: string
@@ -180,7 +190,7 @@ function SuspendedBadge() {
   return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 animate-pulse">SUSPENDU</span>
 }
 
-function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { data: Record<string, unknown>; tenantName: string; tenantId: string; toast: (_msg: string, _type?: 'success' | 'error' | 'info') => void; onRefresh: () => void }) {
+function TenantDetailPanel({ data, tenantName, tenantId, isPlatformTenant, toast, onRefresh }: { data: Record<string, unknown>; tenantName: string; tenantId: string; isPlatformTenant: boolean; toast: (_msg: string, _type?: 'success' | 'error' | 'info') => void; onRefresh: () => void }) {
   const [activeTab, setActiveTab] = useState<'users' | 'drivers' | 'vehicles' | 'missions' | 'exutoires' | 'clients' | 'sites' | 'templates' | 'settings'>('users')
   const [deleteRes, setDeleteRes] = useState<{ entity: string; id: string; label: string } | null>(null)
   const [editRes, setEditRes] = useState<{ entity: string; id: string; label: string; data: Record<string, unknown> } | null>(null)
@@ -219,7 +229,7 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
       body: JSON.stringify({ entity: deleteRes.entity, action: 'delete', id: deleteRes.id }),
     })
     if (r.ok) { toast(`${deleteRes.label} supprimé`, 'success'); onRefresh() }
-    else toast('Erreur lors de la suppression', 'error')
+    else toast(await errorOf(r, 'Erreur lors de la suppression'), 'error')
     setDeleteRes(null)
   }
 
@@ -230,9 +240,21 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ entity: editRes.entity, action: 'update', id: editRes.id, data: editResForm }),
     })
-    if (r.ok) { toast(`${editRes.label} modifié`, 'success'); onRefresh() }
-    else toast('Erreur lors de la modification', 'error')
     setEditResSaving(false)
+    // On a refusal the form stays open: the values typed are not lost.
+    if (!r.ok) {
+      const d = await r.json().catch(() => null) as { error?: unknown } | null
+      const fields = (d?.error as { fieldErrors?: Record<string, string[]> } | undefined)?.fieldErrors
+      const firstField = fields ? Object.entries(fields)[0] : undefined
+      toast(
+        typeof d?.error === 'string' ? d.error
+          : firstField ? `Champ « ${firstField[0]} » : ${firstField[1][0] ?? 'valeur invalide'}`
+          : 'Modification refusée : une valeur est invalide',
+        'error',
+      )
+      return
+    }
+    toast(`${editRes.label} modifié`, 'success'); onRefresh()
     setEditRes(null)
   }
 
@@ -262,7 +284,7 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
       body: JSON.stringify(payload),
     })
     if (r.ok) { toast('Paramètres enregistrés', 'success'); onRefresh() }
-    else toast('Erreur lors de la sauvegarde', 'error')
+    else toast(await errorOf(r, 'Paramètres refusés : une valeur est hors limites'), 'error')
     setSettingsSaving(false)
   }
 
@@ -288,11 +310,12 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
   async function doEditUser() {
     if (!editUserModal) return
     setEditUserLoading(true)
-    await fetch(`/api/superadmin/users/${String(editUserModal.id)}`, {
+    const r = await fetch(`/api/superadmin/users/${String(editUserModal.id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(editUserForm),
     })
     setEditUserLoading(false)
+    if (!r.ok) { toast(await errorOf(r, 'Modification refusée'), 'error'); return }
     setEditUserModal(null)
     toast('Utilisateur modifié', 'success')
     onRefresh()
@@ -300,8 +323,9 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
 
   async function doDeleteUser() {
     if (!deleteUserConfirm) return
-    await fetch(`/api/superadmin/users/${deleteUserConfirm.id}`, { method: 'DELETE' })
-    toast('Utilisateur supprimé', 'success')
+    const r = await fetch(`/api/superadmin/users/${deleteUserConfirm.id}`, { method: 'DELETE' })
+    if (r.ok) toast('Utilisateur supprimé', 'success')
+    else toast(await errorOf(r, 'Suppression refusée'), 'error')
     setDeleteUserConfirm(null)
     onRefresh()
   }
@@ -309,11 +333,13 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
   async function doResetPassword() {
     if (!resetPwdUser || resetPwdValue.length < 8) return
     setResetPwdLoading(true)
-    await fetch(`/api/superadmin/users/${resetPwdUser.id}`, {
+    const r = await fetch(`/api/superadmin/users/${resetPwdUser.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: resetPwdValue }),
     })
     setResetPwdLoading(false)
+    // A refused password (superadmin accounts need a stronger one) leaves the dialog open.
+    if (!r.ok) { toast(await errorOf(r, 'Mot de passe refusé'), 'error'); return }
     toast('Mot de passe modifié', 'success')
     setResetPwdUser(null)
     setResetPwdValue('')
@@ -643,7 +669,11 @@ function TenantDetailPanel({ data, tenantName, tenantId, toast, onRefresh }: { d
         </div>
         <ModalInput label="Email" value={editUserForm.email} onChange={v => setEditUserForm(p => ({ ...p, email: v }))} type="email" />
         <ModalSelect label="Rôle" value={editUserForm.role} onChange={v => setEditUserForm(p => ({ ...p, role: v }))}
-          options={[{ value: 'ADMIN', label: 'Admin' }, { value: 'DISPATCHER', label: 'Dispatcher' }, { value: 'DRIVER', label: 'Chauffeur' }]} />
+          options={[
+            // Offered only inside the platform organisation: the server refuses it anywhere else.
+            ...(isPlatformTenant || editUserForm.role === 'SUPERADMIN' ? [{ value: 'SUPERADMIN', label: 'Superadmin' }] : []),
+            { value: 'ADMIN', label: 'Admin' }, { value: 'DISPATCHER', label: 'Dispatcher' }, { value: 'DRIVER', label: 'Chauffeur' },
+          ]} />
       </FormModal>
 
       {}
@@ -1302,7 +1332,7 @@ function TradeRow({ tenant, allTrades, onUpdate }: { tenant: TenantStats; allTra
 }
 
 export default function SuperAdminPage() {
-  const [tab, setTab] = useState<'dashboard' | 'tenants' | 'trades' | 'ml' | 'historique' | 'system' | 'pricing' | 'demos'>('dashboard')
+  const [tab, setTab] = useState<'dashboard' | 'tenants' | 'trades' | 'ml' | 'historique' | 'system' | 'pricing' | 'demos' | 'security'>('dashboard')
   const [stats, setStats] = useState<GlobalStats | null>(null)
   const [tenants, setTenants] = useState<TenantStats[]>([])
   const [health, setHealth] = useState<SystemHealth | null>(null)
@@ -1330,6 +1360,7 @@ export default function SuperAdminPage() {
   const { toasts, show: showToast } = useToastLocal()
 
   const [tenantConfirm, setTenantConfirm] = useState<{ id: string; name: string; action: 'suspend' | 'activate' | 'purge-cache' | 'delete' } | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [bulkSuspendConfirm, setBulkSuspendConfirm] = useState(false)
   const [bulkPlanModal, setBulkPlanModal] = useState(false)
   const [bulkPlanValue, setBulkPlanValue] = useState('PRO')
@@ -1393,12 +1424,15 @@ export default function SuperAdminPage() {
     try {
       const r = await fetch(`/api/superadmin/tenants/${tenantId}/data`)
       if (r.ok) setTenantData(await r.json())
+      else showToast(await errorOf(r, 'Données de cette organisation indisponibles'), 'error')
+    } catch {
+      showToast('Erreur réseau — données non chargées', 'error')
     } finally { setTenantDataLoading(false) }
   }
 
   async function exportTenantData(tenantId: string, tenantName: string) {
     const r = await fetch(`/api/superadmin/tenants/${tenantId}/data`)
-    if (!r.ok) return
+    if (!r.ok) { showToast(await errorOf(r, 'Export impossible'), 'error'); return }
     const data = await r.json()
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -1423,15 +1457,23 @@ export default function SuperAdminPage() {
   }
 
   async function doTenantAction(id: string, action: 'suspend' | 'activate' | 'purge-cache' | 'delete', name: string) {
+    // Deleting asks the server with the slug the superadmin typed: the server compares it.
+    const typedSlug = deleteConfirmText.trim()
     setTenantConfirm(null)
+    setDeleteConfirmText('')
     setActionLoading(`${id}:${action}`)
     try {
-      const url = action === 'delete' ? `/api/superadmin/tenants/${id}` : `/api/superadmin/tenants/${id}/${action}`
+      const url = action === 'delete'
+        ? `/api/superadmin/tenants/${id}?confirm=${encodeURIComponent(typedSlug)}`
+        : `/api/superadmin/tenants/${id}/${action}`
       const method = action === 'delete' ? 'DELETE' : 'POST'
-      await fetch(url, { method })
+      const r = await fetch(url, { method })
+      if (!r.ok) { showToast(await errorOf(r, `Action refusée pour ${name}`), 'error'); return }
       await fetchTenants(); await fetchStats()
       const labels = { suspend: 'suspendu', activate: 'activé', 'purge-cache': 'cache vidé', delete: 'supprimé' }
-      showToast(`${name} ${labels[action]}`, action === 'delete' ? 'error' : 'success')
+      showToast(`${name} ${labels[action]}`, 'success')
+    } catch {
+      showToast('Erreur réseau — action non effectuée', 'error')
     } finally { setActionLoading('') }
   }
 
@@ -1443,7 +1485,8 @@ export default function SuperAdminPage() {
     if (editTenantForm.timezone) payload.timezone = editTenantForm.timezone
     if (editTenantForm.locale) payload.locale = editTenantForm.locale
     if (editTenantForm.contactEmail !== undefined) payload.contactEmail = editTenantForm.contactEmail
-    await fetch(`/api/superadmin/tenants/${editTenantModal.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const r = await fetch(`/api/superadmin/tenants/${editTenantModal.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    if (!r.ok) { showToast(await errorOf(r, 'Modification refusée : vérifiez les champs'), 'error'); return }
     showToast('Tenant modifié', 'success')
     setEditTenantModal(null); await fetchTenants()
   }
@@ -1459,14 +1502,22 @@ export default function SuperAdminPage() {
         // stale entries from a different tenant would otherwise linger in IndexedDB.
         await usePlanningStore.persist.clearStorage()
         window.location.href = d.redirectTo
+      } else {
+        showToast(await errorOf(r, 'Connexion à cette organisation refusée'), 'error')
       }
+    } catch {
+      showToast('Erreur réseau — connexion non effectuée', 'error')
     } finally { setActionLoading('') }
   }
 
   async function updatePlan(id: string, plan: string) {
-    await fetch(`/api/superadmin/tenants/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) })
-    await fetchTenants(); showToast('Plan modifié', 'success')
+    const r = await fetch(`/api/superadmin/tenants/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) })
+    await fetchTenants()
+    if (r.ok) showToast('Plan modifié', 'success')
+    else showToast(await errorOf(r, 'Changement de plan refusé'), 'error')
   }
+
+  const confirmSlug = tenants.find(t => t.id === tenantConfirm?.id)?.slug ?? ''
 
   const tabs = [
     { key: 'dashboard' as const, label: 'Dashboard', icon: '\u{1F4CA}' },
@@ -1477,6 +1528,7 @@ export default function SuperAdminPage() {
     { key: 'system' as const, label: 'Système', icon: '\u{1F6E0}' },
     { key: 'pricing' as const, label: 'Prix & Forfaits', icon: '\u{1F4B0}' },
     { key: 'demos' as const, label: 'Demandes de démo', icon: '\u{1F4E8}' },
+    { key: 'security' as const, label: 'Sécurité', icon: '\u{1F512}' },
   ]
 
   if (loading) {
@@ -1800,7 +1852,7 @@ export default function SuperAdminPage() {
                           <button type="button" onClick={() => exportTenantData(t.id, t.name)}
                             className="px-2 py-1 rounded bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-[10px] font-bold transition" title="Exporter JSON">Export</button>
                           <button type="button" onClick={() => requestTenantAction(t.id, 'delete', t.name)}
-                            className="px-2 py-1 rounded bg-red-900/50 text-red-400 hover:bg-red-800/50 text-[10px] font-bold transition" title="Supprimer définitivement">Purger</button>
+                            className="px-2 py-1 rounded bg-red-900/50 text-red-400 hover:bg-red-800/50 text-[10px] font-bold transition" title="Supprimer définitivement l'organisation et toutes ses données">Supprimer</button>
                         </div>
                       </td>
                     </tr>
@@ -1811,7 +1863,7 @@ export default function SuperAdminPage() {
                           {tenantDataLoading ? (
                             <div className="text-zinc-500 text-xs animate-pulse py-4 text-center">Chargement des données...</div>
                           ) : tenantData ? (
-                            <TenantDetailPanel data={tenantData} tenantName={t.name} tenantId={t.id} toast={showToast} onRefresh={async () => {
+                            <TenantDetailPanel data={tenantData} tenantName={t.name} tenantId={t.id} isPlatformTenant={t.slug === PLATFORM_TENANT_SLUG} toast={showToast} onRefresh={async () => {
                               const r = await fetch(`/api/superadmin/tenants/${t.id}/data`)
                               if (r.ok) setTenantData(await r.json())
                               await fetchTenants()
@@ -1982,6 +2034,8 @@ export default function SuperAdminPage() {
         {tab === 'pricing' && <PricingTab />}
 
         {tab === 'demos' && <DemoRequestsPanel />}
+
+        {tab === 'security' && <SuperadminSecurityPanel />}
       </main>
 
       {}
@@ -1994,8 +2048,24 @@ export default function SuperAdminPage() {
           ? `Supprimer "${tenantConfirm?.name}" et TOUTES ses données ? Cette action est irréversible.`
           : `Suspendre "${tenantConfirm?.name}" ? Tous ses utilisateurs seront bloqués.`}
         confirmLabel={tenantConfirm?.action === 'delete' ? 'Supprimer définitivement' : 'Suspendre'}
-        onConfirm={() => tenantConfirm && doTenantAction(tenantConfirm.id, tenantConfirm.action, tenantConfirm.name)}
-        onCancel={() => setTenantConfirm(null)} />
+        onConfirm={() => {
+          if (!tenantConfirm) return
+          if (tenantConfirm.action === 'delete' && deleteConfirmText.trim() !== confirmSlug) {
+            showToast('Le slug saisi ne correspond pas : rien n’a été supprimé', 'error')
+            return
+          }
+          void doTenantAction(tenantConfirm.id, tenantConfirm.action, tenantConfirm.name)
+        }}
+        onCancel={() => { setTenantConfirm(null); setDeleteConfirmText('') }}>
+        {tenantConfirm?.action === 'delete' && (
+          <label className="block text-xs text-zinc-400">
+            Pour confirmer, saisissez le slug de l&apos;organisation : <span className="font-mono text-zinc-200">{confirmSlug}</span>
+            <input type="text" value={deleteConfirmText} onChange={e => setDeleteConfirmText(e.target.value)}
+              autoFocus autoComplete="off" spellCheck={false}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono focus:border-red-500 focus:outline-none mt-2" />
+          </label>
+        )}
+      </ConfirmModal>
 
       {}
       <ConfirmModal open={bulkSuspendConfirm} danger
@@ -2004,8 +2074,17 @@ export default function SuperAdminPage() {
         confirmLabel="Suspendre tous"
         onConfirm={async () => {
           setBulkSuspendConfirm(false)
-          for (const id of selectedTenants) await fetch(`/api/superadmin/tenants/${id}/suspend`, { method: 'POST' })
-          setSelectedTenants(new Set()); await fetchTenants(); showToast('Tenants suspendus', 'success')
+          let refused = 0
+          for (const id of selectedTenants) {
+            const r = await fetch(`/api/superadmin/tenants/${id}/suspend`, { method: 'POST' })
+            if (!r.ok) refused++
+          }
+          const done = selectedTenants.size - refused
+          setSelectedTenants(new Set()); await fetchTenants()
+          showToast(
+            refused === 0 ? 'Tenants suspendus' : `${done} suspendu(s), ${refused} refusé(s) (déjà suspendu ou organisation plateforme)`,
+            refused === 0 ? 'success' : 'error',
+          )
         }}
         onCancel={() => setBulkSuspendConfirm(false)} />
 
@@ -2016,8 +2095,13 @@ export default function SuperAdminPage() {
         confirmLabel="Appliquer"
         onConfirm={async () => {
           setBulkPlanModal(false)
-          for (const id of selectedTenants) await fetch(`/api/superadmin/tenants/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: bulkPlanValue }) })
-          setSelectedTenants(new Set()); await fetchTenants(); showToast('Plans modifiés', 'success')
+          let refused = 0
+          for (const id of selectedTenants) {
+            const r = await fetch(`/api/superadmin/tenants/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: bulkPlanValue }) })
+            if (!r.ok) refused++
+          }
+          setSelectedTenants(new Set()); await fetchTenants()
+          showToast(refused === 0 ? 'Plans modifiés' : `${refused} changement(s) de plan refusé(s)`, refused === 0 ? 'success' : 'error')
         }}
         onCancel={() => setBulkPlanModal(false)}>
         <select value={bulkPlanValue} onChange={e => setBulkPlanValue(e.target.value)} title="Plan"

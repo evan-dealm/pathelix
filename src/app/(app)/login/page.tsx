@@ -7,6 +7,9 @@ import { BRAND_LOGO_SRC } from '@/lib/branding'
 export default function LoginPage() {
   const [email, setEmail]       = useState('')
   const [pwd, setPwd]           = useState('')
+  // Second factor: only asked when the server says the account has one (superadmin).
+  const [totp, setTotp]         = useState('')
+  const [needsTotp, setNeedsTotp] = useState(false)
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
   const [navigating, setNavigating] = useState(false)
@@ -19,11 +22,17 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email || undefined, password: pwd }),
+        body: JSON.stringify({ email: email || undefined, password: pwd, totp: totp.trim() || undefined }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         if (res.status === 429) setError('Trop de tentatives. Réessayez dans une minute.')
+        else if (res.status === 401 && data.totpRequired) {
+          // First pass: show the code field without an error. Second pass: the code was wrong.
+          if (needsTotp) setError('Code de vérification incorrect')
+          setNeedsTotp(true)
+          setTotp('')
+        }
         else if (res.status === 401) setError('Email ou mot de passe incorrect')
         else setError(data.error || 'Erreur serveur')
         return
@@ -146,6 +155,36 @@ export default function LoginPage() {
                            transition-all duration-120"
               />
             </div>
+
+            {needsTotp && (
+              <div className="space-y-2">
+                <label
+                  htmlFor="totp"
+                  className="block text-[11px] font-semibold text-surface-500 uppercase tracking-[0.08em]"
+                >
+                  Code de vérification
+                </label>
+                <input
+                  id="totp"
+                  type="text"
+                  inputMode="numeric"
+                  value={totp}
+                  onChange={e => setTotp(e.target.value.replace(/[^\d\s]/g, '').slice(0, 7))}
+                  placeholder="123 456"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                  aria-describedby="totp-help"
+                  className="w-full h-11 bg-surface-50 border border-surface-200 rounded-xl px-4
+                             text-surface-900 placeholder-surface-300 text-[14px] tracking-[0.2em]
+                             focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10
+                             transition-all duration-120"
+                />
+                <p id="totp-help" className="text-[12px] text-surface-400">
+                  Saisissez le code à 6 chiffres affiché par votre application d&apos;authentification.
+                </p>
+              </div>
+            )}
 
             {error && (
               <p

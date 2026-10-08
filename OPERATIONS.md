@@ -38,6 +38,13 @@ docker compose ps               # tous "healthy" ; Valhalla met 15–30 min au p
 npm run db:seed-superadmin      # une fois, avec SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD
 ```
 
+Compte superadmin : `SUPERADMIN_PASSWORD` compte 12 caractères au moins (minuscules, majuscules,
+chiffres), sinon la commande refuse. Après la première connexion, activer la double
+authentification dans `/superadmin` → Sécurité. Relancer `npm run db:seed-superadmin` réinitialise
+le mot de passe, déconnecte les sessions ouvertes et retire la double authentification — c'est la
+procédure quand le téléphone est perdu. Définir `INTEGRATION_ENCRYPTION_KEY` pour que le secret
+de double authentification soit chiffré en base.
+
 Mise à jour : `git pull && docker compose build && docker compose up -d` — les migrations
 s'appliquent au démarrage de `app`. **Sauvegarder avant** toute mise à jour avec migration (§7).
 
@@ -240,7 +247,96 @@ Levée du HALT : ces 6 étapes validées, établissements réels inscrits, Sentr
   200 × instances) et les métriques Prometheus (à collecter sur chaque instance). Sans Redis,
   tout est en mémoire : un seul serveur.
 
-## 10. Développement local
+## 10. Serveur personnel derrière Cloudflare Tunnel
+
+Pour une machine qui héberge déjà d'autres services (Dify, modèles de langage, une autre base…).
+Fichiers : `docker-compose.home.yml` (autonome, ne se combine pas avec `docker-compose.yml`),
+`deploy/home/env.example`, `deploy/home/ctl.sh`. Prérequis sur l'hôte : Docker Engine et le
+plugin Compose, `git`, `openssl`, `curl` ; `rclone` pour la copie des sauvegardes hors du serveur.
+Ni Node.js ni client PostgreSQL à installer.
+
+**Ce qui est isolé** — projet Compose `pathelix` (conteneurs, volumes et réseaux préfixés, aucun
+nom fixe) ; **un seul port publié, `127.0.0.1:3100`** ; PostgreSQL et Redis sur un réseau sans
+route vers l'extérieur, Redis avec mot de passe ; Valhalla joignable par l'application et les
+workers seulement ; plafonds mémoire **et** CPU par service ; conteneurs applicatifs sans
+privilèges (`cap_drop: ALL`, `no-new-privileges`, utilisateur non root).
+
+**Première installation**
+
+```bash
+git clone <dépôt> /opt/pathelix && cd /opt/pathelix
+cp deploy/home/env.example .env.production && chmod 600 .env.production
+# renseigner les secrets (commande de génération indiquée à côté de chacun)
+./deploy/home/ctl.sh check      # valide la configuration, ne lance rien
+./deploy/home/ctl.sh build      # construit les images app et workers
+./deploy/home/ctl.sh compose up -d postgres redis
+./deploy/home/ctl.sh migrate    # crée le schéma (base vide : rien à sauvegarder d'utile)
+./deploy/home/ctl.sh up         # démarre tout ; Valhalla construit ses tuiles (15–30 min)
+./deploy/home/ctl.sh superadmin # compte de plateforme ; activer ensuite la double authentification
+curl -s http://127.0.0.1:3100/api/ready
+```
+
+**Tunnel** — `cloudflared` installé sur l'hôte : nom public `pathelix.com` → service
+`http://localhost:3100`. Ou en conteneur : `CLOUDFLARE_TUNNEL_TOKEN` dans `.env.production`,
+`./deploy/home/ctl.sh up --profile tunnel`, cible `http://app:3000`. Côté Cloudflare : mode
+SSL « Full » ou « Full (strict) », « Always Use HTTPS » ; ne pas mettre en cache `/api/*` ; laisser
+Rocket Loader et la minification HTML désactivés (la politique CSP de l'application refuse les
+scripts injectés). L'application envoie `Strict-Transport-Security` avec `includeSubDomains` :
+servie sur `pathelix.com`, tous les sous-domaines doivent répondre en HTTPS.
+
+**Temps réel** — l'application n'utilise pas de WebSocket. La vue en direct passe par des
+*server-sent events* (`/api/sse/*`), que Cloudflare et `cloudflared` relaient sans mise en tampon ;
+un signal de maintien part toutes les 25 s, sous la limite d'inactivité de 100 s de Cloudflare. Si le
+flux tombe, l'écran repasse seul en interrogation toutes les 30 s. Conséquence de cette même
+limite : une requête HTTP qui ne répond rien pendant plus de 100 s est coupée par Cloudflare
+(erreur 524). Les optimisations passent par une file et un suivi d'avancement, elles ne sont pas
+concernées ; le planning hebdomadaire synchrone l'est si son budget de calcul dépasse ≈ 90 s
+(défaut : 60 s).
+
+**Mise à jour** — `git pull && ./deploy/home/ctl.sh update` : vérifie, construit, **sauvegarde**,
+liste puis applique les migrations après confirmation, redémarre. L'application ne migre jamais
+seule au démarrage dans cette configuration. `ctl.sh migrate-status` ne modifie rien. Les
+migrations du dépôt ne font qu'ajouter (tables, colonnes, index) ; les deux exceptions sont la
+suppression d'index redondants et `20261005120000_security_hardening_oct2026`, qui met les e-mails
+en minuscules, invalide les anciens liens de suivi et supprime les lignes `UserPermission`
+orphelines (utilisateur ou organisation déjà supprimés) — sans effet sur une base neuve. Avant d'appliquer
+une migration future, lire son SQL : `DROP`, `DELETE`, `ALTER … TYPE` demandent une sauvegarde
+vérifiée.
+
+**Sauvegarde** — `ctl.sh backup` : dump de la base relu avant d'être accepté, archive du volume
+des fichiers, chiffrement et copie hors serveur si `BACKUP_PASSPHRASE_FILE` et
+`BACKUP_RCLONE_REMOTE` sont renseignés. Cron :
+
+```bash
+30 2 * * * /opt/pathelix/deploy/home/ctl.sh backup >> /var/log/pathelix-backup.log 2>&1
+```
+
+À conserver **hors du serveur**, à part des sauvegardes : `.env.production` (sans
+`INTEGRATION_ENCRYPTION_KEY`, les secrets d'intégration et de double authentification restaurés
+sont illisibles) et la phrase secrète des sauvegardes.
+
+**Restauration**
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:/etc/pathelix/backup.pass \
+  -in pathelix_AAAA-MM-JJ_HHMM.dump.enc -out /tmp/pathelix.dump       # si chiffrée
+./deploy/home/ctl.sh restore /tmp/pathelix.dump    # arrête app et workers, demande le nom de la base
+./deploy/home/ctl.sh migrate-status                # sauvegarde plus ancienne que le code ? → migrate
+./deploy/home/ctl.sh up
+# fichiers (photos, signatures) : dans le volume, application arrêtée
+docker run --rm -i -v pathelix_photo_storage:/data alpine:3 tar -xzf - -C /data < pathelix_files_….tar.gz
+```
+
+La base remplacée est conservée sous `pathelix_fleet_avant_<date>` jusqu'à suppression manuelle.
+
+**Mémoire** — plafonds par défaut (ce sont des maximums, pas des réservations) : Valhalla 4 Go,
+application 2 Go, worker VRP 2 Go, PostgreSQL 1 Go, worker PDF 768 Mo, quatre autres workers
+512 Mo chacun, Redis 384 Mo. Valhalla n'approche son plafond que pendant la construction initiale
+des tuiles : la lancer quand les modèles de langage ne sont pas sollicités. Chaque valeur se règle
+dans `.env.production`. Ne jamais lancer `docker compose down -v` ni `docker volume prune` sur
+cette machine : les volumes `pathelix_*` portent les données.
+
+## 11. Développement local
 
 ```bash
 npm install && npx prisma generate

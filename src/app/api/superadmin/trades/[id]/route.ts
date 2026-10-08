@@ -4,6 +4,7 @@ import prisma from '@/lib/db'
 import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { syncCustomTradeRegistered, syncCustomTradeUnregistered } from '@/lib/data/customTrades'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const log = createLogger('/api/superadmin/trades/[id]')
 
@@ -18,7 +19,7 @@ const UpdateTradeSchema = z.object({
 })
 
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role, tenantId: ownTenantId } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
   const { id } = await params
@@ -40,6 +41,15 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
     })
 
     syncCustomTradeRegistered(trade)
+    await logSuperadminAction({
+      superadminId,
+      targetTenantId: ownTenantId,
+      isImpersonation: false,
+      method: 'PUT',
+      path: `/api/superadmin/trades/${id}`,
+      action: 'trade_updated',
+      details: { tradeId: id, tradeKey: trade.tradeKey, changedKeys: Object.keys(parsed.data) },
+    })
     log.info('Custom trade updated', { id, keys: Object.keys(parsed.data) })
     return NextResponse.json(trade)
   } catch (err) {
@@ -52,7 +62,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
 }
 
 export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role, tenantId: ownTenantId } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
   const { id } = await params
@@ -72,6 +82,15 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     await prisma.customTrade.delete({ where: { id } })
 
     syncCustomTradeUnregistered(trade.tradeKey)
+    await logSuperadminAction({
+      superadminId,
+      targetTenantId: ownTenantId,
+      isImpersonation: false,
+      method: 'DELETE',
+      path: `/api/superadmin/trades/${id}`,
+      action: 'trade_deleted',
+      details: { tradeId: id, tradeKey: trade.tradeKey },
+    })
     log.info('Custom trade deleted', { id, tradeKey: trade.tradeKey })
     return NextResponse.json({ ok: true })
   } catch (err) {

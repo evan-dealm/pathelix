@@ -50,6 +50,9 @@ const USER = { id: 'user-1', email: 'a@b.com', role: 'ADMIN', tenantId: 't2', fi
 beforeEach(() => {
   vi.clearAllMocks()
   mockGetCtx.mockReturnValue({ tenantId: 't1', userId: 'sa1', role: 'superadmin', requestId: 'req-123', trade: null })
+  // PUT reads the target first (role and organisation) to apply the superadmin guards.
+  mockUserFindUnique.mockReset()
+  mockUserFindUnique.mockResolvedValue({ id: 'user-1', role: 'ADMIN', tenant: { slug: 'acme' } })
 })
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
@@ -128,6 +131,59 @@ describe('PUT /api/superadmin/users/[id]', () => {
     mockUserUpdate.mockRejectedValueOnce(new Error('Record to update not found'))
     const res = await PUT(makePUT('user-1', { firstName: 'X' }), makeParams('user-1'))
     expect(res.status).toBe(404)
+  })
+
+  it('returns 404 without writing when the target does not exist', async () => {
+    mockUserFindUnique.mockResolvedValueOnce(null)
+    const res = await PUT(makePUT('ghost', { firstName: 'X' }), makeParams('ghost'))
+    expect(res.status).toBe(404)
+    expect(mockUserUpdate).not.toHaveBeenCalled()
+  })
+
+  // ── superadmin guards ──
+
+  it('refuses a superadmin changing their own role (the last one can never disappear)', async () => {
+    mockUserFindUnique.mockResolvedValueOnce({ id: 'sa1', role: 'SUPERADMIN', tenant: { slug: 'admin-corp' } })
+    const res = await PUT(makePUT('sa1', { role: 'ADMIN' }), makeParams('sa1'))
+    expect(res.status).toBe(400)
+    expect(mockUserUpdate).not.toHaveBeenCalled()
+  })
+
+  it('lets a superadmin edit their own name without touching the role', async () => {
+    mockUserFindUnique.mockResolvedValueOnce({ id: 'sa1', role: 'SUPERADMIN', tenant: { slug: 'admin-corp' } })
+    mockUserUpdate.mockResolvedValueOnce({ id: 'sa1', tenantId: 't1', role: 'SUPERADMIN', email: 'sa@x.fr' })
+    const res = await PUT(makePUT('sa1', { role: 'SUPERADMIN', firstName: 'Zoé' }), makeParams('sa1'))
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses promoting an account of a client organisation to superadmin', async () => {
+    const res = await PUT(makePUT('user-1', { role: 'SUPERADMIN' }), makeParams('user-1'))
+    expect(res.status).toBe(422)
+    expect(mockUserUpdate).not.toHaveBeenCalled()
+  })
+
+  it('promotes an account of the platform organisation and revokes its sessions', async () => {
+    mockUserFindUnique.mockResolvedValueOnce({ id: 'user-1', role: 'ADMIN', tenant: { slug: 'admin-corp' } })
+    mockUserUpdate.mockResolvedValueOnce({ id: 'user-1', tenantId: 't1', role: 'SUPERADMIN', email: 'a@b.com' })
+    const res = await PUT(makePUT('user-1', { role: 'SUPERADMIN' }), makeParams('user-1'))
+    expect(res.status).toBe(200)
+    expect(mockUserUpdate.mock.calls[0][0].data.sessionVersion).toEqual({ increment: 1 })
+  })
+
+  it('refuses a weak password for a superadmin account', async () => {
+    mockUserFindUnique.mockResolvedValue({ id: 'sa2', role: 'SUPERADMIN', tenant: { slug: 'admin-corp' } })
+    for (const password of ['shortA1x', 'longbutlowercase1', 'NoDigitsInThisOne']) {
+      const res = await PUT(makePUT('sa2', { password }), makeParams('sa2'))
+      expect(res.status, password).toBe(422)
+    }
+    expect(mockUserUpdate).not.toHaveBeenCalled()
+  })
+
+  it('accepts a strong password for a superadmin account', async () => {
+    mockUserFindUnique.mockResolvedValueOnce({ id: 'sa2', role: 'SUPERADMIN', tenant: { slug: 'admin-corp' } })
+    mockUserUpdate.mockResolvedValueOnce({ id: 'sa2', tenantId: 't1', role: 'SUPERADMIN', email: 'sa2@x.fr' })
+    const res = await PUT(makePUT('sa2', { password: 'Correct7Horse' }), makeParams('sa2'))
+    expect(res.status).toBe(200)
   })
 
   it('returns 500 on other DB error', async () => {

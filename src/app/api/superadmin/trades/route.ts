@@ -5,6 +5,7 @@ import { createLogger } from '@/lib/logger'
 import { getRequestContext } from '@/lib/data/context'
 import { TRADES, TRADE_IDS } from '@/lib/trades'
 import { syncCustomTradeRegistered } from '@/lib/data/customTrades'
+import { logSuperadminAction } from '@/lib/superadminAudit'
 
 const log = createLogger('/api/superadmin/trades')
 
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { role } = getRequestContext(req)
+  const { userId: superadminId, role, tenantId: ownTenantId } = getRequestContext(req)
   if (role !== 'superadmin') return NextResponse.json({ error: 'Superadmin requis' }, { status: 403 })
 
   let raw: unknown
@@ -85,6 +86,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
 
     syncCustomTradeRegistered(trade)
+    // Custom trades are shared by every organisation: recorded in the platform's own log.
+    await logSuperadminAction({
+      superadminId,
+      targetTenantId: ownTenantId,
+      isImpersonation: false,
+      method: 'POST',
+      path: '/api/superadmin/trades',
+      action: 'trade_created',
+      details: { tradeId: trade.id, tradeKey, tradeName },
+    })
     log.info('Custom trade created', { tradeKey, tradeName })
     return NextResponse.json(trade, { status: 201 })
   } catch (err) {

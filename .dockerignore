@@ -10,6 +10,8 @@ ecran/
 coverage
 .github
 prisma/seed*.ts
+# Kept: creating the platform account from the worker image needs no Node.js on the host.
+!prisma/seed-superadmin.ts
 osrm-data/
 .vscode/
 .idea/
@@ -26,3 +28,21 @@ tsconfig.tsbuildinfo
 .claude/
 capacitor.config.ts
 ai-engine/
+# Generated in the image (prisma generate): a local copy must not overwrite it.
+src/generated/
+# Local tooling, test data and secrets-bearing helpers: never part of a build context.
+.manualtest/
+.next-dev/
+data/
+dist/
+tmp/
+osrm/
+valhalla/
+load-tests/
+monitoring/
+deploy/
+migration-maplibre-assets/
+docker-compose*.yml
+Dockerfile*
+*.log
+*.txt
