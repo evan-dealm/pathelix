@@ -146,8 +146,6 @@ export const NAV_MENUS: NavMenu[] = [
           { href: '/guides', label: 'Tous les guides et comparatifs' },
           { href: '/glossaire', label: 'Glossaire du métier' },
           { href: '/api-docs', label: 'Référence de l’API', app: true },
-          { href: '/status', label: 'État du service', app: true },
-          { href: '/help', label: 'Centre d’aide', app: true },
         ],
       },
     ],

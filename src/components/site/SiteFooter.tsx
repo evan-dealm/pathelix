@@ -43,8 +43,6 @@ const COLUMNS: Array<{ title: string; links: FooterLink[] }> = [
       { href: '/glossaire', label: 'Glossaire' },
       { href: '/securite', label: 'Sécurité' },
       { href: '/api-docs', label: 'Référence de l’API', app: true },
-      { href: '/status', label: 'État du service', app: true },
-      { href: '/help', label: 'Aide', app: true },
     ],
   },
   {

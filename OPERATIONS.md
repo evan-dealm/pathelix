@@ -249,6 +249,9 @@ npx prisma migrate dev && npm run db:seed
 # Entreprise fictive réaliste (12 chauffeurs, 85 bennes, 136 missions, devis, factures…), créée
 # par l'API de l'instance lancée — base de test uniquement (refus sinon, sauf PILOT_DB=<nom>) :
 # BASE_URL=http://localhost:3000 npx tsx --tsconfig tsconfig.json scripts/seed-pilot.ts   (--clean pour la retirer)
+# PILOT_DAY_OFFSET=1 la prépare la veille : sa journée chargée est celle du lendemain.
+# Démonstration locale en une commande (services Docker, workers VRP et PDF, application construite,
+# base de test uniquement) : bash scripts/demo-start.sh   (stop pour arrêter, build pour reconstruire)
 npm run dev                 # :3000
 npm run worker              # + worker:pdf, worker:ml, worker:recurring, worker:retention au besoin
 ```
