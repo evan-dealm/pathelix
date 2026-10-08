@@ -49,3 +49,9 @@ load-tests/.tokens.json
 
 # Verification builds made next to a running server (NEXT_DIST_DIR)
 .next-site*/
+
+# Données OSRM générées / volumineuses
+osrm-data/
+
+# Vidéo de présentation volumineuse
+ecran/Pathelix V1.mp4
