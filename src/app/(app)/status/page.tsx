@@ -39,7 +39,7 @@ export default function StatusPage() {
     <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       <div className="relative z-[1] max-w-2xl mx-auto px-6 py-16">
         <div className="text-center mb-12">
-          <h1 className="text-3xl font-bold">PATHÉLIX Status</h1>
+          <h1 className="text-3xl font-bold">État du service Pathélix</h1>
           <p className="text-zinc-500 mt-2">État des services en temps réel</p>
         </div>
 
@@ -53,8 +53,8 @@ export default function StatusPage() {
             }`}>
               <StatusIcon status={data.status} />
               <span className="ml-3 text-lg font-semibold">
-                {data.status === 'operational' ? 'Tous les systemes sont operationnels' :
-                 data.status === 'degraded' ? 'Performances degradees sur certains services' :
+                {data.status === 'operational' ? 'Tous les services sont opérationnels' :
+                 data.status === 'degraded' ? 'Fonctionnement dégradé sur certains services' :
                  'Incident en cours'}
               </span>
             </div>
@@ -78,7 +78,7 @@ export default function StatusPage() {
                       s.status === 'operational' ? 'text-green-600 dark:text-green-400' :
                       s.status === 'degraded' ? 'text-yellow-600 dark:text-yellow-400' :
                       'text-red-600 dark:text-red-400'
-                    }`}>{s.status === 'operational' ? 'Operationnel' : s.status === 'degraded' ? 'Degrade' : 'Panne'}</div>
+                    }`}>{s.status === 'operational' ? 'Opérationnel' : s.status === 'degraded' ? 'Dégradé' : 'Panne'}</div>
                   </div>
                 </div>
               ))}
@@ -86,17 +86,17 @@ export default function StatusPage() {
 
             {}
             <div className="bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6">
-              <h2 className="font-bold text-sm mb-2">Engagement de niveau de service (SLA)</h2>
+              <h2 className="font-bold text-sm mb-2">Objectif de disponibilité</h2>
               <p className="text-zinc-500 text-sm">{data.sla.description}</p>
-              <p className="text-2xl font-bold mt-3">{data.sla.target} <span className="text-sm text-zinc-500 font-normal">uptime garanti</span></p>
+              <p className="text-2xl font-bold mt-3">{data.sla.target} <span className="text-sm text-zinc-500 font-normal">de disponibilité visée</span></p>
             </div>
 
             <div className="text-center mt-8 text-xs text-zinc-400">
-              Derniere verification : {new Date(data.timestamp).toLocaleString('fr-FR')} — Rafraichi toutes les 30s
+              Dernière vérification : {new Date(data.timestamp).toLocaleString('fr-FR')} — actualisé toutes les 30 s
             </div>
           </>
         ) : (
-          <div className="text-center text-zinc-500 animate-pulse">Chargement...</div>
+          <div className="text-center text-zinc-500 animate-pulse">Chargement…</div>
         )}
       </div>
     </div>
