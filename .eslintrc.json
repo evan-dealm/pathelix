@@ -1,24 +1,54 @@
 {
-  "extends": ["next/core-web-vitals"],
+  "extends": [
+    "next/core-web-vitals"
+  ],
   "rules": {
-    "no-console": ["warn", { "allow": ["warn", "error"] }],
-    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-console": [
+      "warn",
+      {
+        "allow": [
+          "warn",
+          "error"
+        ]
+      }
+    ],
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
     "react/no-unescaped-entities": "off",
     "prefer-const": "warn",
     "no-var": "warn",
-    "eqeqeq": ["warn", "always"],
-    "curly": ["warn", "multi-line"],
+    "eqeqeq": [
+      "warn",
+      "always"
+    ],
+    "curly": [
+      "warn",
+      "multi-line"
+    ],
     "no-throw-literal": "warn",
-    "no-restricted-imports": ["error", {
-      "paths": [{
-        "name": "@/lib/db",
-        "message": "Direct access to the raw Prisma client bypasses tenant isolation. Import getTenantDb(tenantId) from '@/lib/tenantDb' for tenant-scoped models, or unscopedPrisma from the same file for the reviewed cross-tenant whitelist (see SECURITY.md §1). If this file is genuinely on that whitelist, add it to the matching override in .eslintrc.json instead of importing @/lib/db directly."
-      }]
-    }]
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@/lib/db",
+            "message": "Direct access to the raw Prisma client bypasses tenant isolation. Import getTenantDb(tenantId) from '@/lib/tenantDb' for tenant-scoped models, or unscopedPrisma from the same file for the reviewed cross-tenant whitelist (see SECURITY.md §1). If this file is genuinely on that whitelist, add it to the matching override in .eslintrc.json instead of importing @/lib/db directly."
+          }
+        ]
+      }
+    ]
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
       "rules": {
         "no-console": "off",
         "no-unused-vars": "off",
@@ -26,7 +56,9 @@
       }
     },
     {
-      "files": ["src/generated/**/*"],
+      "files": [
+        "src/generated/**/*"
+      ],
       "rules": {
         "no-unused-vars": "off",
         "no-console": "off"
@@ -42,8 +74,15 @@
         "src/workers/auditRetentionWorker.ts",
         "src/workers/recurringMissionsWorker.ts"
       ],
-      "rules": { "no-restricted-imports": "off" }
+      "rules": {
+        "no-restricted-imports": "off"
+      }
     }
   ],
-  "ignorePatterns": ["src/generated/**"]
+  "ignorePatterns": [
+    "src/generated/**"
+  ],
+  "plugins": [
+    "@typescript-eslint"
+  ]
 }

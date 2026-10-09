@@ -13,7 +13,7 @@
     "build": "next build && npm run build:solver",
     "build:solver": "esbuild src/lib/vrp/solverThread.ts --bundle --platform=node --format=esm --outfile=dist/workers/vrpSolver.mjs --tsconfig=tsconfig.json --packages=external",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
